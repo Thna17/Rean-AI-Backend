@@ -1,0 +1,10 @@
+ENVIRONMENT=development
+# Docker backend runs on 8000.
+API_BASE_URL=http://localhost:8000/api/v1
+API_BASE_URL_FALLBACK=https://api.lexilingo.me/api/v1
+AI_SERVICE_URL=http://localhost:8001/api/v1
+AI_SERVICE_URL_FALLBACK=https://api.lexilingo.me/api/v1
+ENABLE_VOICE_FEATURE=true
+ENABLE_GAMIFICATION=true
+DEBUG_MODE=true
+GOOGLE_SERVER_CLIENT_ID=759793755680-v85kdosf7jlus4ohancb9uak6nf6anpn.apps.googleusercontent.com

@@ -1,0 +1,336 @@
+import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:markdown/markdown.dart' as md;
+import 'package:ai_tutor_app/core/widgets/quick_save_selection_area.dart';
+import 'package:ai_tutor_app/core/theme/app_theme.dart';
+import 'package:ai_tutor_app/features/ai_tutor_chat/domain/entities/ai_tutor_message.dart';
+import 'package:ai_tutor_app/features/ai_tutor_chat/presentation/widgets/tutor_lesson_answer_card.dart';
+import 'package:flutter_markdown_latex/flutter_markdown_latex.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+/// Minimalist dialogue bubble for AI Tutor chat.
+///
+/// Clean, simple design without avatars:
+///  - AI Tutor (left-aligned): Simple text bubble with subtle styling
+///  - User (right-aligned): Clean colored bubble
+class AiTutorDialogueBubble extends StatelessWidget {
+  final AiTutorMessage message;
+  final VoidCallback? onPlayAudio;
+  final VoidCallback? onShowCorrections;
+  final String? aiTutorAvatarUrl;
+
+  const AiTutorDialogueBubble({
+    super.key,
+    required this.message,
+    this.onPlayAudio,
+    this.onShowCorrections,
+    this.aiTutorAvatarUrl,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return message.isAiTutor
+        ? _buildAiTutorBubble(context)
+        : _buildUserBubble(context);
+  }
+
+  Widget _buildAiTutorBubble(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final lessonAnswer = TutorLessonAnswer.tryParse(message.content);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Sender label
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'ai_tutorChat.title'.tr(),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: isDark ? Colors.white54 : AppColors.textGrey,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              if (message.hasCorrections) ...[
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.accentYellow.withValues(
+                      alpha: isDark ? 0.2 : 0.15,
+                    ),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.auto_fix_high_rounded,
+                        size: 10,
+                        color: AppColors.accentYellow,
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        'ai_tutorChat.correctionLabel'.tr(),
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.accentYellow,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (lessonAnswer != null)
+          _buildLessonCardMessage(context, lessonAnswer)
+        else
+          _buildPlainAiTutorMessageBubble(context, isDark),
+      ],
+    );
+  }
+
+  Widget _buildLessonCardMessage(
+    BuildContext context,
+    TutorLessonAnswer lessonAnswer,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TutorLessonAnswerCard(answer: lessonAnswer),
+        _buildMessageActions(context),
+      ],
+    );
+  }
+
+  Widget _buildPlainAiTutorMessageBubble(BuildContext context, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.surfaceDark : AppColors.backgroundLight,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(4),
+          topRight: Radius.circular(16),
+          bottomLeft: Radius.circular(16),
+          bottomRight: Radius.circular(16),
+        ),
+        border: Border.all(
+          color: isDark ? AppColors.surfaceDarkChat : AppColors.chatBgLight,
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildAiTutorMessageContent(context, isDark),
+          _buildMessageActions(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageActions(BuildContext context) {
+    if (!message.hasAudio && onShowCorrections == null) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          if (message.hasAudio)
+            _buildActionChip(
+              context,
+              icon: Icons.volume_up_rounded,
+              label: 'ai_tutorChat.listenButton'.tr(),
+              onTap: onPlayAudio,
+            ),
+          if (onShowCorrections != null)
+            _buildActionChip(
+              context,
+              icon: Icons.auto_fix_high_rounded,
+              label: 'ai_tutorChat.viewNotesButton'.tr(),
+              onTap: onShowCorrections,
+              color: AppColors.accentYellow,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAiTutorMessageContent(BuildContext context, bool isDark) {
+    final baseTextStyle = TextStyle(
+      fontSize: 14,
+      height: 1.5,
+      color: isDark ? Colors.white : AppColors.textDark,
+      letterSpacing: -0.1,
+    );
+
+    final highlightColor = isDark
+        ? AppColors.accentYellow.withValues(alpha: 0.25)
+        : AppColors.accentYellow.withValues(alpha: 0.2);
+
+    return QuickSaveSelectionArea(
+      sourceType: 'ai_tutor_chat',
+      sourceReference: message.id,
+      contextSentence: message.content,
+      child: MarkdownBody(
+        data: message.content,
+        selectable: false,
+        extensionSet: md.ExtensionSet(
+          [LatexBlockSyntax()],
+          [LatexInlineSyntax()],
+        ),
+        builders: {
+          'latex': LatexElementBuilder(
+            textStyle: baseTextStyle.copyWith(
+              color: isDark
+                  ? AppColors.accentYellow
+                  : AppColorRoles.primary(isDark),
+            ),
+          ),
+        },
+        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+          p: baseTextStyle,
+          listBullet: baseTextStyle.copyWith(
+            fontWeight: FontWeight.w700,
+            color: isDark ? Colors.white : AppColors.textDark,
+          ),
+          strong: baseTextStyle.copyWith(
+            fontWeight: FontWeight.w700,
+            backgroundColor: highlightColor,
+          ),
+          em: baseTextStyle.copyWith(
+            fontStyle: FontStyle.italic,
+            fontWeight: FontWeight.w600,
+            backgroundColor: highlightColor,
+          ),
+          a: baseTextStyle.copyWith(
+            color: AppColorRoles.primary(isDark),
+            decoration: TextDecoration.underline,
+          ),
+        ),
+        onTapLink: (text, href, title) async {
+          if (href == null || href.isEmpty) return;
+          final uri = Uri.tryParse(href);
+          if (uri == null) return;
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildUserBubble(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColorRoles.primary(isDark),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(4),
+              bottomLeft: Radius.circular(16),
+              bottomRight: Radius.circular(16),
+            ),
+          ),
+          child: QuickSaveSelectionArea(
+            sourceType: 'ai_tutor_chat',
+            sourceReference: message.id,
+            contextSentence: message.displayContent,
+            child: Text(
+              message.displayContent,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.5,
+                color: Theme.of(context).colorScheme.surface,
+                letterSpacing: -0.1,
+              ),
+            ),
+          ),
+        ),
+        if (message.isPendingSync)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, right: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.schedule_rounded,
+                  size: 12,
+                  color: isDark ? Colors.white60 : AppColors.textGrey,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'ai_tutorChat.pendingSync'.tr(),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? Colors.white60 : AppColors.textGrey,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildActionChip(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    VoidCallback? onTap,
+    Color? color,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final chipColor = color ?? AppColorRoles.primary(isDark);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: chipColor.withValues(alpha: isDark ? 0.15 : 0.08),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: chipColor.withValues(alpha: isDark ? 0.3 : 0.2),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: chipColor),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: chipColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

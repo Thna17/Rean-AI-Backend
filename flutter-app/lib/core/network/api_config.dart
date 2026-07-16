@@ -1,0 +1,139 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../utils/constants.dart';
+
+/// Centralized API configuration sourced from .env with safe defaults.
+///
+/// PRIMARY URL: từ env (local khi dev, production khi prod)
+/// FALLBACK URL: thử khi primary không reach được (network error)
+///
+/// Fallback pattern trong DioClient:
+///   1. Gọi với baseUrl = ApiConfig.baseUrl
+///   2. Nếu DioException.type == connectionError → retry với ApiConfig.fallbackBaseUrl
+///   3. Nếu fallbackBaseUrl rỗng hoặc cũng fail → throw exception
+class ApiConfig {
+  // ── Environment ─────────────────────────────────────────────────────────────
+
+  static String get environment =>
+      _readEnv('ENVIRONMENT')?.trim() ?? 'development';
+
+  static bool get isDev => environment == 'development';
+  static bool get isProd => environment == 'production';
+
+  static bool get enableStarterReward => false;
+
+  // ── Backend URL ─────────────────────────────────────────────────────────────
+
+  /// URL chính — local (dev) hoặc Render.com (prod).
+  static String get baseUrl {
+    final envUrl = _normalizedEnvUrl('API_BASE_URL');
+    if (envUrl != null) {
+      if (_mustUseProductionBackend && _isTransientFallbackUrl(envUrl)) {
+        // In production hosts, never allow fallback infra URLs to become
+        // primary API endpoints due to env drift.
+        return AppConstants.apiBaseUrl;
+      }
+      if (!_mustUseProductionBackend || !_isLoopbackUrl(envUrl)) {
+        return envUrl;
+      }
+    }
+    return _shouldUseLocalFallback
+        ? AppConstants.localApiBaseUrl
+        : AppConstants.apiBaseUrl;
+  }
+
+  /// URL dự phòng — thử khi [baseUrl] không kết nối được.
+  /// Trống trong production mode (không có fallback về local).
+  static String get fallbackBaseUrl {
+    if (_mustUseProductionBackend) {
+      return ''; // production không fallback về local
+    }
+    final envUrl = _normalizedEnvUrl('API_BASE_URL_FALLBACK');
+    return envUrl ?? AppConstants.apiBaseUrl;
+  }
+
+  // ── AI Service URL ───────────────────────────────────────────────────────────
+
+  /// AIS URL chính.
+  static String get aiServiceUrl {
+    final envUrl = _normalizedEnvUrl('AI_SERVICE_URL');
+    if (envUrl != null) {
+      if (_mustUseProductionBackend && _isTransientFallbackUrl(envUrl)) {
+        return AppConstants.aiServiceUrl;
+      }
+      if (!_mustUseProductionBackend || !_isLoopbackUrl(envUrl)) {
+        return envUrl;
+      }
+    }
+    return _shouldUseLocalFallback
+        ? AppConstants.localAiServiceUrl
+        : AppConstants.aiServiceUrl;
+  }
+
+  /// AIS URL dự phòng.
+  static String get fallbackAiServiceUrl {
+    if (_mustUseProductionBackend) return '';
+    final envUrl = _normalizedEnvUrl('AI_SERVICE_URL_FALLBACK');
+    return envUrl ?? AppConstants.aiServiceUrl;
+  }
+
+  // ── Timeouts ─────────────────────────────────────────────────────────────────
+
+  static Duration get connectTimeout => AppConstants.connectTimeout;
+  static Duration get receiveTimeout => AppConstants.receiveTimeout;
+
+  // ── Internals ────────────────────────────────────────────────────────────────
+
+  static String? _normalizedEnvUrl(String key) {
+    final envUrl = _readEnv(key)?.trim();
+    if (envUrl == null || envUrl.isEmpty) return null;
+    final normalized = envUrl.endsWith('/')
+        ? envUrl.substring(0, envUrl.length - 1)
+        : envUrl;
+
+    // Removed the localhost to 127.0.0.1 forced replacement.
+    // Modern browsers prefer localhost, and replacing it causes CORS issues.
+
+    return normalized;
+  }
+
+  static bool get _shouldUseLocalFallback => false;
+
+  static bool get _mustUseProductionBackend {
+    if (kReleaseMode) return true;
+    if (_readEnv('DEBUG_MODE') == 'false') return true;
+    final host = Uri.base.host.toLowerCase();
+    return host.isNotEmpty && !_isLoopbackHost(host);
+  }
+
+  static bool _isLoopbackUrl(String value) {
+    try {
+      final uri = Uri.parse(value);
+      return _isLoopbackHost(uri.host.toLowerCase());
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static bool _isLoopbackHost(String host) {
+    return host == 'localhost' ||
+        host == '127.0.0.1' ||
+        host == '0.0.0.0' ||
+        host == '::1';
+  }
+
+  static bool _isTransientFallbackUrl(String value) {
+    try {
+      final host = Uri.parse(value).host.toLowerCase();
+      return host.endsWith('.onrender.com') ||
+          host.endsWith('.trycloudflare.com');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static String? _readEnv(String key) {
+    if (!dotenv.isInitialized) return null;
+    return dotenv.env[key];
+  }
+}
