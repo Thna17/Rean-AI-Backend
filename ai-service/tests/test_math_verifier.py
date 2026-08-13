@@ -1,30 +1,35 @@
-import pytest
-from fastapi.testclient import TestClient
-from api.routes.math_verifier import router
-from fastapi import FastAPI
+from api.routes.math_verifier import MathQuery, verify_math, verify_student_work
 
-app = FastAPI()
-app.include_router(router)
+def test_verifies_equivalent_and_wrong_student_steps():
+    correct = verify_math(MathQuery(expression="2x = 10", previous_step="2x + 5 = 15"))
+    wrong = verify_math(MathQuery(expression="2x = 20", previous_step="2x + 5 = 15"))
+    assert correct.status == "correct" and correct.verified
+    assert wrong.status == "invalid" and wrong.verified
 
-client = TestClient(app)
+def test_handles_multiple_no_solution_and_unsafe_input():
+    assert verify_math(MathQuery(expression="x^2 = 1")).solution == "[-1, 1]"
+    assert verify_math(MathQuery(expression="x = x + 1")).solution == "no solution"
+    assert verify_math(MathQuery(expression="__import__('os')")).status == "cannot_verify"
 
-def test_verify_math_expression():
-    response = client.post("/verify", json={"expression": "2*x + 3*x"})
-    assert response.status_code == 200
-    data = response.json()
-    assert data["is_valid"] is True
-    assert data["simplified"] == "5*x"
 
-def test_verify_math_equation():
-    response = client.post("/verify", json={"expression": "5*x + 3 = 18"})
-    assert response.status_code == 200
-    data = response.json()
-    assert data["is_valid"] is True
-    assert data["solution"] == "[3]"
+def test_verifies_student_steps_and_safe_fallbacks():
+    assert verify_student_work(problem="2x + 5 = 15", student_step="2x = 10").status == "correct"
+    assert verify_student_work(problem="2x + 5 = 15", student_step="x = 5", expected_step="2x = 10").status == "mathematically_valid_but_inefficient"
+    assert verify_student_work(problem="2x + 5 = 15", student_step="2x = 20").status == "invalid"
+    assert verify_student_work(problem="2x + 5 = 15", student_step="x/0 = 2").status == "invalid"
+    assert verify_student_work(problem="Prove this triangle geometry statement", student_step="x = 1").status == "cannot_verify"
+    assert verify_student_work(problem="2x + 5 = 15", student_step="").status == "incomplete"
 
-def test_verify_math_invalid():
-    response = client.post("/verify", json={"expression": "2*x +"})
-    assert response.status_code == 200
-    data = response.json()
-    assert data["is_valid"] is False
-    assert "error" in data
+
+def test_verification_contract_has_student_message_and_machine_evidence():
+    result = verify_student_work(
+        problem="2x + 5 = 15",
+        student_step="x = 5",
+        expected_step="2x = 10",
+    )
+
+    assert result.status == "mathematically_valid_but_inefficient"
+    assert result.verified is True
+    assert result.normalized_expression == "x = 5"
+    assert result.student_message
+    assert result.evidence["method"] == "solution_set_equivalence"

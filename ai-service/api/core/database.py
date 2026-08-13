@@ -6,6 +6,7 @@ Similar to Flutter's DataSource layer in Clean Architecture
 """
 
 import logging
+import os
 from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
@@ -16,7 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 def _is_dev_environment() -> bool:
-    return settings.ENVIRONMENT.lower() != "production"
+    return (
+        settings.ENVIRONMENT.lower() == "development"
+        and os.getenv("APP_ENV", "").lower() == "development"
+        and os.getenv("ALLOW_DEVELOPMENT_FALLBACKS", "false").lower() == "true"
+    )
 
 
 def _is_cosmos_mongo_uri(uri: str) -> bool:

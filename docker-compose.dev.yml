@@ -331,6 +331,8 @@ services:
     environment:
       ENVIRONMENT: development
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      AI_JWT_ISSUER: ${JWT_ISSUER:-lexilingo-backend}
+      AI_JWT_AUDIENCE: ${JWT_AUDIENCE:-lexilingo-services}
       MONGODB_URI: mongodb://mongodb:27017
       MONGODB_DB_NAME: ai_tutor
       OLLAMA_BASE_URL: http://ollama:11434

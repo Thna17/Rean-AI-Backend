@@ -274,7 +274,7 @@ Response format:
 # ─── Request / Response Models ───────────────────────────────────────────────
 class AiTutorChatRequest(BaseModel):
     """Request to chat with AI Tutor."""
-    user_id: str = Field(default="demo_user", description="User identifier")
+    user_id: Optional[str] = Field(default=None, description="Optional client hint; authenticated identity is authoritative")
     session_id: Optional[str] = Field(default=None, description="Existing session ID")
     message: str = Field(..., min_length=1, description="User message text")
     input_type: str = Field(default="text", description="'text' or 'voice'")
@@ -325,7 +325,7 @@ class AiTutorSessionResponse(BaseModel):
 
 class AiTutorSessionRequest(BaseModel):
     """Request to create a AI Tutor session."""
-    user_id: str = Field(default="demo_user", description="User identifier")
+    user_id: Optional[str] = Field(default=None, description="Optional client hint; authenticated identity is authoritative")
 
 
 class AiTutorSessionRenameRequest(BaseModel):
@@ -988,39 +988,77 @@ async def ai_tutor_stream_chat(
         try:
             tokens: list[str] = []
             api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-            if not api_key:
-                raise RuntimeError("OPENROUTER_API_KEY is not configured")
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "HTTP-Referer": "https://ai_tutor.app",
-                "X-Title": "AI Tutor AI Tutor",
-                "Content-Type": "application/json",
-            }
-            payload = {
-                "model": "openrouter/free",
-                "messages": llm_messages,
-                "stream": True,
-                "temperature": 0.7,
-            }
-            
             if not ai_tutor_response:
                 async with httpx.AsyncClient() as client:
-                    async with client.stream("POST", "https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=60.0) as response:
-                        if response.status_code != 200:
-                            logger.error(f"OpenRouter stream error: {response.status_code}")
-                        else:
-                            async for line in response.aiter_lines():
-                                if line.startswith("data: ") and line != "data: [DONE]":
+                    if api_key:
+                        headers = {
+                            "Authorization": f"Bearer {api_key}",
+                            "HTTP-Referer": "https://ai_tutor.app",
+                            "X-Title": "AI Tutor AI Tutor",
+                            "Content-Type": "application/json",
+                        }
+                        payload = {
+                            "model": "openrouter/free",
+                            "messages": llm_messages,
+                            "stream": True,
+                            "temperature": 0.7,
+                        }
+                        async with client.stream(
+                            "POST",
+                            "https://openrouter.ai/api/v1/chat/completions",
+                            headers=headers,
+                            json=payload,
+                            timeout=60.0,
+                        ) as response:
+                            if response.status_code != 200:
+                                logger.error("OpenRouter stream error: %s", response.status_code)
+                            else:
+                                async for line in response.aiter_lines():
+                                    if line.startswith("data: ") and line != "data: [DONE]":
+                                        try:
+                                            data = json.loads(line[6:])
+                                            chunk = data["choices"][0]["delta"].get("content", "")
+                                            if chunk:
+                                                tokens.append(chunk)
+                                                yield f"event: chunk\ndata: {json.dumps({'text': chunk})}\n\n"
+                                        except Exception:
+                                            pass
+                    else:
+                        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
+                        ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
+                        model_used = f"ollama/{ollama_model}"
+                        async with client.stream(
+                            "POST",
+                            f"{ollama_base_url}/api/chat",
+                            json={
+                                "model": ollama_model,
+                                "messages": llm_messages,
+                                "stream": True,
+                                "options": {"temperature": 0.7},
+                            },
+                            timeout=60.0,
+                        ) as response:
+                            if response.status_code != 200:
+                                body = await response.aread()
+                                logger.error(
+                                    "Ollama stream error: %s %s",
+                                    response.status_code,
+                                    body.decode("utf-8", errors="replace")[:500],
+                                )
+                            else:
+                                async for line in response.aiter_lines():
+                                    if not line:
+                                        continue
                                     try:
-                                        data = json.loads(line[6:])
-                                        chunk = data["choices"][0]["delta"].get("content", "")
+                                        data = json.loads(line)
+                                        chunk = data.get("message", {}).get("content", "")
                                         if chunk:
                                             tokens.append(chunk)
                                             yield f"event: chunk\ndata: {json.dumps({'text': chunk})}\n\n"
                                     except Exception:
                                         pass
 
-                    ai_tutor_response = _sanitize_ai_tutor_response("".join(tokens))
+                ai_tutor_response = _sanitize_ai_tutor_response("".join(tokens))
         except Exception as gen_err:
             logger.error("AI Tutor /stream LLM generation error: %s", gen_err)
                 
@@ -1244,7 +1282,7 @@ async def get_ai_tutor_messages(
     # Rehydrate cache for faster next reads.
     await _store.set_session(session_id, {
         "session_id": session_doc.get("session_id"),
-        "user_id": session_doc.get("user_id", "demo_user"),
+        "user_id": session_doc.get("user_id"),
         "created_at": session_doc.get("created_at", datetime.now(timezone.utc).isoformat()),
         "updated_at": session_doc.get("updated_at", datetime.now(timezone.utc).isoformat()),
         "title": session_doc.get("title", "AI Tutor Chat"),

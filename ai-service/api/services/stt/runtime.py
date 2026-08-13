@@ -18,6 +18,8 @@ _trace_cag_dispatcher: Optional[TraceCAGDispatcher] = None
 async def start_stt_runtime() -> None:
     global _config, _registry, _sessions, _trace_cag_dispatcher
     _config = STTConfig.from_env()
+    if not _config.enabled:
+        return
     _registry = STTModelRegistry(_config)
     await _registry.start()
     _trace_cag_dispatcher = TraceCAGDispatcher(
@@ -53,11 +55,11 @@ def get_stt_config() -> STTConfig:
 
 def get_stt_registry() -> STTModelRegistry:
     if _registry is None:
-        raise RuntimeError("STT runtime is not initialized")
+        raise RuntimeError("STT runtime is disabled or not initialized")
     return _registry
 
 
 def get_stt_sessions() -> SessionManager:
     if _sessions is None:
-        raise RuntimeError("STT runtime is not initialized")
+        raise RuntimeError("STT runtime is disabled or not initialized")
     return _sessions

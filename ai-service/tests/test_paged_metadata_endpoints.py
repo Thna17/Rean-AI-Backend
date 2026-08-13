@@ -6,7 +6,6 @@ from bson import ObjectId
 
 from api.routes import chat as chat_route
 from api.routes import ai_tutor_chat as ai_tutor_route
-from api.routes import topic_chat as topic_route
 
 
 def _mock_cursor(rows):
@@ -122,120 +121,6 @@ async def test_chat_messages_metadata_returns_expected_fields():
     assert metadata["oldest_cursor"] is not None
     assert metadata["latest_ts"] is not None
     assert metadata["oldest_ts"] is not None
-
-
-@pytest.mark.asyncio
-async def test_topic_messages_paged_returns_cursor_pagination_payload():
-    docs_desc = [
-        {
-            "_id": ObjectId(),
-            "message_id": "m3",
-            "session_id": "topic_s1",
-            "content": "third",
-            "role": "assistant",
-            "timestamp": datetime(2026, 4, 16, 10, 0, 2),
-        },
-        {
-            "_id": ObjectId(),
-            "message_id": "m2",
-            "session_id": "topic_s1",
-            "content": "second",
-            "role": "user",
-            "timestamp": datetime(2026, 4, 16, 10, 0, 1),
-        },
-        {
-            "_id": ObjectId(),
-            "message_id": "m1",
-            "session_id": "topic_s1",
-            "content": "first",
-            "role": "assistant",
-            "timestamp": datetime(2026, 4, 16, 10, 0, 0),
-        },
-    ]
-
-    chat_sessions = MagicMock()
-    chat_sessions.find_one = AsyncMock(return_value={"session_id": "topic_s1"})
-
-    chat_messages = MagicMock()
-    chat_messages.find.return_value = _mock_cursor(docs_desc)
-    chat_messages.count_documents = AsyncMock(return_value=3)
-
-    db = MagicMock()
-
-    def get_collection(name):
-        if name == "chat_sessions":
-            return chat_sessions
-        if name == "chat_messages":
-            return chat_messages
-        return AsyncMock()
-
-    db.__getitem__.side_effect = get_collection
-
-    result = await topic_route.get_topic_messages_paged(
-        session_id="topic_s1",
-        limit=2,
-        cursor=None,
-        db=db,
-    )
-
-    assert len(result["messages"]) == 2
-    assert result["messages"][0]["id"] == "m2"
-    assert result["messages"][1]["id"] == "m3"
-    assert result["pagination"]["total_count"] == 3
-    assert result["pagination"]["has_more"] is True
-    assert result["pagination"]["next_cursor"] is not None
-
-
-@pytest.mark.asyncio
-async def test_topic_messages_metadata_returns_expected_fields():
-    latest_doc = {
-        "_id": ObjectId(),
-        "message_id": "m9",
-        "session_id": "topic_s1",
-        "content": "latest",
-        "role": "assistant",
-        "timestamp": datetime(2026, 4, 16, 10, 0, 9),
-    }
-    oldest_doc = {
-        "_id": ObjectId(),
-        "message_id": "m1",
-        "session_id": "topic_s1",
-        "content": "oldest",
-        "role": "user",
-        "timestamp": datetime(2026, 4, 16, 10, 0, 1),
-    }
-
-    chat_sessions = MagicMock()
-    chat_sessions.find_one = AsyncMock(return_value={"session_id": "topic_s1"})
-
-    chat_messages = MagicMock()
-    chat_messages.count_documents = AsyncMock(return_value=9)
-    chat_messages.find.side_effect = [
-        _mock_cursor([latest_doc]),
-        _mock_cursor([oldest_doc]),
-    ]
-
-    db = MagicMock()
-
-    def get_collection(name):
-        if name == "chat_sessions":
-            return chat_sessions
-        if name == "chat_messages":
-            return chat_messages
-        return AsyncMock()
-
-    db.__getitem__.side_effect = get_collection
-
-    result = await topic_route.get_topic_messages_metadata(
-        session_id="topic_s1",
-        db=db,
-    )
-
-    metadata = result["metadata"]
-    assert metadata["total_count"] == 9
-    assert metadata["has_messages"] is True
-    assert metadata["latest_cursor"] is not None
-    assert metadata["oldest_cursor"] is not None
 
 
 @pytest.mark.asyncio

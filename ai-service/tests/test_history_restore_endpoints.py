@@ -6,7 +6,6 @@ from fastapi import HTTPException
 
 from api.routes import chat as chat_route
 from api.routes import ai_tutor_chat as ai_tutor_route
-from api.routes import topic_chat as topic_route
 from api.core.auth import AuthenticatedUser
 
 
@@ -29,30 +28,6 @@ def mock_chat_db():
     db.__getitem__.side_effect = get_collection
     return db
 
-
-@pytest.fixture
-def mock_topic_db():
-    db = MagicMock()
-
-    chat_sessions = MagicMock()
-    chat_sessions.find_one = AsyncMock(return_value={"session_id": "topic_s1"})
-
-    chat_messages = MagicMock()
-    cursor = MagicMock()
-    cursor.sort.return_value = cursor
-    cursor.limit.return_value = cursor
-    cursor.to_list = AsyncMock(return_value=[])
-    chat_messages.find.return_value = cursor
-
-    def get_collection(name):
-        if name == "chat_sessions":
-            return chat_sessions
-        if name == "chat_messages":
-            return chat_messages
-        return AsyncMock()
-
-    db.__getitem__.side_effect = get_collection
-    return db
 
 
 @pytest.fixture
@@ -111,69 +86,6 @@ async def test_chat_messages_limit_positive_uses_limit_cursor(mock_chat_db):
     )
 
     assert len(result) == 1
-    cursor.limit.assert_called_once_with(1)
-    cursor.to_list.assert_awaited_once_with(length=1)
-
-
-@pytest.mark.asyncio
-async def test_topic_messages_limit_zero_loads_full_history_batches(mock_topic_db):
-    cursor = mock_topic_db["chat_messages"].find.return_value
-    cursor.to_list = AsyncMock(
-        side_effect=[
-            [
-                {
-                    "message_id": "m1",
-                    "session_id": "topic_s1",
-                    "content": "hello",
-                    "role": "user",
-                    "timestamp": datetime(2026, 4, 16, 10, 0, 0),
-                },
-                {
-                    "message_id": "m2",
-                    "session_id": "topic_s1",
-                    "content": "hi",
-                    "role": "assistant",
-                    "timestamp": datetime(2026, 4, 16, 10, 0, 1),
-                },
-            ],
-            [],
-        ]
-    )
-
-    result = await topic_route.get_topic_messages(
-        session_id="topic_s1",
-        limit=0,
-        db=mock_topic_db,
-    )
-
-    assert "messages" in result
-    assert len(result["messages"]) == 2
-    cursor.limit.assert_not_called()
-    assert cursor.to_list.await_count == 1
-
-
-@pytest.mark.asyncio
-async def test_topic_messages_limit_positive_uses_limit_cursor(mock_topic_db):
-    cursor = mock_topic_db["chat_messages"].find.return_value
-    cursor.to_list = AsyncMock(
-        return_value=[
-            {
-                "message_id": "m1",
-                "session_id": "topic_s1",
-                "content": "hello",
-                "role": "user",
-                "timestamp": datetime(2026, 4, 16, 10, 0, 0),
-            }
-        ]
-    )
-
-    result = await topic_route.get_topic_messages(
-        session_id="topic_s1",
-        limit=1,
-        db=mock_topic_db,
-    )
-
-    assert len(result["messages"]) == 1
     cursor.limit.assert_called_once_with(1)
     cursor.to_list.assert_awaited_once_with(length=1)
 

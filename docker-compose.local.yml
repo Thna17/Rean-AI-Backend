@@ -20,18 +20,29 @@ services:
       - MODEL_CACHE_DIR=/app/models
       
       # Environment
-      - ENVIRONMENT=production
+      - ENVIRONMENT=development
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-this-in-production-use-openssl-rand-hex-32}
       - LOG_LEVEL=INFO
+      - VISUAL_TUTOR_LLM_PROVIDER=${VISUAL_TUTOR_LLM_PROVIDER:-codex_bridge}
+      - VISUAL_TUTOR_CODEX_BRIDGE_URL=${VISUAL_TUTOR_CODEX_BRIDGE_URL:-http://host.docker.internal:8765/complete}
+      - VISUAL_TUTOR_CODEX_BRIDGE_TOKEN=${VISUAL_TUTOR_CODEX_BRIDGE_TOKEN:-}
+      - VISUAL_TUTOR_CODEX_BRIDGE_TIMEOUT=${VISUAL_TUTOR_CODEX_BRIDGE_TIMEOUT:-90}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
 
       # Dedicated AI Redis (isolated from other services)
       - REDIS_HOST=redis-ai
       - REDIS_PORT=6379
       - REDIS_DB=0
       - REDIS_URL=redis://redis-ai:6379/0
+
+      # MongoDB session persistence
+      - MONGODB_URI=mongodb://mongodb:27017
+      - MONGODB_DATABASE=${MONGODB_DATABASE:-ai_tutor}
       
       # Performance tuning
       - WORKERS=1
       - TIMEOUT=300
+      - STT_ENABLED=false
       
     volumes:
       # Cache downloaded models to avoid re-downloading
@@ -54,7 +65,7 @@ services:
           memory: 1G       # Reserve 1GB RAM
     
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=5).read()\""]
       interval: 30s
       timeout: 10s
       retries: 3

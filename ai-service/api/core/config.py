@@ -112,16 +112,12 @@ class Settings(BaseSettings):
     # CORS Settings
     # ============================================================
     ALLOWED_ORIGINS: Union[str, List[str]] = Field(
-        default=[
-            "https://ai_tutor.me",
-            "https://www.ai_tutor.me",
-            "https://admin.ai_tutor.me",
-        ],
+        default_factory=list,
         validation_alias=AliasChoices("ALLOWED_ORIGINS", "CORS_ORIGINS"),
     )
-    CORS_ALLOW_ORIGIN_REGEX: str = (
-        r"https?://((localhost|127\.0\.0\.1)(:\d+)?|([a-zA-Z0-9-]+\.)*ai_tutor\.me(:\d+)?)"
-    )
+    # Regex CORS rules are intentionally opt-in for development only. Production
+    # uses the explicit ALLOWED_ORIGINS environment allow-list below.
+    CORS_ALLOW_ORIGIN_REGEX: str = ""
 
     @field_validator('ALLOWED_ORIGINS', mode='before')
     @classmethod
@@ -152,7 +148,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_production_security(self):
         """Reject common insecure deployment settings."""
-        if self.ENVIRONMENT != "production":
+        if self.ENVIRONMENT not in {"production", "staging"}:
             return self
 
         if self.DEBUG:
@@ -167,6 +163,11 @@ class Settings(BaseSettings):
                 "SECRET_KEY must be a random string of at least 32 characters in production"
             )
 
+        if not self.VISUAL_TUTOR_INTERNAL_TOKEN or len(self.VISUAL_TUTOR_INTERNAL_TOKEN) < 32:
+            raise ValueError("VISUAL_TUTOR_INTERNAL_TOKEN must be at least 32 characters in staging and production")
+        if not self.MONGODB_URI or any(value in self.MONGODB_URI.lower() for value in ("localhost", "127.0.0.1")):
+            raise ValueError("A non-local durable MONGODB_URI is required in staging and production")
+
         if self.MONGODB_TLS_ALLOW_INVALID_CERTIFICATES:
             raise ValueError("MongoDB invalid TLS certificates are not allowed in production")
 
@@ -177,14 +178,31 @@ class Settings(BaseSettings):
         if "*" in origins:
             raise ValueError("Wildcard CORS origins are not allowed with credentials in production")
 
+        if not origins:
+            raise ValueError("ALLOWED_ORIGINS must contain at least one origin in production")
+
         if any("localhost" in origin or "127.0.0.1" in origin for origin in origins):
             raise ValueError("Localhost CORS origins are not allowed when ENVIRONMENT=production")
 
-        if "devtunnels.ms" in self.CORS_ALLOW_ORIGIN_REGEX or "github.dev" in self.CORS_ALLOW_ORIGIN_REGEX:
-            raise ValueError("Broad development tunnel CORS regex is not allowed in production")
+        if self.CORS_ALLOW_ORIGIN_REGEX:
+            raise ValueError("CORS_ALLOW_ORIGIN_REGEX is not allowed in production; use ALLOWED_ORIGINS")
 
         if self.CONTENT_ETL_ENABLED:
             self._validate_production_etl_pins()
+
+        visual_provider = self.VISUAL_TUTOR_LLM_PROVIDER.strip().lower()
+        if visual_provider in {"codex", "codex_cli", "codex_bridge", "codex_cli_bridge"}:
+            raise ValueError("Codex CLI Visual Tutor provider is development-only")
+        if visual_provider in {"openrouter", "auto"} and not self.OPENROUTER_API_KEY:
+            raise ValueError(
+                "OPENROUTER_API_KEY is required for production Visual Tutor LLM fallback"
+            )
+        if self.VISUAL_TUTOR_OCR_ENABLED and not self.GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY is required when Visual Tutor OCR is enabled")
+        if self.VISUAL_TUTOR_STT_ENABLED and not self.STT_MODEL_NAME:
+            raise ValueError("STT_MODEL_NAME is required when Visual Tutor STT is enabled")
+        if self.VISUAL_TUTOR_TTS_ENABLED and not self.TTS_MODEL_PATH:
+            raise ValueError("TTS_MODEL_PATH is required when Visual Tutor TTS is enabled")
 
         return self
 
@@ -252,8 +270,30 @@ class Settings(BaseSettings):
     # ============================================================
     # API Keys (for external services)
     # ============================================================
+    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
+    OPENROUTER_MODEL: str = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     HUGGINGFACE_API_KEY: str = os.getenv("HUGGINGFACE_API_KEY", "")
+
+    # ============================================================
+    # Visual Tutor LLM Fallback Provider
+    # ============================================================
+    VISUAL_TUTOR_LLM_PROVIDER: str = os.getenv(
+        "VISUAL_TUTOR_LLM_PROVIDER",
+        "openrouter" if ENVIRONMENT == "production" else "auto",
+    )
+    VISUAL_TUTOR_CODEX_CLI_COMMAND: str = os.getenv(
+        "VISUAL_TUTOR_CODEX_CLI_COMMAND",
+        "codex exec --ephemeral --skip-git-repo-check --ignore-rules -",
+    )
+    VISUAL_TUTOR_CODEX_CLI_TIMEOUT: int = int(
+        os.getenv("VISUAL_TUTOR_CODEX_CLI_TIMEOUT", "60")
+    )
+    # Private shared credential used only by the TypeScript gateway.
+    VISUAL_TUTOR_INTERNAL_TOKEN: str = os.getenv("VISUAL_TUTOR_INTERNAL_TOKEN", "")
+    VISUAL_TUTOR_OCR_ENABLED: bool = os.getenv("VISUAL_TUTOR_OCR_ENABLED", "true").lower() == "true"
+    VISUAL_TUTOR_STT_ENABLED: bool = os.getenv("VISUAL_TUTOR_STT_ENABLED", "true").lower() == "true"
+    VISUAL_TUTOR_TTS_ENABLED: bool = os.getenv("VISUAL_TUTOR_TTS_ENABLED", "true").lower() == "true"
     
     # ============================================================
     # Ollama (Local LLM) Configuration

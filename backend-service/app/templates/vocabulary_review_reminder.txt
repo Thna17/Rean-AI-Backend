@@ -1,9 +1,0 @@
-Hi {display_name},
-
-You have {due_count} vocabulary review(s) waiting in AI Tutor.
-
-Review now: {review_link}
-
-You can change reminder settings here: {settings_link}
-
-AI Tutor Team

@@ -153,6 +153,22 @@ async def _ensure_mongo_indexes() -> None:
         name="ai_tutor_messages_session_timestamp_idx",
     )
 
+    await _ensure_session_unique_index(
+        collection="visual_tutor_sessions",
+        field="session_id",
+        name="visual_tutor_sessions_session_id_uq",
+    )
+    await _create_index_safe(
+        "visual_tutor_sessions",
+        [("user_id", ASCENDING), ("updated_at", DESCENDING)],
+        name="visual_tutor_sessions_user_updated_at_idx",
+    )
+    await _create_index_safe(
+        "visual_tutor_sessions",
+        [("user_id", ASCENDING), ("status", ASCENDING), ("updated_at", DESCENDING)],
+        name="visual_tutor_sessions_user_status_updated_at_idx",
+    )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -256,17 +272,19 @@ from api.routes import (
     admin,
     ai,
     chat,
-    content_agent,
+    curriculum,
     ai_tutor_chat,
     math_verifier,
     notification_agent as notification_agent_router,
     ollama_router,
     pronunciation,
-    ranking_agent as ranking_agent_router,
+    quiz,
     stt,
-    topic_chat,
     translate,
     tts,
+    visual_tutor,
+    visual_tutor_scan,
+    visual_tutor_voice,
 )
 
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
@@ -274,15 +292,17 @@ app.include_router(math_verifier.router, prefix="/api/v1/math", tags=["Math Veri
 app.include_router(stt.router, prefix="/api/v1/stt", tags=["STT"])
 app.include_router(pronunciation.router, prefix="/api/v1/stt", tags=["STT"])
 app.include_router(tts.router, prefix="/api/v1/tts", tags=["TTS"])
-app.include_router(topic_chat.router, prefix="/api/v1/topics", tags=["Topic Chat"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
 app.include_router(ai.router, prefix="/api/v1/ai", tags=["AI Analytics"])
 app.include_router(translate.router, prefix="/api/v1/ai", tags=["Translate"])
 app.include_router(ai_tutor_chat.router, tags=["AI Tutor Chat"])
+app.include_router(visual_tutor.router)
+app.include_router(visual_tutor_scan.router)
+app.include_router(visual_tutor_voice.router)
+app.include_router(curriculum.router)
+app.include_router(quiz.router)
 app.include_router(ollama_router.router, prefix="/api/v1", tags=["Ollama"])
-app.include_router(content_agent.router, tags=["Internal Content Agent"])
 app.include_router(notification_agent_router.router, tags=["Notification Agent"])
-app.include_router(ranking_agent_router.router, tags=["Internal Ranking Agent"])
 
 # Static files (dev tools / visualizers)
 _static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
@@ -298,7 +318,25 @@ async def visualizer_redirect():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
+    # Process liveness is not enough for a Visual Tutor deployment. This public
+    # response intentionally reports dependency states but never configuration
+    # values, credentials, prompts, or student data.
+    mongo_ok = False
+    try:
+        if mongodb_manager._client is not None:
+            await mongodb_manager._client.admin.command("ping")
+            mongo_ok = True
+    except Exception:
+        mongo_ok = False
+    ai_ok = await visual_tutor._llm_provider_ready()
+    return {
+        "status": "healthy" if mongo_ok and ai_ok else "unavailable",
+        "dependencies": {
+            "durable_session_store": "healthy" if mongo_ok else "unavailable",
+            "visual_tutor_ai": "healthy" if ai_ok else "unavailable",
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 async def _run_model_warmup() -> None:
