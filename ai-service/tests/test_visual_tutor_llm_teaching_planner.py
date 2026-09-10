@@ -4,6 +4,8 @@ import json
 import shlex
 import sys
 
+import pytest
+
 from api.models.visual_tutor import (
     VisualTutorAction,
     VisualTutorCanvasActionType,
@@ -13,9 +15,12 @@ from api.models.visual_tutor import (
 from api.models.visual_tutor import VisualTutorTurnRequest, VisualTutorTurnState
 from api.services.visual_tutor.llm_teaching_planner import (
     CodexCLIBridgeVisualTutorLLMClient,
+    DeepSeekVisualTutorLLMClient,
     OllamaVisualTutorLLMClient,
     UnavailableVisualTutorLLMClient,
+    _bounded_planner_timeout,
     _default_llm_client,
+    _provider_identity,
 )
 from api.services.visual_tutor.orchestrator import handle_visual_tutor_turn
 
@@ -38,6 +43,18 @@ class RawFakeVisualTutorLLMClient:
     def complete(self, *, system_prompt: str, user_prompt: str) -> str:
         self.calls.append({"system_prompt": system_prompt, "user_prompt": user_prompt})
         return self.raw_output
+
+
+class SequenceVisualTutorLLMClient:
+    """Return one planned model response per call, including repair attempts."""
+
+    def __init__(self, responses: list[str]) -> None:
+        self.responses = responses
+        self.calls: list[dict[str, str]] = []
+
+    def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+        self.calls.append({"system_prompt": system_prompt, "user_prompt": user_prompt})
+        return self.responses.pop(0)
 
 
 def _planner_payload(
@@ -403,21 +420,42 @@ def test_llm_generates_visual_board_action_for_linear_regression() -> None:
             "height": 260,
             "metadata": {"source": "mock_llm"},
         },
+        # TeachingPlanAction.DRAW_POINT is one point per action (bounded x/y
+        # on the action itself), not a batch of points -- see
+        # teaching_plan_contract.py's validate_action.
         {
-            "id": "regression-points",
+            "id": "regression-point-a",
             "type": "draw_point",
             "sequence_index": 1,
-            "points": [
-                {"label": "A", "x": 1, "y": 2},
-                {"label": "B", "x": 2, "y": 4},
-                {"label": "C", "x": 3, "y": 5},
-            ],
+            "x": 1,
+            "y": 2,
+            "label": "A",
             "metadata": {"source": "mock_llm"},
         },
         {
-            "id": "regression-trend-hint",
-            "type": "draw_graph_hint",
+            "id": "regression-point-b",
+            "type": "draw_point",
             "sequence_index": 2,
+            "x": 2,
+            "y": 4,
+            "label": "B",
+            "metadata": {"source": "mock_llm"},
+        },
+        {
+            "id": "regression-point-c",
+            "type": "draw_point",
+            "sequence_index": 3,
+            "x": 3,
+            "y": 5,
+            "label": "C",
+            "metadata": {"source": "mock_llm"},
+        },
+        # "draw_graph_hint" is not a real TeachingPlanActionType;
+        # graph_annotation is the supported way to label a graph.
+        {
+            "id": "regression-trend-hint",
+            "type": "graph_annotation",
+            "sequence_index": 4,
             "text": "Upward trend",
             "metadata": {"source": "mock_llm"},
         },
@@ -444,7 +482,7 @@ def test_llm_generates_visual_board_action_for_linear_regression() -> None:
     assert user_prompt["problem_understanding"]["extracted_entities"]["intercept"] == "2/3"
     assert "draw_axes" in action_types
     assert "draw_point" in action_types
-    assert "draw_graph_hint" in action_types
+    assert "graph_annotation" in action_types
     assert response.interaction is not None
 
 
@@ -645,6 +683,91 @@ def test_llm_invalid_json_falls_back_safely() -> None:
     assert response.board_actions
     assert response.interaction is not None
     assert "not valid json" not in response.spoken_text
+
+
+def test_linear_step_two_stuck_fallback_reteaches_the_coefficient() -> None:
+    """A stuck learner on Step 2 must not be sent back to the Step 1 constant."""
+    fake_llm = RawFakeVisualTutorLLMClient("{ this is invalid json")
+
+    response = handle_visual_tutor_turn(
+        VisualTutorTurnRequest(
+            user_id="student-1",
+            subject="Mathematics",
+            topic="Linear Equations",
+            message="I don't understand",
+            action=VisualTutorAction.REQUEST_STUCK_HELP,
+            current_state=VisualTutorTurnState(
+                problem_text="2x - 5 = 10",
+                current_step_index=1,
+            ),
+        ),
+        llm_client=fake_llm,
+    )
+
+    visible_text = " ".join(
+        [response.spoken_text, response.display_text, response.student_task]
+    ).lower()
+    assert response.metadata["planner_fallback"] is True
+    assert "divide both sides by 2" in visible_text
+    assert "constant -5" not in visible_text
+
+
+def test_llm_uses_exactly_one_repair_attempt_before_accepting_a_valid_plan() -> None:
+    client = SequenceVisualTutorLLMClient(
+        ["{not valid json", json.dumps(_live_stage_payload())]
+    )
+
+    response = handle_visual_tutor_turn(
+        VisualTutorTurnRequest(
+            user_id="student-1",
+            message="Solve a + b = 10 for a",
+            action=VisualTutorAction.SUBMIT_PROBLEM,
+        ),
+        llm_client=client,
+    )
+
+    assert len(client.calls) == 2
+    assert response.metadata["response_source"] == "llm_planner"
+    assert response.metadata["schema_rejection_count"] == 1
+    assert response.metadata["fallback_reason"] is None
+
+
+def test_llm_repair_failure_returns_safe_template_after_one_retry() -> None:
+    client = SequenceVisualTutorLLMClient(["{not valid json", "{still invalid"])
+
+    response = handle_visual_tutor_turn(
+        VisualTutorTurnRequest(
+            user_id="student-1",
+            message="Solve a + b = 10 for a",
+            action=VisualTutorAction.SUBMIT_PROBLEM,
+        ),
+        llm_client=client,
+    )
+
+    assert len(client.calls) == 2
+    assert response.metadata["response_source"] == "template_fallback"
+    assert response.metadata["schema_rejection_count"] == 2
+    assert response.metadata["fallback_reason"] == "invalid_model_output"
+
+
+def test_planner_timeout_returns_a_safe_recoverable_template() -> None:
+    class TimeoutClient:
+        def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+            del system_prompt, user_prompt
+            raise TimeoutError("provider timed out while processing private prompt")
+
+    response = handle_visual_tutor_turn(
+        VisualTutorTurnRequest(
+            user_id="student-1",
+            message="Solve a + b = 10 for a",
+            action=VisualTutorAction.SUBMIT_PROBLEM,
+        ),
+        llm_client=TimeoutClient(),
+    )
+
+    assert response.metadata["response_source"] == "template_fallback"
+    assert response.metadata["fallback_reason"] == "planner_timeout"
+    assert "private prompt" not in str(response.metadata)
 
 
 def test_llm_arbitrary_code_output_falls_back_to_structured_turn() -> None:
@@ -1569,15 +1692,20 @@ def test_default_llm_client_can_use_codex_cli_provider(tmp_path, monkeypatch) ->
     fake_codex.write_text(
         "\n".join(
             [
-                "import json",
                 "import sys",
-                "_prompt = sys.stdin.read()",
-                "print('codex dev output:')",
-                f"print({json.dumps(json.dumps(payload))})",
+                # The real client passes --output-last-message <path> and
+                # reads the JSON plan from that file, not from stdout (see
+                # CodexCLIVisualTutorLLMClient.complete).
+                "output_path = sys.argv[sys.argv.index('--output-last-message') + 1]",
+                "with open(output_path, 'w', encoding='utf-8') as handle:",
+                f"    handle.write({json.dumps(json.dumps(payload))})",
             ]
         )
     )
     monkeypatch.setenv("VISUAL_TUTOR_LLM_PROVIDER", "codex_cli")
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("ALLOW_DEVELOPMENT_FALLBACKS", "true")
     monkeypatch.setenv(
         "VISUAL_TUTOR_CODEX_CLI_COMMAND",
         f"{shlex.quote(sys.executable)} {shlex.quote(str(fake_codex))}",
@@ -1636,11 +1764,16 @@ def test_codex_bridge_client_returns_content(monkeypatch) -> None:
     assert calls[0]["headers"]["Authorization"] == "Bearer secret"
     assert calls[0]["json"]["system_prompt"] == "system"
     assert calls[0]["json"]["user_prompt"] == "user"
-    assert calls[0]["timeout"] == 17
+    # All provider work, including a development bridge call, is bounded by
+    # the production planner deadline (15s cap; the requested 12s is under it).
+    assert calls[0]["timeout"] == 12
 
 
 def test_default_llm_client_can_use_codex_bridge_provider(monkeypatch) -> None:
     monkeypatch.setenv("VISUAL_TUTOR_LLM_PROVIDER", "codex_bridge")
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("ALLOW_DEVELOPMENT_FALLBACKS", "true")
     monkeypatch.setenv(
         "VISUAL_TUTOR_CODEX_BRIDGE_URL",
         "http://bridge.test/complete",
@@ -1731,6 +1864,95 @@ def test_default_llm_client_allows_ollama_only_with_explicit_local_development_f
     assert isinstance(client, OllamaVisualTutorLLMClient)
 
 
+def test_deepseek_client_uses_the_fixed_endpoint_and_default_model(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"content": '{"spoken_text":"ok"}'}}]}
+
+    def fake_post(url, *, headers, json, timeout):
+        captured.update({"url": url, "headers": headers, "json": json, "timeout": timeout})
+        return FakeResponse()
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
+    monkeypatch.delenv("DEEPSEEK_MODEL", raising=False)
+    monkeypatch.setattr("api.services.visual_tutor.llm_teaching_planner.httpx.post", fake_post)
+
+    result = DeepSeekVisualTutorLLMClient(timeout=1).complete(
+        system_prompt="Return JSON.",
+        user_prompt="Teach one step.",
+    )
+
+    assert result == '{"spoken_text":"ok"}'
+    assert captured["url"] == "https://api.deepseek.com/chat/completions"
+    assert captured["headers"] == {
+        "Authorization": "Bearer test-deepseek-key",
+        "Content-Type": "application/json",
+    }
+    assert captured["json"] == {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": "Return JSON."},
+            {"role": "user", "content": "Teach one step."},
+        ],
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"},
+    }
+
+
+def test_deepseek_client_model_is_configurable_via_env(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"content": '{"spoken_text":"ok"}'}}]}
+
+    def fake_post(url, *, headers, json, timeout):
+        captured.update({"json": json})
+        return FakeResponse()
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-reasoner")
+    monkeypatch.setattr("api.services.visual_tutor.llm_teaching_planner.httpx.post", fake_post)
+
+    DeepSeekVisualTutorLLMClient(timeout=1).complete(
+        system_prompt="Return JSON.",
+        user_prompt="Teach one step.",
+    )
+
+    assert captured["json"]["model"] == "deepseek-reasoner"
+
+
+def test_default_llm_client_selects_deepseek_only_when_explicit(monkeypatch) -> None:
+    monkeypatch.setenv("VISUAL_TUTOR_LLM_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
+
+    assert isinstance(_default_llm_client(), DeepSeekVisualTutorLLMClient)
+
+
+def test_auto_provider_selects_deepseek_when_it_is_the_only_hosted_key(monkeypatch) -> None:
+    monkeypatch.delenv("VISUAL_TUTOR_LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
+
+    assert isinstance(_default_llm_client(), DeepSeekVisualTutorLLMClient)
+
+
+def test_deepseek_provider_identity_does_not_mark_the_real_client_as_injected(monkeypatch) -> None:
+    monkeypatch.delenv("DEEPSEEK_MODEL", raising=False)
+    assert _provider_identity(DeepSeekVisualTutorLLMClient()) == (
+        "deepseek",
+        "deepseek-chat",
+    )
+
+
 def test_default_llm_client_never_uses_auto_ollama_in_staging_or_without_flag(monkeypatch) -> None:
     monkeypatch.delenv("VISUAL_TUTOR_LLM_PROVIDER", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
@@ -1746,6 +1968,47 @@ def test_default_llm_client_never_uses_auto_ollama_in_staging_or_without_flag(mo
     assert isinstance(_default_llm_client(), UnavailableVisualTutorLLMClient)
 
 
+@pytest.mark.parametrize("provider", ["ollama", "codex_cli", "codex_bridge"])
+def test_explicit_development_provider_is_rejected_outside_explicit_development(
+    provider, monkeypatch
+) -> None:
+    monkeypatch.setenv("VISUAL_TUTOR_LLM_PROVIDER", provider)
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+    monkeypatch.setenv("APP_ENV", "staging")
+    monkeypatch.setenv("ALLOW_DEVELOPMENT_FALLBACKS", "true")
+
+    assert isinstance(_default_llm_client(), UnavailableVisualTutorLLMClient)
+
+
+def test_planner_timeout_is_never_more_than_fifteen_seconds(monkeypatch) -> None:
+    monkeypatch.setenv("VISUAL_TUTOR_PLANNER_TIMEOUT_SECONDS", "120")
+    assert _bounded_planner_timeout() == 15
+
+
+def test_provider_failure_persists_only_safe_metric_fields() -> None:
+    class SecretFailureClient:
+        def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+            del system_prompt, user_prompt
+            raise RuntimeError("provider body included student text: x = 42")
+
+    response = handle_visual_tutor_turn(
+        VisualTutorTurnRequest(
+            user_id="student-1",
+            subject="Mathematics",
+            topic="Functions",
+            message="Find the inverse of f(x)=2x+3",
+            action=VisualTutorAction.SUBMIT_PROBLEM,
+        ),
+        llm_client=SecretFailureClient(),
+    )
+
+    assert response.metadata["planner_fallback"] is True
+    assert response.metadata["planner_error"] == "provider_unavailable"
+    assert response.metadata["fallback_reason"] == "provider_unavailable"
+    assert response.metadata["provider_name"] == "injected"
+    assert isinstance(response.metadata["latency_ms"], int)
+    assert "x = 42" not in str(response.metadata)
+
 def test_codex_cli_provider_failure_uses_template_fallback(
     tmp_path, monkeypatch
 ) -> None:
@@ -1760,6 +2023,9 @@ def test_codex_cli_provider_failure_uses_template_fallback(
         )
     )
     monkeypatch.setenv("VISUAL_TUTOR_LLM_PROVIDER", "codex_cli")
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("ALLOW_DEVELOPMENT_FALLBACKS", "true")
     monkeypatch.setenv(
         "VISUAL_TUTOR_CODEX_CLI_COMMAND",
         f"{shlex.quote(sys.executable)} {shlex.quote(str(fake_codex))}",
@@ -1776,4 +2042,45 @@ def test_codex_cli_provider_failure_uses_template_fallback(
 
     assert response.final_answer_locked is True
     assert response.metadata["planner_fallback"] is True
-    assert "Codex CLI planner failed" in response.metadata["planner_error"]
+    assert response.metadata["planner_error"] == "provider_unavailable"
+
+import math
+from api.services.visual_tutor.llm_teaching_planner import _compute_board_next_y
+
+def test_compute_board_next_y_empty_list() -> None:
+    assert _compute_board_next_y([]) == 40.0
+    assert _compute_board_next_y(None) == 40.0
+
+def test_compute_board_next_y_normal_elements() -> None:
+    elements = [
+        {"y": 10, "height": 20}, # bottom = 30
+        {"y": 50, "height": 30}, # bottom = 80
+        {"y": 20, "height": 10}, # bottom = 30
+    ]
+    # max bottom is 80, + 18 = 98.0
+    assert _compute_board_next_y(elements) == 98.0
+
+def test_compute_board_next_y_out_of_bounds() -> None:
+    elements = [
+        {"y": -10, "height": -20}, # bounded to 0 + 0 = 0
+        {"y": 6000, "height": 6000}, # bounded to 5000 + 5000 = 10000
+    ]
+    # max bottom is 10000, + 18 = 10018.0
+    assert _compute_board_next_y(elements) == 10018.0
+
+def test_compute_board_next_y_inf_nan() -> None:
+    elements = [
+        {"y": math.inf, "height": 10}, # ignored
+        {"y": 10, "height": math.nan}, # ignored
+        {"y": 10, "height": 20}, # bottom = 30
+    ]
+    # max valid bottom is 30, + 18 = 48.0
+    assert _compute_board_next_y(elements) == 48.0
+
+def test_compute_board_next_y_hidden_and_invalid_types() -> None:
+    elements = [
+        {"y": 100, "height": 50, "hidden": True}, # ignored
+        "not a dict", # ignored
+        {"y": "100", "height": "50"}, # ignored (strings not allowed)
+    ]
+    assert _compute_board_next_y(elements) == 40.0
