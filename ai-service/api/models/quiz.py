@@ -22,6 +22,7 @@ class QuizGenerationRequest(BaseModel):
     learning_goals: list[str] = Field(default_factory=list, max_length=12)
     misconceptions: list[str] = Field(default_factory=list, max_length=12)
     hint_count: int = Field(default=0, ge=0, le=100)
+    stuck_count: int = Field(default=0, ge=0, le=100)
     verification_results: list[str] = Field(default_factory=list, max_length=30)
     prior_mastery: float | None = Field(default=None, ge=0, le=1)
     prior_quiz_score: int | None = Field(default=None, ge=0, le=100)

@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "record_type": "interactive_teaching_moment_draft",
+  "status": "source_transcribed_for_local_mvp",
+  "student_delivery": "disabled",
+  "grade": 12,
+  "subject": "Mathematics",
+  "lesson": {
+    "id": "math.g12.lesson1.limits-of-functions",
+    "khmer_source_label": "លីមីតនៃអនុគមន៍",
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 8
+  },
+  "teaching_moment_id": "math.g12.lesson1.limits-of-functions.composition.05",
+  "curriculum_version": "local-g12-math-limits-2025-10-01-v1",
+  "source": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "file_name": "Pages from 2025-10-01-00007213.pdf",
+    "provided_local_path": "/Users/macbookpro/Documents/Pages from 2025-10-01-00007213.pdf",
+    "pdf_pages": [8, 10],
+    "printed_pages": [9, 11]
+  },
+  "glossary_terms": [
+    {"term_id": "limit", "term_khmer": "លីមីត", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 1, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"},
+    {"term_id": "composite-function", "term_khmer": "អនុគមន៍ផ្សំ", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 9, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"}
+  ],
+  "prerequisite_concepts": [
+    {"id": "function-values", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 8},
+    {"id": "finite-limit-at-a-point", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 1}
+  ],
+  "learning_objectives": [
+    {"text": "Recognize y = (x+1)^2 as a composite function gof(x) = g[f(x)] and use a value table to observe its limit as x approaches 0.", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 9}
+  ],
+  "source_formulas": [
+    {"expression": "y = (x + 1)^2, composed as f: x -> x + 1, g: x -> x^2", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 9},
+    {"expression": "gof(x) = g[f(x)]", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 8},
+    {"expression": "lim (3x^2 - 21)^(1/3) as x -> 4 = 3", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 10}
+  ],
+  "common_misconceptions": [
+    {"category": "assuming_fog_and_gof_are_the_same_function", "review_status": "pedagogical_review_required"}
+  ],
+  "teaching_plan": {
+    "representation": "function_mapping_diagram",
+    "spoken_explanation": {
+      "text": "អនុគមន៍ y = (x+1)² អាចសរសេរជាការផ្សំគ្នា (composition) នៃអនុគមន៍ពីរ៖ f: x → x+1 និង g: x → x²។ សូមសង្កេតតារាងតម្លៃ នៅពេល x ខិតជិត 0។",
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 9,
+      "glossary_term_ids": ["composite-function", "limit"]
+    },
+    "board_actions": [
+      {"id": "composition-title", "type": "write_equation", "sequence_index": 0, "duration_ms": 500, "layout_zone": "problem", "layout_flow": "vertical", "latex": "y = (x + 1)^2 = g[f(x)], \\; f: x \\to x+1, \\; g: x \\to x^2", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 9},
+      {"id": "composition-table", "type": "show_table", "sequence_index": 1, "duration_ms": 700, "layout_zone": "visual", "layout_flow": "vertical", "columns": ["x", "f(x) = x+1", "g[f(x)] = (x+1)²"], "rows": [["-0.01", "0.99", "0.9801"], ["-0.001", "0.999", "0.998"], ["0", "1", "1"], ["0.0001", "1.001", "1.002"], ["0.01", "1.01", "1.02"]], "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 9},
+      {"id": "composition-student-task", "type": "student_task", "sequence_index": 2, "duration_ms": 0, "layout_zone": "student_task", "layout_flow": "vertical", "text": "តើ (x+1)² ខិតជិតលេខណា នៅពេល x ខិតជិត 0?", "requires_student_response": true, "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 9}
+    ],
+    "student_task": {
+      "task_type": "table_observation",
+      "requires_student_response": true,
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 9
+    },
+    "hidden_answer_policy": {"mode": "hidden", "deterministic_policy_permits_final_reveal": false},
+    "waiting_for_student_input": true,
+    "answer_revealed": false
+  },
+  "interactive_progression": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 9,
+    "steps": [
+      {"id": "identify-composition", "representation": "function_mapping_diagram", "task": "សូមកំណត់អនុគមន៍ f និង g ដែលផ្សំគ្នាបង្កើតបាន y = (x+1)²។", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 9},
+      {"id": "observe-table", "representation": "value_table", "task": "តើ (x+1)² ខិតជិតលេខណា នៅពេល x ខិតជិត 0?", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 9},
+      {"id": "apply-composition-rule", "representation": "symbolic_transformation", "formula": "\\lim_{x \\to 4} \\sqrt[3]{3x^2 - 21} = 3", "task": "ដោយប្រើច្បាប់លីមីតនៃអនុគមន៍ផ្សំ សូមគណនា lim (3x²-21)^(1/3) កាលណា x ខិតជិត 4។", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 10}
+    ]
+  },
+  "publication_requirements": {
+    "source_transcription_qa": "required",
+    "approved_lesson_chunk": "required",
+    "reviewed_glossary_set": "required"
+  }
+}

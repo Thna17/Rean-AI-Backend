@@ -5,12 +5,16 @@ from typing import Iterable, Optional
 from api.models.visual_tutor import VisualTutorProblemUnderstandingResult
 from api.services.visual_tutor.solvers import (
     ArithmeticExpressionSolver,
+    FunctionGraphSolver,
+    LimitOfFunctionSolver,
     LineThroughPointsSolver,
     LinearEquationSolver,
     QuadraticEquationBasicSolver,
     SimplePercentageWordProblemSolver,
     SlopeFromTwoPointsSolver,
     VisualTutorSolver,
+    PhysicsKinematicsSolver,
+    ChemistryBalancingSolver,
 )
 
 
@@ -23,8 +27,12 @@ class VisualTutorSolverRegistry:
                 SlopeFromTwoPointsSolver(),
                 LinearEquationSolver(),
                 QuadraticEquationBasicSolver(),
+                FunctionGraphSolver(),
+                LimitOfFunctionSolver(),
                 ArithmeticExpressionSolver(),
                 SimplePercentageWordProblemSolver(),
+                PhysicsKinematicsSolver(),
+                ChemistryBalancingSolver(),
             ]
         )
 

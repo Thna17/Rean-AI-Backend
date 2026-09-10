@@ -70,6 +70,34 @@ def test_explain_differently_switches_to_a_real_alternate_representation() -> No
     assert decision.metadata["explain_differently_requires_representation_change"] is True
 
 
+def test_supported_grade_math_topics_have_distinct_adaptive_visual_choices() -> None:
+    cases = [
+        ("Calculate 1/2 + 1/4", "number_line", "table"),
+        ("What is 20% of 50?", "table", "number_line"),
+        ("Graph y = 2x + 1", "coordinate_graph", "table"),
+        ("Graph y = x^2 - 5x + 6", "coordinate_graph", "table"),
+    ]
+    for message, initial_representation, alternate_representation in cases:
+        problem = _problem(message)
+        initial = plan_adaptive_tutor_move(
+            problem_understanding=problem,
+            student_intent=VisualTutorStudentIntent.NEW_PROBLEM,
+        )
+        alternate = plan_adaptive_tutor_move(
+            problem_understanding=problem,
+            student_input_understanding=_input(
+                intent=VisualTutorStudentIntent.REQUEST_EXPLAIN_DIFFERENTLY,
+                relevance=VisualTutorInputRelevance.CLARIFICATION,
+            ),
+            student_intent=VisualTutorStudentIntent.REQUEST_EXPLAIN_DIFFERENTLY,
+            strategy_history=[{"representation": initial_representation}],
+        )
+
+        assert initial.metadata["representation"] == initial_representation
+        assert alternate.metadata["representation"] == alternate_representation
+        assert alternate.metadata["representation"] != initial.metadata["representation"]
+
+
 def test_stuck_reteaches_current_visual_step_without_final_answer() -> None:
     board_state = TeachingBoardState(
         focus_element_id="step-1",

@@ -94,3 +94,4 @@ gliner>=0.2.26
 # Optional: Redis (if needed later)
 # redis>=7.4.1
 # aioredis>=2.0.1
+pillow-heif>=0.16.0

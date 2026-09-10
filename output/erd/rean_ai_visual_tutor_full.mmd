@@ -1,0 +1,548 @@
+erDiagram
+  USERS {
+    string user_id_PK
+    string firebase_uid_UNIQUE
+    string full_name
+    string email_UNIQUE
+    string role
+    string profile_image_url
+    string account_status
+    string preferred_language
+    string created_at
+    string updated_at
+    string last_login_at
+  }
+  STUDENT_PROFILES {
+    string student_profile_id_PK
+    string user_id_FK_UNIQUE
+    string grade_level_id_FK
+    string explanation_level
+    string learning_goal
+    string onboarding_completed
+    string current_streak
+    string longest_streak
+    string total_learning_time
+    string created_at
+    string updated_at
+  }
+  GRADE_LEVELS {
+    string grade_level_id_PK
+    string grade_name
+    string grade_number_UNIQUE
+    string description
+    string status
+    string created_at
+    string updated_at
+  }
+  SUBJECTS {
+    string subject_id_PK
+    string subject_name
+    string subject_code_UNIQUE
+    string icon_url
+    string description
+    string status
+    string display_order
+    string created_at
+    string updated_at
+  }
+  STUDENT_SUBJECTS {
+    string student_subject_id_PK
+    string student_profile_id_FK
+    string subject_id_FK
+    string selected_at
+    string current_progress
+    string mastery_level
+    string status
+  }
+  CURRICULUM_UNITS {
+    string unit_id_PK
+    string subject_id_FK
+    string grade_level_id_FK
+    string unit_name
+    string description
+    string display_order
+    string status
+    string created_at
+    string updated_at
+  }
+  TOPICS {
+    string topic_id_PK
+    string unit_id_FK
+    string subject_id_FK
+    string grade_level_id_FK
+    string topic_name
+    string topic_code
+    string description
+    string difficulty_level
+    string learning_objective
+    string visualization_support
+    string verification_support
+    string status
+    string display_order
+    string created_at
+    string updated_at
+  }
+  TOPIC_PREREQUISITES {
+    string prerequisite_id_PK
+    string topic_id_FK
+    string prerequisite_topic_id_FK
+    string relationship_type
+    string created_at
+  }
+  LESSONS {
+    string lesson_id_PK
+    string topic_id_FK
+    string title
+    string summary
+    string content_reference
+    string estimated_duration
+    string difficulty_level
+    string status
+    string created_by_FK
+    string created_at
+    string updated_at
+  }
+  TUTOR_SESSIONS {
+    string tutor_session_id_PK
+    string student_profile_id_FK
+    string subject_id_FK
+    string topic_id_FK
+    string lesson_id_FK_NULL
+    string original_question
+    string detected_language
+    string detected_intent
+    string detected_problem_type
+    string tutor_mode
+    string current_stage
+    string teaching_strategy
+    string explanation_level
+    string session_status
+    string answer_revealed
+    string verification_status
+    string started_at
+    string completed_at
+    string created_at
+    string updated_at
+  }
+  TUTOR_TURNS {
+    string tutor_turn_id_PK
+    string tutor_session_id_FK
+    string turn_number
+    string sender_type
+    string message_text
+    string stage
+    string teaching_strategy
+    string interaction_type
+    string expected_answer
+    string hint_level
+    string ai_provider
+    string model_name
+    string response_latency_ms
+    string structured_payload_JSON
+    string created_at
+  }
+  VISUALIZATIONS {
+    string visualization_id_PK
+    string tutor_turn_id_FK_UNIQUE
+    string visualization_type
+    string visualization_data_JSON
+    string title
+    string description
+    string render_version
+    string validation_status
+    string created_at
+  }
+  STUDENT_ATTEMPTS {
+    string attempt_id_PK
+    string tutor_session_id_FK
+    string tutor_turn_id_FK
+    string student_profile_id_FK
+    string submitted_answer
+    string answer_format
+    string is_correct
+    string is_partially_correct
+    string score
+    string response_time_seconds
+    string hint_used
+    string attempt_number
+    string feedback
+    string misconception_id_FK_NULL
+    string created_at
+  }
+  HINT_USAGES {
+    string hint_usage_id_PK
+    string tutor_session_id_FK
+    string tutor_turn_id_FK
+    string student_profile_id_FK
+    string hint_level
+    string hint_type
+    string hint_content
+    string requested_at
+  }
+  MATHEMATICAL_VERIFICATIONS {
+    string verification_id_PK
+    string tutor_session_id_FK
+    string tutor_turn_id_FK
+    string verification_type
+    string input_expression
+    string expected_result
+    string generated_result
+    string verification_status
+    string verification_details_JSON
+    string engine_name
+    string regeneration_count
+    string verified_at
+  }
+  MISCONCEPTIONS {
+    string misconception_id_PK
+    string topic_id_FK
+    string misconception_code
+    string misconception_name
+    string description
+    string recommended_strategy
+    string status
+    string created_at
+    string updated_at
+  }
+  STUDENT_MISCONCEPTIONS {
+    string student_misconception_id_PK
+    string student_profile_id_FK
+    string misconception_id_FK
+    string tutor_session_id_FK_NULL
+    string detection_count
+    string confidence_score
+    string first_detected_at
+    string last_detected_at
+    string resolved_at
+    string status
+  }
+  QUIZZES {
+    string quiz_id_PK
+    string subject_id_FK
+    string topic_id_FK
+    string grade_level_id_FK
+    string generated_from_session_id_FK_NULL
+    string title
+    string description
+    string difficulty_level
+    string generation_source
+    string verification_status
+    string time_limit_minutes
+    string total_questions
+    string status
+    string created_by_FK_NULL
+    string created_at
+    string updated_at
+  }
+  QUIZ_QUESTIONS {
+    string quiz_question_id_PK
+    string quiz_id_FK
+    string question_order
+    string question_text
+    string question_type
+    string visualization_data_JSON_NULL
+    string difficulty_level
+    string explanation
+    string verification_status
+    string created_at
+  }
+  QUIZ_OPTIONS {
+    string quiz_option_id_PK
+    string quiz_question_id_FK
+    string option_label
+    string option_text
+    string is_correct
+    string display_order
+  }
+  QUIZ_ATTEMPTS {
+    string quiz_attempt_id_PK
+    string quiz_id_FK
+    string student_profile_id_FK
+    string score
+    string correct_count
+    string incorrect_count
+    string skipped_count
+    string started_at
+    string submitted_at
+    string completion_status
+    string created_at
+  }
+  QUIZ_ANSWERS {
+    string quiz_answer_id_PK
+    string quiz_attempt_id_FK
+    string quiz_question_id_FK
+    string selected_option_id_FK_NULL
+    string submitted_answer
+    string is_correct
+    string is_partially_correct
+    string score_awarded
+    string feedback
+    string misconception_id_FK_NULL
+    string answered_at
+  }
+  STUDENT_TOPIC_PROGRESS {
+    string progress_id_PK
+    string student_profile_id_FK
+    string topic_id_FK
+    string mastery_score
+    string lessons_completed
+    string quizzes_completed
+    string average_quiz_score
+    string correct_attempts
+    string incorrect_attempts
+    string hints_used
+    string last_activity_at
+    string status
+    string updated_at
+  }
+  LEARNING_ACTIVITIES {
+    string activity_id_PK
+    string student_profile_id_FK
+    string activity_type
+    string subject_id_FK_NULL
+    string topic_id_FK_NULL
+    string tutor_session_id_FK_NULL
+    string quiz_attempt_id_FK_NULL
+    string title
+    string duration_seconds
+    string completion_status
+    string activity_at
+  }
+  STUDY_STREAKS {
+    string streak_id_PK
+    string student_profile_id_FK
+    string activity_date
+    string study_minutes
+    string activity_count
+    string streak_qualified
+    string created_at
+  }
+  VOICE_SESSIONS {
+    string voice_session_id_PK
+    string student_profile_id_FK
+    string tutor_session_id_FK_NULL
+    string language
+    string session_status
+    string started_at
+    string ended_at
+    string created_at
+  }
+  VOICE_INTERACTIONS {
+    string voice_interaction_id_PK
+    string voice_session_id_FK
+    string audio_input_url
+    string transcript_text
+    string confidence_score
+    string ai_response_text
+    string audio_response_url
+    string processing_status
+    string processing_time_ms
+    string created_at
+  }
+  NOTIFICATION_PREFERENCES {
+    string preference_id_PK
+    string user_id_FK_UNIQUE
+    string study_reminder_enabled
+    string streak_reminder_enabled
+    string announcement_enabled
+    string reminder_time
+    string timezone
+    string updated_at
+  }
+  DEVICE_TOKENS {
+    string device_token_id_PK
+    string user_id_FK
+    string token_UNIQUE
+    string platform
+    string device_name
+    string is_active
+    string last_used_at
+    string created_at
+  }
+  NOTIFICATIONS {
+    string notification_id_PK
+    string title
+    string message
+    string notification_type
+    string target_grade_id_FK_NULL
+    string target_subject_id_FK_NULL
+    string scheduled_at
+    string sent_at
+    string status
+    string created_by_FK
+    string created_at
+  }
+  NOTIFICATION_DELIVERIES {
+    string delivery_id_PK
+    string notification_id_FK
+    string user_id_FK
+    string device_token_id_FK_NULL
+    string delivery_status
+    string provider_response_JSON
+    string delivered_at
+    string opened_at
+  }
+  REPORTED_AI_RESPONSES {
+    string report_id_PK
+    string student_profile_id_FK
+    string tutor_session_id_FK
+    string tutor_turn_id_FK
+    string report_type
+    string description
+    string severity
+    string verification_status
+    string assigned_admin_id_FK_NULL
+    string report_status
+    string resolution_note
+    string reported_at
+    string resolved_at
+  }
+  AI_REQUEST_LOGS {
+    string ai_request_log_id_PK
+    string tutor_session_id_FK_NULL
+    string request_type
+    string provider
+    string model_name
+    string prompt_version
+    string response_status
+    string response_latency_ms
+    string token_input
+    string token_output
+    string estimated_cost
+    string retry_count
+    string error_code
+    string created_at
+  }
+  AI_ERROR_LOGS {
+    string ai_error_log_id_PK
+    string ai_request_log_id_FK
+    string service_name
+    string error_type
+    string error_message
+    string severity
+    string retry_status
+    string resolved_status
+    string created_at
+    string resolved_at
+  }
+  TUTOR_RESPONSE_CACHE {
+    string cache_id_PK
+    string query_fingerprint_UNIQUE
+    string normalized_query
+    string subject_id_FK
+    string topic_id_FK
+    string grade_level_id_FK
+    string problem_type
+    string explanation_level
+    string structured_response_JSON
+    string verification_status
+    string response_version
+    string usage_count
+    string created_at
+    string expires_at
+    string last_used_at
+  }
+  CACHE_REUSE_LOGS {
+    string reuse_log_id_PK
+    string cache_id_FK_NULL
+    string tutor_session_id_FK
+    string reuse_type
+    string compatibility_status
+    string rejection_reason
+    string latency_saved_ms
+    string created_at
+  }
+  AUDIT_LOGS {
+    string audit_log_id_PK
+    string admin_user_id_FK
+    string action_type
+    string module
+    string target_entity_type
+    string target_entity_id
+    string previous_data_JSON
+    string new_data_JSON
+    string ip_address
+    string device_info
+    string action_result
+    string created_at
+  }
+  SYSTEM_SETTINGS {
+    string setting_id_PK
+    string setting_group
+    string setting_key
+    string setting_value
+    string value_type
+    string is_sensitive
+    string updated_by_FK
+    string updated_at
+  }
+  USERS ||--o| STUDENT_PROFILES : "user may have one student profile"
+  GRADE_LEVELS ||--o{ STUDENT_PROFILES : "grade has students"
+  STUDENT_PROFILES ||--o{ STUDENT_SUBJECTS : "student selected subjects"
+  SUBJECTS ||--o{ STUDENT_SUBJECTS : "subject selected by students"
+  SUBJECTS ||--o{ CURRICULUM_UNITS : "subject units"
+  GRADE_LEVELS ||--o{ CURRICULUM_UNITS : "grade units"
+  CURRICULUM_UNITS ||--o{ TOPICS : "unit topics"
+  SUBJECTS ||--o{ TOPICS : "subject topics"
+  GRADE_LEVELS ||--o{ TOPICS : "grade topics"
+  TOPICS ||--o{ TOPIC_PREREQUISITES : "topic prerequisites"
+  TOPICS ||--o{ LESSONS : "topic lessons"
+  USERS ||--o{ LESSONS : "admin authored lessons"
+  STUDENT_PROFILES ||--o{ TUTOR_SESSIONS : "student sessions"
+  SUBJECTS ||--o{ TUTOR_SESSIONS : "session subject"
+  TOPICS ||--o{ TUTOR_SESSIONS : "session topic"
+  LESSONS |o--o{ TUTOR_SESSIONS : "optional lesson grounding"
+  TUTOR_SESSIONS ||--o{ TUTOR_TURNS : "ordered turns"
+  TUTOR_TURNS ||--o| VISUALIZATIONS : "turn visualization"
+  TUTOR_SESSIONS ||--o{ STUDENT_ATTEMPTS : "session attempts"
+  TUTOR_TURNS ||--o{ STUDENT_ATTEMPTS : "turn attempts"
+  STUDENT_PROFILES ||--o{ STUDENT_ATTEMPTS : "student attempts"
+  MISCONCEPTIONS |o--o{ STUDENT_ATTEMPTS : "attempt misconception"
+  TUTOR_SESSIONS ||--o{ HINT_USAGES : "session hints"
+  TUTOR_TURNS ||--o{ HINT_USAGES : "turn hints"
+  STUDENT_PROFILES ||--o{ HINT_USAGES : "student hints"
+  TUTOR_SESSIONS ||--o{ MATHEMATICAL_VERIFICATIONS : "session verifications"
+  TUTOR_TURNS ||--o{ MATHEMATICAL_VERIFICATIONS : "step verification"
+  TOPICS ||--o{ MISCONCEPTIONS : "topic misconception catalog"
+  STUDENT_PROFILES ||--o{ STUDENT_MISCONCEPTIONS : "student misconceptions"
+  MISCONCEPTIONS ||--o{ STUDENT_MISCONCEPTIONS : "detected misconception"
+  TUTOR_SESSIONS |o--o{ STUDENT_MISCONCEPTIONS : "detection source"
+  SUBJECTS ||--o{ QUIZZES : "subject quizzes"
+  TOPICS ||--o{ QUIZZES : "topic quizzes"
+  GRADE_LEVELS ||--o{ QUIZZES : "grade quizzes"
+  TUTOR_SESSIONS |o--o{ QUIZZES : "generated follow-up"
+  USERS |o--o{ QUIZZES : "quiz creator"
+  QUIZZES ||--o{ QUIZ_QUESTIONS : "quiz questions"
+  QUIZ_QUESTIONS ||--o{ QUIZ_OPTIONS : "question options"
+  QUIZZES ||--o{ QUIZ_ATTEMPTS : "quiz attempts"
+  STUDENT_PROFILES ||--o{ QUIZ_ATTEMPTS : "student quiz attempts"
+  QUIZ_ATTEMPTS ||--o{ QUIZ_ANSWERS : "attempt answers"
+  QUIZ_QUESTIONS ||--o{ QUIZ_ANSWERS : "question answers"
+  QUIZ_OPTIONS |o--o{ QUIZ_ANSWERS : "selected option"
+  MISCONCEPTIONS |o--o{ QUIZ_ANSWERS : "answer misconception"
+  STUDENT_PROFILES ||--o{ STUDENT_TOPIC_PROGRESS : "topic progress"
+  TOPICS ||--o{ STUDENT_TOPIC_PROGRESS : "topic progress"
+  STUDENT_PROFILES ||--o{ LEARNING_ACTIVITIES : "activity stream"
+  STUDENT_PROFILES ||--o{ STUDY_STREAKS : "daily streaks"
+  STUDENT_PROFILES ||--o{ VOICE_SESSIONS : "voice sessions"
+  TUTOR_SESSIONS |o--o{ VOICE_SESSIONS : "linked voice mode"
+  VOICE_SESSIONS ||--o{ VOICE_INTERACTIONS : "voice turns"
+  USERS ||--o| NOTIFICATION_PREFERENCES : "preferences"
+  USERS ||--o{ DEVICE_TOKENS : "devices"
+  USERS ||--o{ NOTIFICATIONS : "admin created notifications"
+  NOTIFICATIONS ||--o{ NOTIFICATION_DELIVERIES : "deliveries"
+  USERS ||--o{ NOTIFICATION_DELIVERIES : "user delivery"
+  DEVICE_TOKENS |o--o{ NOTIFICATION_DELIVERIES : "device delivery"
+  STUDENT_PROFILES ||--o{ REPORTED_AI_RESPONSES : "student reports"
+  TUTOR_SESSIONS ||--o{ REPORTED_AI_RESPONSES : "reported session"
+  TUTOR_TURNS ||--o{ REPORTED_AI_RESPONSES : "reported turn"
+  USERS |o--o{ REPORTED_AI_RESPONSES : "assigned admin"
+  TUTOR_SESSIONS |o--o{ AI_REQUEST_LOGS : "AI requests"
+  AI_REQUEST_LOGS ||--o{ AI_ERROR_LOGS : "AI errors"
+  SUBJECTS ||--o{ TUTOR_RESPONSE_CACHE : "cache subject"
+  TOPICS ||--o{ TUTOR_RESPONSE_CACHE : "cache topic"
+  GRADE_LEVELS ||--o{ TUTOR_RESPONSE_CACHE : "cache grade"
+  TUTOR_RESPONSE_CACHE |o--o{ CACHE_REUSE_LOGS : "reuse logs"
+  TUTOR_SESSIONS ||--o{ CACHE_REUSE_LOGS : "session cache decisions"
+  USERS ||--o{ AUDIT_LOGS : "admin actions"
+  USERS ||--o{ SYSTEM_SETTINGS : "setting updater"

@@ -219,10 +219,10 @@ def test_unsupported_open_ended_question_needs_clarification() -> None:
         ("Solve n^2 - 9 = 0", "quadratic_equation", "solve", "en"),
         ("a^2 + 2a + 1 = 0", "quadratic_equation", "unknown", "en"),
         ("ដោះស្រាយ x^2 - 4 = 0", "quadratic_equation", "solve", "km"),
-        ("calculate 12 + 7 * 3", "arithmetic_expression", "calculate", "en"),
-        ("what is (8 + 4) / 2?", "arithmetic_expression", "calculate", "en"),
-        ("evaluate 3^2 + 4^2", "arithmetic_expression", "calculate", "en"),
-        ("គណនា 45 - 12 + 3", "arithmetic_expression", "calculate", "km"),
+        ("calculate 12 + 7 * 3", "integer_arithmetic", "calculate", "en"),
+        ("what is (8 + 4) / 2?", "fraction_decimal_arithmetic", "calculate", "en"),
+        ("evaluate 3^2 + 4^2", "integer_arithmetic", "calculate", "en"),
+        ("គណនា 45 - 12 + 3", "integer_arithmetic", "calculate", "km"),
         ("What is 20% of 50?", "simple_percentage_word_problem", "calculate", "en"),
         ("Find 15 percent of 80", "simple_percentage_word_problem", "find", "en"),
         (
@@ -244,7 +244,7 @@ def test_unsupported_open_ended_question_needs_clarification() -> None:
             "en",
         ),
         ("Graph f(x)=sin(x)", "function_graph", "draw", "en"),
-        ("Draw y = 2x + 1", "function_graph", "draw", "en"),
+        ("Draw y = 2x + 1", "straight_line_graph", "draw", "en"),
         ("គូរ f(x)=x^2", "function_graph", "draw", "km"),
         (
             "Find the linear regression for points (1,2), (2,4), (3,5)",

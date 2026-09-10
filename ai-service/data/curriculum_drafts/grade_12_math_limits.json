@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "record_type": "curriculum_source_draft",
+  "status": "source_transcribed_for_local_mvp",
+  "student_delivery": "disabled",
+  "grade": 12,
+  "subject": "Mathematics",
+  "lesson": {
+    "number": 1,
+    "khmer_source_label": "លីមីតនៃអនុគមន៍",
+    "source_pdf_page": 1,
+    "source_printed_page": 2
+  },
+  "source": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "type": "provided_pdf",
+    "file_name": "Pages from 2025-10-01-00007213.pdf",
+    "provided_local_path": "/Users/macbookpro/Documents/Pages from 2025-10-01-00007213.pdf",
+    "authority_status": "source_provided_by_project_owner",
+    "evidence": {
+      "lesson_pdf_pages": {
+        "start": 1,
+        "end": 26,
+        "printed_page_start": 2,
+        "printed_page_end": 27
+      }
+    }
+  },
+  "curriculum_version": "local-g12-math-limits-2025-10-01-v1",
+  "mvp_scope": {
+    "supported_contexts": [
+      {
+        "grade": 12,
+        "subject": "Mathematics",
+        "topic_id": "math-g12-limits-of-functions",
+        "lesson_id": "math.g12.lesson1.limits-of-functions"
+      }
+    ],
+    "unsupported_by_default": true,
+    "unsupported_contexts": "all other grades, subjects, topics, and lessons"
+  },
+  "review_requirements": {
+    "source_transcription_qa": "required_before_student_delivery",
+    "approved_lesson_chunk": "required_before_student_delivery",
+    "reviewed_glossary_set": "required_before_student_delivery",
+    "distribution_rights_confirmation": "required_before_publication"
+  },
+  "glossary_terms": [
+    {
+      "term_id": "limit",
+      "term_khmer": "លីមីត",
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 1,
+      "reviewer_status": "source_transcription_verified",
+      "curriculum_version": "local-g12-math-limits-2025-10-01-v1"
+    },
+    {
+      "term_id": "function",
+      "term_khmer": "អនុគមន៍",
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 1,
+      "reviewer_status": "source_transcription_verified",
+      "curriculum_version": "local-g12-math-limits-2025-10-01-v1"
+    },
+    {
+      "term_id": "composite-function",
+      "term_khmer": "អនុគមន៍ផ្សំ",
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 9,
+      "reviewer_status": "source_transcription_verified",
+      "curriculum_version": "local-g12-math-limits-2025-10-01-v1"
+    }
+  ],
+  "source_formula_catalog": [
+    {"expression": "f(x) = (2x^2 + x - 3)/(x - 1)", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 1},
+    {"expression": "lim_(x→1) f(x) = 5", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 2},
+    {"expression": "lim_(x→2−) 3/(x - 2) = -∞ and lim_(x→2+) 3/(x - 2) = +∞", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 3},
+    {"expression": "lim_(x→+∞) 1/x = 0 and lim_(x→-∞) 1/x = 0", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 4},
+    {"expression": "lim_(x→2) √x = √2", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 7},
+    {"expression": "lim_(x→a) f(g(x)) = f(L)", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 10},
+    {"expression": "lim_(x→2) (x^3 - 8)/(x - 2) = 12", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 12},
+    {"expression": "lim_(x→0) sin(x)/x = 1", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 15},
+    {"expression": "lim_(x→+∞) e^x = +∞ and lim_(x→-∞) e^x = 0", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 17},
+    {"expression": "lim_(x→+∞) ln(x) = +∞ and lim_(x→0+) ln(x) = -∞", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 19}
+  ],
+  "teachable_moment_index": [
+    {"id": "math.g12.lesson1.limits-of-functions.finite-at-point.01", "source_id": "provided-pdf-2025-10-01-00007213", "source_pages": [1, 2], "visual_representation": "source_table", "authoring_status": "interactive_draft_created"},
+    {"id": "math.g12.lesson1.limits-of-functions.one-sided-infinite.02", "source_id": "provided-pdf-2025-10-01-00007213", "source_pages": [2, 3], "visual_representation": "one_sided_table", "authoring_status": "interactive_draft_created"},
+    {"id": "math.g12.lesson1.limits-of-functions.at-infinity.03", "source_id": "provided-pdf-2025-10-01-00007213", "source_pages": [4, 5], "visual_representation": "value_table", "authoring_status": "interactive_draft_created"},
+    {"id": "math.g12.lesson1.limits-of-functions.algebraic-laws.04", "source_id": "provided-pdf-2025-10-01-00007213", "source_pages": [6, 7], "visual_representation": "equation_transformation", "authoring_status": "interactive_draft_created"},
+    {"id": "math.g12.lesson1.limits-of-functions.composition.05", "source_id": "provided-pdf-2025-10-01-00007213", "source_pages": [8, 10], "visual_representation": "function_mapping_diagram", "authoring_status": "interactive_draft_created"},
+    {"id": "math.g12.lesson1.limits-of-functions.comparison.06", "source_id": "provided-pdf-2025-10-01-00007213", "source_pages": [11], "visual_representation": "inequality_comparison", "authoring_status": "interactive_draft_created"},
+    {"id": "math.g12.lesson1.limits-of-functions.indeterminate-forms.07", "source_id": "provided-pdf-2025-10-01-00007213", "source_pages": [12, 14], "visual_representation": "equation_transformation", "authoring_status": "interactive_draft_created"},
+    {"id": "math.g12.lesson1.limits-of-functions.trigonometric.08", "source_id": "provided-pdf-2025-10-01-00007213", "source_pages": [15, 16], "visual_representation": "unit_circle_diagram", "authoring_status": "interactive_draft_created"},
+    {"id": "math.g12.lesson1.limits-of-functions.exponential.09", "source_id": "provided-pdf-2025-10-01-00007213", "source_pages": [17, 18], "visual_representation": "value_table", "authoring_status": "interactive_draft_created"},
+    {"id": "math.g12.lesson1.limits-of-functions.logarithmic.10", "source_id": "provided-pdf-2025-10-01-00007213", "source_pages": [19, 21], "visual_representation": "value_table", "authoring_status": "interactive_draft_created"}
+  ],
+  "curriculum_review_gaps": [
+    {"gap": "Publisher, edition, and distribution rights are not established by the supplied excerpt.", "status": "curriculum_review_required"},
+    {"gap": "Only the three listed Khmer terms were transcribed and verified for the local draft's master glossary; each moment file also carries its own per-topic term (one-sided/infinite limit, limit at infinity, limit operations, comparison theorem, indeterminate form, trigonometric/exponential/logarithmic function) transcribed the same way, but none have been through a separate terminology review pass.", "status": "curriculum_review_required"},
+    {"gap": "Moments 02-10 now have interactive drafts (grade_12_math_limits_moment_02.json through _10.json), each transcribed directly from the cited source pages -- but like moment 01, they are drafts, not reviewed/approved lesson chunks, and student_delivery stays \"disabled\" until source_transcription_qa, approved_lesson_chunk, and reviewed_glossary_set are all completed per publication_requirements.", "status": "curriculum_review_required"},
+    {"gap": "Source pages 22–24 are lesson summary material and pages 25–26 are exercises; they are catalogued in the lesson range but excluded from local MVP moment authoring pending separate review.", "status": "curriculum_review_required"}
+  ],
+  "publication_state": {
+    "production_retrieval_enabled": false,
+    "pilot_enabled": false,
+    "local_mvp_only": true
+  }
+}

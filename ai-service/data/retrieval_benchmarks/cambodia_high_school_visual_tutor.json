@@ -1,0 +1,8 @@
+[
+  {"id":"kh-g10-math-linear","grade":10,"subject":"Mathematics","topic":"Linear Equations","language":"km","query":"ដោះស្រាយ 2x + 5 = 15","expected_concept":"linear_equation_one_variable"},
+  {"id":"kh-g11-math-quadratic","grade":11,"subject":"Mathematics","topic":"Quadratic Functions","language":"en","query":"find the vertex of y = x² - 4x + 3","expected_concept":"quadratic_equation"},
+  {"id":"kh-g10-physics-motion","grade":10,"subject":"Physics","topic":"Motion","language":"km","query":"calculate velocity from distance and time","expected_concept":"kinematics"},
+  {"id":"kh-g11-physics-forces","grade":11,"subject":"Physics","topic":"Forces","language":"en","query":"draw forces on a block","expected_concept":"newtons_laws"},
+  {"id":"kh-g10-chemistry-atoms","grade":10,"subject":"Chemistry","topic":"Atomic Structure","language":"km","query":"describe electron shells","expected_concept":"atomic_structure"},
+  {"id":"kh-g12-chemistry-equilibrium","grade":12,"subject":"Chemistry","topic":"Chemical Equilibrium","language":"en","query":"predict the shift in equilibrium","expected_concept":"chemical_equilibrium"}
+]

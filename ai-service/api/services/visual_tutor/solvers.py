@@ -19,6 +19,9 @@ from api.models.visual_tutor import (
     VisualTutorBoardType,
     VisualTutorInteraction,
     VisualTutorInteractionType,
+    VisualTutorGraphAnnotation,
+    VisualTutorGraphPoint,
+    VisualTutorGraphSpec,
     VisualTutorInputUnderstandingResult,
     VisualTutorMasterySignal,
     VisualTutorProblemUnderstandingResult,
@@ -2308,7 +2311,11 @@ class ArithmeticExpressionSolver(LiveTeacherMoveMixin):
     problem_type = "arithmetic_expression"
 
     def can_handle(self, understanding: VisualTutorProblemUnderstandingResult) -> bool:
-        return understanding.problem_type == self.problem_type
+        return understanding.problem_type in {
+            self.problem_type,
+            "integer_arithmetic",
+            "fraction_decimal_arithmetic",
+        }
 
     def solver_facts(
         self,
@@ -2327,7 +2334,7 @@ class ArithmeticExpressionSolver(LiveTeacherMoveMixin):
         answer = _format_expr(problem["answer"])
         return VisualTutorSolverFacts(
             solver_name=self.__class__.__name__,
-            problem_type=self.problem_type,
+            problem_type=understanding.problem_type,
             normalized_problem=problem["expression"],
             known_solution=answer,
             current_step_index=request.current_state.current_step_index,
@@ -2384,7 +2391,7 @@ class ArithmeticExpressionSolver(LiveTeacherMoveMixin):
             request,
             has_problem=True,
             is_correct_step=is_correct,
-            problem_type=self.problem_type,
+            problem_type=understanding.problem_type,
             known_solver_available=True,
             input_understanding=_input_understanding_from_policy(policy),
         )
@@ -2505,6 +2512,678 @@ class ArithmeticExpressionSolver(LiveTeacherMoveMixin):
             "partial": _arithmetic_partial(expression),
             "answer": answer,
         }
+
+
+class FunctionGraphSolver(LiveTeacherMoveMixin):
+    """Deterministic Grade 9–10 graph tutor for numeric line/quadratic forms.
+
+    It intentionally accepts only forms classified by problem_understanding:
+    y = mx + b and y = ax² + bx + c with numeric coefficients.  The model may
+    choose the wording and representation around these facts, but graph data,
+    the active task, and final-answer protection are deterministic.
+    """
+
+    problem_type = "function_graph"
+
+    def can_handle(self, understanding: VisualTutorProblemUnderstandingResult) -> bool:
+        return understanding.problem_type in {"straight_line_graph", "basic_quadratic_graph"}
+
+    def solver_facts(self, request, understanding, policy) -> VisualTutorSolverFacts:
+        graph = self._graph(understanding)
+        expected_value = graph["primary_value"]
+        validation = _generic_answer_validation_facts(
+            request,
+            is_correct=_contains_value(request.message, expected_value),
+            policy=policy,
+            correct_explanation="The submitted value matches the graph's current feature.",
+            expected_explanation="Submit the requested graph feature, not a complete final answer.",
+        )
+        return VisualTutorSolverFacts(
+            solver_name=self.__class__.__name__,
+            problem_type=understanding.problem_type,
+            normalized_problem=graph["normalized"],
+            known_solution=graph["final_summary"],
+            current_step_index=request.current_state.current_step_index,
+            expected_step=graph["task"],
+            expected_operation=graph["expected_operation"],
+            expected_equation=graph["equation"],
+            student_validation=validation,
+            verified_answer=graph["final_summary"],
+            sympy_verified=True,
+            next_concept=graph["next_concept"],
+            safe_formulas=graph["safe_formulas"],
+            board_context={"graph": graph["graph"].model_dump(mode="json")},
+            metadata={"policy_reason": policy.reason, "accepted_form": graph["accepted_form"]},
+        )
+
+    def build_initial_turn(self, request, understanding, policy, *, session_id):
+        graph = self._graph(understanding)
+        return self._response(request, policy, session_id, graph, state="initial")
+
+    def build_hint_turn(self, request, understanding, policy, *, session_id):
+        graph = self._graph(understanding)
+        if policy.reveal_partial:
+            return self.build_partial_solution(request, understanding, policy, session_id=session_id)
+        return self._response(request, policy, session_id, graph, state="hint")
+
+    def check_student_step(self, request, understanding, policy, *, session_id):
+        graph = self._graph(understanding)
+        is_correct = _contains_value(request.message, graph["primary_value"])
+        step_policy = decide_visual_tutor_policy(
+            request, has_problem=True, is_correct_step=is_correct,
+            problem_type=understanding.problem_type, known_solver_available=True,
+            input_understanding=_input_understanding_from_policy(policy),
+        )
+        return self._response(
+            request, step_policy, session_id, graph,
+            state="correct" if is_correct else "incorrect",
+        )
+
+    def build_partial_solution(self, request, understanding, policy, *, session_id):
+        return self._response(request, policy, session_id, self._graph(understanding), state="partial")
+
+    def build_full_solution(self, request, understanding, policy, *, session_id):
+        return self._response(request, policy, session_id, self._graph(understanding), state="final")
+
+    def build_stuck_help_turn(self, request, understanding, policy, *, session_id):
+        graph = self._graph(understanding)
+        if policy.reveal_partial:
+            return self.build_partial_solution(request, understanding, policy, session_id=session_id)
+        return self._response(request, policy, session_id, graph, state="stuck")
+
+    def build_explain_differently_turn(self, request, understanding, policy, *, session_id):
+        return self._response(request, policy, session_id, self._graph(understanding), state="different")
+
+    def _response(self, request, policy, session_id, graph: dict, *, state: str) -> VisualTutorTurnResponse:
+        use_khmer = policy.use_khmer_explanation
+        messages = {
+            "initial": (graph["initial_message"], graph["task"]),
+            "hint": (graph["hint"], graph["task"]),
+            "stuck": (graph["stuck_hint"], graph["task"]),
+            "different": (graph["different_message"], graph["task"]),
+            "incorrect": ("That does not match the highlighted graph feature yet.", graph["task"]),
+            "correct": ("Correct. That graph feature is verified.", graph["next_task"]),
+            "partial": (graph["partial_message"], graph["next_task"]),
+            "final": (f"Now we can reveal it: {graph['final_summary']}", "Check the highlighted feature on the graph."),
+        }
+        message, task = messages[state]
+        reveal_final = state == "final" and policy.reveal_final
+        if state == "final" and not reveal_final:
+            state, message, task = "partial", graph["partial_message"], graph["next_task"]
+        board = _build_function_graph_board(graph, reveal_partial=state in {"partial", "correct"}, reveal_final=reveal_final, feedback=state if state in {"incorrect", "correct"} else None)
+        response = _solver_response(
+            session_id=session_id,
+            spoken_text=_localized_task(use_khmer, message, "សូមមើលធាតុដែលបានបន្លិចលើក្រាប ហើយឆ្លើយមួយជំហាន។"),
+            display_text=_localized_task(use_khmer, message, "មើលក្រាប ហើយធ្វើមួយជំហាន។"),
+            teaching_mode=(VisualTutorTeachingMode.MISCONCEPTION_FIX if state == "incorrect" else policy.teaching_mode),
+            final_answer_locked=not reveal_final,
+            student_task=_localized_task(use_khmer, task, task),
+            board=board,
+            mastery_signal=(VisualTutorMasterySignal.MISCONCEPTION if state == "incorrect" else VisualTutorMasterySignal.READY_FOR_NEXT_STEP if state == "correct" else VisualTutorMasterySignal.NEEDS_HINT if state in {"hint", "stuck", "different", "partial"} else VisualTutorMasterySignal.EXPLORING),
+            metadata={**_metadata(graph["normalized"], request, policy), "graph_live_step": graph["primary_key"], "validation_result": state, "accepted_form": graph["accepted_form"]},
+        )
+        actions = _function_graph_actions(graph, task=task, reveal_final=reveal_final)
+        return response.model_copy(update={"board_actions": actions, "canvas_actions": actions})
+
+    def _graph(self, understanding: VisualTutorProblemUnderstandingResult) -> dict:
+        values = understanding.extracted_entities
+        if understanding.problem_type == "straight_line_graph":
+            slope, intercept = sympy.Rational(str(values["slope"])), sympy.Rational(str(values["intercept"]))
+            expression = str(values["function_expression"])
+            graph = _function_graph_spec(expression, points=[(-2, slope * -2 + intercept), (0, intercept), (2, slope * 2 + intercept)], annotations=[("y-intercept", 0, intercept)])
+            return {"equation": values["equation"], "normalized": values["normalized_problem"], "graph": graph, "primary_key": "slope", "primary_value": _format_expr(slope), "task": "What is the slope m?", "next_task": "What is the y-intercept b?", "expected_operation": "read the coefficient of x", "next_concept": "plot a second point using rise over run", "safe_formulas": ["y = mx + b", "m = rise / run"], "initial_message": "Let us read the line from its equation and graph.", "hint": "The number multiplying x is the slope.", "stuck_hint": "Start at b on the y-axis, then use rise over run.", "different_message": "Use a value table: choose x values and calculate y.", "partial_message": f"The slope is m = {_format_expr(slope)}. Now locate b.", "final_summary": f"y = {_format_expr(slope)}x {'+' if intercept >= 0 else '-'} {_format_expr(abs(intercept))}", "accepted_form": "y = mx + b with numeric m and b"}
+        a, b, c = (sympy.Rational(str(values[key])) for key in ("a", "b", "c"))
+        vertex = values["vertex"]
+        vx, vy = sympy.Rational(str(vertex["x"])), sympy.Rational(str(vertex["y"]))
+        expression = str(values["function_expression"])
+        graph = _function_graph_spec(expression, points=[(-2, a * 4 - b * 2 + c), (0, c), (2, a * 4 + b * 2 + c)], annotations=[("vertex", vx, vy)])
+        return {"equation": values["equation"], "normalized": values["normalized_problem"], "graph": graph, "primary_key": "vertex_x", "primary_value": _format_expr(vx), "task": "What is the x-coordinate of the vertex?", "next_task": "What is the y-coordinate of the vertex?", "expected_operation": "use x = -b / (2a)", "next_concept": "use symmetry to plot matching points", "safe_formulas": ["x = -b / (2a)", "y = ax^2 + bx + c"], "initial_message": "Let us graph this parabola by finding its vertex first.", "hint": "For the vertex, use x = -b divided by 2a.", "stuck_hint": "Read a and b, then substitute them into -b/(2a).", "different_message": "Use a small x-y table around the vertex instead of starting with the formula.", "partial_message": f"The vertex x-coordinate is {_format_expr(vx)}. Now find its y-coordinate.", "final_summary": f"vertex = ({_format_expr(vx)}, {_format_expr(vy)})", "accepted_form": "y = ax^2 + bx + c with numeric coefficients"}
+
+
+@dataclass(frozen=True)
+class LimitOfFunctionProblem:
+    """A JSON-safe parse of a limit-of-a-function problem statement.
+
+    Sympy objects are reconstructed from the display strings here (by
+    _limit_sympy_expression / _limit_sympy_point) wherever computation is
+    needed, the same way straight_line_graph/basic_quadratic_graph store
+    formatted strings in extracted_entities rather than raw sympy objects.
+    """
+
+    original: str
+    normalized_problem: str
+    function_expression: str  # display form, e.g. "(x^2 - 1)/(x - 1)"
+    variable: str
+    target_point_display: str  # "1", "-3/2", "infinity", "-infinity"
+    requested_direction: Optional[str]  # "left" | "right" | None (two-sided)
+
+
+_LIMIT_TRIGGER_RE = re.compile(r"\blim(?:it)?\b", re.IGNORECASE)
+_LIMIT_CLAUSE_RE = re.compile(
+    r"(?:limit\s+of\s+)?"
+    r"(?:f\s*\(\s*x\s*\)\s*=\s*|y\s*=\s*)?"
+    r"(?P<expr>.+?)\s+as\s+x\s*"
+    r"(?:approaches|approach(?:ing)?|tends?\s+to|->|→)\s*"
+    r"(?P<point>[-+]?(?:infinity|inf|∞|\d+(?:\.\d+)?))"
+    r"(?P<sign>[+-])?"
+    r"(?:\s*from\s+the\s+(?P<side>left|right))?",
+    re.IGNORECASE,
+)
+
+
+def parse_limit_of_function(message: str) -> Optional[LimitOfFunctionProblem]:
+    """Parse phrasing like 'Find the limit of f(x) = 2x + 1 as x approaches 3'
+    or 'limit of (x^2-1)/(x-1) as x approaches 1 from the left'."""
+    if not message or not _LIMIT_TRIGGER_RE.search(message):
+        return None
+    match = _LIMIT_CLAUSE_RE.search(message)
+    if not match:
+        return None
+    expr_text = _limit_expression_text(match.group("expr").strip())
+    if not expr_text:
+        return None
+    try:
+        expression = _limit_sympy_expression(expr_text)
+        x = sympy.Symbol("x")
+        if expression.free_symbols - {x}:
+            return None
+    except Exception:
+        return None
+    point_display = _limit_point_display(match.group("point"))
+    if point_display is None:
+        return None
+    direction: Optional[str] = None
+    side = (match.group("side") or "").lower()
+    sign = match.group("sign")
+    if side == "left" or sign == "-":
+        direction = "left"
+    elif side == "right" or sign == "+":
+        direction = "right"
+    function_expression = str(expression).replace("**", "^")
+    return LimitOfFunctionProblem(
+        original=message.strip(),
+        normalized_problem=f"lim(x -> {point_display}) {function_expression}",
+        function_expression=function_expression,
+        variable="x",
+        target_point_display=point_display,
+        requested_direction=direction,
+    )
+
+
+def _limit_expression_text(expr_text: str) -> Optional[str]:
+    """Strip a leading 'f(x) =' / 'y =' / 'find the limit of' prefix.
+
+    The clause regex's own optional prefix groups only match when they sit
+    immediately before the expression; re.search can still let expr swallow
+    earlier descriptive text (e.g. "Find the limit of f(x) = ..."), so this
+    does a second pass over whatever expr actually captured.
+    """
+    prefix_match = re.search(
+        r"(?:f\s*\(\s*x\s*\)\s*=|y\s*=)\s*(.+)$", expr_text, re.IGNORECASE
+    )
+    if prefix_match:
+        cleaned = prefix_match.group(1).strip()
+    else:
+        cleaned = re.sub(
+            r"^.*?\blimit\s+of\b\s*", "", expr_text, flags=re.IGNORECASE
+        ).strip()
+    return cleaned or None
+
+
+def _limit_point_display(point_text: str) -> Optional[str]:
+    lowered = point_text.strip().lower()
+    if lowered in {"infinity", "+infinity", "inf", "+inf", "∞", "+∞"}:
+        return "infinity"
+    if lowered in {"-infinity", "-inf", "-∞"}:
+        return "-infinity"
+    try:
+        return _format_expr(sympy.Rational(lowered))
+    except Exception:
+        return None
+
+
+def _limit_sympy_expression(expr_text: str) -> sympy.Expr:
+    text = re.sub(r"\|([^|]+)\|", r"Abs(\1)", expr_text)
+    text = _normalize_math_text(text)
+    return sympy.sympify(text)
+
+
+def _limit_sympy_point(point_display: str) -> sympy.Expr:
+    if point_display == "infinity":
+        return sympy.oo
+    if point_display == "-infinity":
+        return -sympy.oo
+    return sympy.sympify(point_display.replace("^", "**"))
+
+
+def _limit_table_row(
+    expression: sympy.Expr, variable: sympy.Symbol, sample_point: sympy.Expr
+) -> dict[str, str]:
+    try:
+        value = sympy.simplify(expression.subs(variable, sample_point))
+        if not value.is_finite or value.has(sympy.zoo, sympy.nan, sympy.I):
+            display = "undefined"
+        else:
+            display = str(sympy.N(value, 6))
+    except Exception:
+        display = "undefined"
+    return {"x": _format_expr(sample_point), "f_x": display}
+
+
+def _limit_table_of_values(
+    expression: sympy.Expr, variable: sympy.Symbol, point: sympy.Expr
+) -> dict[str, Any]:
+    if point in (sympy.oo, -sympy.oo):
+        sign = 1 if point is sympy.oo else -1
+        samples = [sympy.Integer(sign * magnitude) for magnitude in (10, 100, 1000)]
+        return {
+            "columns": ["x", "f(x)"],
+            "rows": [_limit_table_row(expression, variable, s) for s in samples],
+        }
+    offsets = [sympy.Rational(1, 10), sympy.Rational(1, 100), sympy.Rational(1, 1000)]
+    left_points = [point - offset for offset in reversed(offsets)]
+    right_points = [point + offset for offset in offsets]
+    rows = [_limit_table_row(expression, variable, p) for p in left_points]
+    rows.append(_limit_table_row(expression, variable, point))
+    rows.extend(_limit_table_row(expression, variable, p) for p in right_points)
+    return {"columns": ["x", "f(x)"], "rows": rows}
+
+
+def _limit_computation_facts(
+    expression: sympy.Expr,
+    variable: sympy.Symbol,
+    point: sympy.Expr,
+    requested_direction: Optional[str],
+) -> dict[str, Any]:
+    """Compute left/right approach values, classify the limit, and build a
+    table of values -- the ground truth a planner (LLM or deterministic)
+    gets checked against, independent of curriculum grounding."""
+    is_infinite_point = point in (sympy.oo, -sympy.oo)
+    if is_infinite_point:
+        # There is only one direction of approach toward +/- infinity.
+        direction = "-" if point is sympy.oo else "+"
+        try:
+            value = sympy.limit(expression, variable, point, dir=direction)
+        except Exception:
+            value = None
+        left_value = right_value = value
+    else:
+        try:
+            left_value = sympy.limit(expression, variable, point, dir="-")
+        except Exception:
+            left_value = None
+        try:
+            right_value = sympy.limit(expression, variable, point, dir="+")
+        except Exception:
+            right_value = None
+
+    function_value: Optional[sympy.Expr] = None
+    try:
+        candidate = sympy.simplify(expression.subs(variable, point))
+        if candidate.is_finite and not candidate.has(sympy.zoo, sympy.nan, sympy.I):
+            function_value = candidate
+    except Exception:
+        function_value = None
+
+    def _is_infinite_value(value: Optional[sympy.Expr]) -> bool:
+        return value is not None and value in (sympy.oo, -sympy.oo, sympy.zoo)
+
+    limit_value: Optional[sympy.Expr] = None
+    if left_value is None or right_value is None:
+        classification = "does_not_exist"
+    elif _is_infinite_value(left_value) or _is_infinite_value(right_value):
+        if left_value == right_value:
+            classification = "infinite"
+            limit_value = left_value
+        else:
+            classification = "does_not_exist"
+    else:
+        try:
+            equal = sympy.simplify(left_value - right_value) == 0
+        except Exception:
+            equal = left_value == right_value
+        if not equal:
+            classification = "does_not_exist"
+        else:
+            limit_value = left_value
+            if (
+                function_value is not None
+                and sympy.simplify(function_value - limit_value) == 0
+            ):
+                classification = "exists"
+            else:
+                # The two-sided limit exists, but the function is either
+                # undefined at the point or disagrees with the limit there.
+                classification = "removable_discontinuity"
+
+    if requested_direction == "left":
+        reported_value = left_value
+    elif requested_direction == "right":
+        reported_value = right_value
+    else:
+        reported_value = limit_value
+
+    return {
+        "classification": classification,
+        "limit_value": limit_value,
+        "reported_value": reported_value,
+        "left_value": None if is_infinite_point else left_value,
+        "right_value": None if is_infinite_point else right_value,
+        "function_value": function_value,
+        "table": _limit_table_of_values(expression, variable, point),
+    }
+
+
+def _limit_value_display(value: Optional[sympy.Expr]) -> str:
+    return "does not exist" if value is None else _format_expr(value)
+
+
+def _optional_limit_value_display(value: Optional[sympy.Expr]) -> Optional[str]:
+    return None if value is None else _format_expr(value)
+
+
+def _build_limit_board(
+    problem: dict[str, Any],
+    *,
+    reveal_partial: bool = False,
+    reveal_final: bool = False,
+    feedback: Optional[str] = None,
+) -> VisualTutorBoard:
+    table = problem["table"]
+    table_summary = "; ".join(
+        f"x={row['x']}: f(x)={row['f_x']}" for row in table["rows"]
+    )
+    left_display = _optional_limit_value_display(problem["left_value"])
+    right_display = _optional_limit_value_display(problem["right_value"])
+    items = [
+        VisualTutorBoardItem(
+            label="Function",
+            content=f"f(x) = {problem['function_expression_display']}",
+            status="active",
+        ),
+        VisualTutorBoardItem(
+            label="Approaching",
+            content=f"x -> {problem['point_display']}",
+            status="active",
+        ),
+        VisualTutorBoardItem(
+            label="Table of values",
+            content=table_summary,
+            status="active",
+            metadata={"table": table},
+        ),
+        VisualTutorBoardItem(
+            label="Left / right approach",
+            content=(
+                f"left: {left_display or 'n/a'}, right: {right_display or 'n/a'}"
+                if reveal_partial or reveal_final
+                else "Left- and right-approach values are locked until you try."
+            ),
+            status="complete" if reveal_partial or reveal_final else "locked",
+        ),
+        VisualTutorBoardItem(
+            label="Limit",
+            content=(
+                _limit_value_display(problem["reported_value"])
+                if reveal_final
+                else "Final answer is locked."
+            ),
+            status="complete" if reveal_final else "locked",
+        ),
+    ]
+    metadata: dict[str, Any] = {
+        "problem_type": "limit_of_function",
+        "classification": problem["classification"],
+    }
+    if feedback:
+        metadata["feedback"] = feedback
+    return VisualTutorBoard(
+        type=VisualTutorBoardType.TABLE,
+        title="Limit of a Function",
+        items=items,
+        metadata=metadata,
+    )
+
+
+class LimitOfFunctionSolver(LiveTeacherMoveMixin):
+    """Grade 12 limits-of-functions: sympy is the ground truth, not the LLM.
+
+    can_handle/solver_facts are what the dynamic (LLM-driven) planner is
+    checked against; build_* below are only the deterministic fallback used
+    when no LLM path is configured or the LLM output fails validation.
+    """
+
+    problem_type = "limit_of_function"
+
+    def can_handle(self, understanding: VisualTutorProblemUnderstandingResult) -> bool:
+        return understanding.problem_type == self.problem_type
+
+    def _problem(
+        self, understanding: VisualTutorProblemUnderstandingResult
+    ) -> dict[str, Any]:
+        values = understanding.extracted_entities
+        function_expression_display = str(values["function_expression"])
+        point_display = str(values["target_point_display"])
+        variable = str(values.get("variable") or "x")
+        direction = values.get("requested_direction")
+        x = sympy.Symbol(variable)
+        expression = _limit_sympy_expression(function_expression_display)
+        point = _limit_sympy_point(point_display)
+        facts = _limit_computation_facts(expression, x, point, direction)
+        normalized_problem = str(
+            values.get("normalized_problem")
+            or f"lim(x -> {point_display}) {function_expression_display}"
+        )
+        return {
+            "function_expression_display": function_expression_display,
+            "point_display": point_display,
+            "variable": variable,
+            "direction": direction,
+            "normalized_problem": normalized_problem,
+            **facts,
+        }
+
+    def solver_facts(
+        self,
+        request: VisualTutorTurnRequest,
+        understanding: VisualTutorProblemUnderstandingResult,
+        policy: VisualTutorPolicyDecision,
+    ) -> VisualTutorSolverFacts:
+        problem = self._problem(understanding)
+        answer_display = _limit_value_display(problem["reported_value"])
+        validation = _generic_answer_validation_facts(
+            request,
+            is_correct=(
+                problem["reported_value"] is not None
+                and _contains_value(request.message, problem["reported_value"])
+            ),
+            policy=policy,
+            correct_explanation="The submitted value matches the limit.",
+            expected_explanation="Compare the left- and right-approach values before answering.",
+        )
+        return VisualTutorSolverFacts(
+            solver_name=self.__class__.__name__,
+            problem_type=understanding.problem_type,
+            normalized_problem=problem["normalized_problem"],
+            variable=problem["variable"],
+            known_solution=answer_display,
+            current_step_index=request.current_state.current_step_index,
+            expected_step="compare the values approaching from the left and right",
+            expected_operation=f"evaluate near x = {problem['point_display']}",
+            student_validation=validation,
+            verified_answer=answer_display,
+            sympy_verified=True,
+            next_concept="state whether the function is continuous at this point",
+            safe_formulas=[
+                "A two-sided limit exists only when the left- and right-approach values agree.",
+                "A limit can exist even if the function itself is undefined at that point.",
+            ],
+            board_context={
+                "function_expression": problem["function_expression_display"],
+                "target_point": problem["point_display"],
+                "classification": problem["classification"],
+                "left_value": _optional_limit_value_display(problem["left_value"]),
+                "right_value": _optional_limit_value_display(problem["right_value"]),
+                "function_value_at_point": _optional_limit_value_display(
+                    problem["function_value"]
+                ),
+                "table_of_values": problem["table"],
+            },
+            metadata={
+                "policy_reason": policy.reason,
+                "requested_direction": problem["direction"],
+                "classification": problem["classification"],
+            },
+        )
+
+    def build_initial_turn(self, request, understanding, policy, *, session_id):
+        problem = self._problem(understanding)
+        return _solver_response(
+            session_id=session_id,
+            spoken_text=(
+                f"Let's investigate f(x) = {problem['function_expression_display']} "
+                f"as x approaches {problem['point_display']}. What do you notice "
+                "in the table?"
+            ),
+            display_text="Look at the table of values near the target point.",
+            teaching_mode=policy.teaching_mode,
+            final_answer_locked=policy.final_answer_locked,
+            student_task="What value does f(x) get close to as x approaches the target?",
+            board=_build_limit_board(problem),
+            mastery_signal=VisualTutorMasterySignal.EXPLORING,
+            metadata=_metadata(problem["normalized_problem"], request, policy),
+        )
+
+    def build_hint_turn(self, request, understanding, policy, *, session_id):
+        if policy.reveal_partial:
+            return self.build_partial_solution(
+                request, understanding, policy, session_id=session_id
+            )
+        problem = self._problem(understanding)
+        return _solver_response(
+            session_id=session_id,
+            spoken_text="Hint: compare the values just left of the target with the values just right of it.",
+            display_text="Hint: compare the left- and right-approach values.",
+            teaching_mode=policy.teaching_mode,
+            final_answer_locked=policy.final_answer_locked,
+            student_task="Do the left and right values get close to the same number?",
+            board=_build_limit_board(problem),
+            mastery_signal=VisualTutorMasterySignal.NEEDS_HINT,
+            metadata=_metadata(None, request, policy),
+        )
+
+    def check_student_step(self, request, understanding, policy, *, session_id):
+        problem = self._problem(understanding)
+        is_correct = (
+            problem["reported_value"] is not None
+            and _contains_value(request.message, problem["reported_value"])
+        )
+        step_policy = decide_visual_tutor_policy(
+            request,
+            has_problem=True,
+            is_correct_step=is_correct,
+            problem_type=understanding.problem_type,
+            known_solver_available=True,
+            input_understanding=_input_understanding_from_policy(policy),
+        )
+        if is_correct:
+            return _solver_response(
+                session_id=session_id,
+                spoken_text="Correct. That is the limit.",
+                display_text="Correct.",
+                teaching_mode=step_policy.teaching_mode,
+                final_answer_locked=step_policy.final_answer_locked,
+                student_task="Explain why the left and right values agree.",
+                board=_build_limit_board(
+                    problem, reveal_partial=True, reveal_final=step_policy.reveal_final
+                ),
+                mastery_signal=VisualTutorMasterySignal.READY_FOR_NEXT_STEP,
+                metadata=_metadata(None, request, step_policy),
+            )
+        if step_policy.reveal_partial:
+            return self.build_partial_solution(
+                request, understanding, step_policy, session_id=session_id
+            )
+        return _solver_response(
+            session_id=session_id,
+            spoken_text="Not quite. Recheck the table of values near the target point.",
+            display_text="Recheck the table of values.",
+            teaching_mode=step_policy.teaching_mode,
+            final_answer_locked=step_policy.final_answer_locked,
+            student_task="What do the left and right values approach?",
+            board=_build_limit_board(problem, feedback="incorrect_step"),
+            mastery_signal=VisualTutorMasterySignal.MISCONCEPTION,
+            metadata=_metadata(None, request, step_policy),
+        )
+
+    def build_partial_solution(self, request, understanding, policy, *, session_id):
+        problem = self._problem(understanding)
+        left = _optional_limit_value_display(problem["left_value"]) or "n/a"
+        right = _optional_limit_value_display(problem["right_value"]) or "n/a"
+        return _solver_response(
+            session_id=session_id,
+            spoken_text=f"Partial step: from the left the values approach {left}, from the right {right}.",
+            display_text=f"Left approach: {left}. Right approach: {right}.",
+            teaching_mode=policy.teaching_mode,
+            final_answer_locked=policy.final_answer_locked,
+            student_task="If those two values match, what is the limit?",
+            board=_build_limit_board(
+                problem, reveal_partial=True, reveal_final=policy.reveal_final
+            ),
+            mastery_signal=VisualTutorMasterySignal.NEEDS_HINT,
+            metadata=_metadata(None, request, policy),
+        )
+
+    def build_full_solution(self, request, understanding, policy, *, session_id):
+        problem = self._problem(understanding)
+        answer = _limit_value_display(problem["reported_value"])
+        return _solver_response(
+            session_id=session_id,
+            spoken_text=f"Now we can reveal it. The limit is {answer}.",
+            display_text=f"Limit: {answer}",
+            teaching_mode=policy.teaching_mode,
+            final_answer_locked=policy.final_answer_locked,
+            student_task="Check the table of values against this answer.",
+            board=_build_limit_board(problem, reveal_partial=True, reveal_final=True),
+            mastery_signal=VisualTutorMasterySignal.READY_FOR_NEXT_STEP,
+            metadata=_metadata(None, request, policy),
+        )
+
+    def build_stuck_help_turn(self, request, understanding, policy, *, session_id):
+        if policy.reveal_partial:
+            return self.build_partial_solution(
+                request, understanding, policy, session_id=session_id
+            )
+        problem = self._problem(understanding)
+        return _solver_response(
+            session_id=session_id,
+            spoken_text="Let's slow down. Look only at the row for x closest to the target from the left.",
+            display_text="Small hint: start with the closest value on the left.",
+            teaching_mode=policy.teaching_mode,
+            final_answer_locked=policy.final_answer_locked,
+            student_task="What is f(x) at the closest value on the left?",
+            board=_build_limit_board(problem, feedback="stuck_help"),
+            mastery_signal=VisualTutorMasterySignal.NEEDS_HINT,
+            metadata=_metadata(None, request, policy),
+        )
+
+    def build_explain_differently_turn(self, request, understanding, policy, *, session_id):
+        problem = self._problem(understanding)
+        return _solver_response(
+            session_id=session_id,
+            spoken_text="Think of it as walking along the graph toward the target point from both sides and seeing where your feet end up.",
+            display_text="Different view: walk toward the target from both sides.",
+            teaching_mode=policy.teaching_mode,
+            final_answer_locked=policy.final_answer_locked,
+            student_task="Where do your left-side and right-side steps end up?",
+            board=_build_limit_board(
+                problem,
+                reveal_partial=policy.reveal_partial,
+                reveal_final=policy.reveal_final,
+            ),
+            mastery_signal=VisualTutorMasterySignal.NEEDS_HINT,
+            metadata=_metadata(None, request, policy),
+        )
 
 
 class SimplePercentageWordProblemSolver(LiveTeacherMoveMixin):
@@ -2817,8 +3496,10 @@ def _live_action(
     width: Optional[float] = None,
     height: Optional[float] = None,
     points: Optional[list[dict]] = None,
+    graph: Optional[VisualTutorGraphSpec] = None,
     target_id: Optional[str] = None,
     locked: bool = False,
+    requires_student_response: bool = False,
     reveal_policy: Optional[str] = None,
     group_id: str = "turn-focus",
     metadata: Optional[dict] = None,
@@ -2829,7 +3510,7 @@ def _live_action(
         sequence_index=sequence_index,
         duration_ms=_live_action_duration(type),
         wait_for_speech_marker=sequence_index == 0,
-        requires_student_response=False,
+        requires_student_response=requires_student_response,
         group_id=group_id,
         section_id="main-board",
         x=x,
@@ -2839,6 +3520,7 @@ def _live_action(
         text=text,
         latex=latex,
         points=points or [],
+        graph=graph,
         target_id=target_id,
         style=CanvasElementStyle(),
         locked=locked,
@@ -2856,6 +3538,83 @@ def _live_action_duration(action_type: VisualTutorCanvasActionType) -> int:
     if action_type == VisualTutorCanvasActionType.HIGHLIGHT:
         return 250
     return 450
+
+
+def _function_graph_spec(
+    expression: str,
+    *,
+    points: list[tuple[sympy.Expr, sympy.Expr]],
+    annotations: list[tuple[str, sympy.Expr, sympy.Expr]],
+) -> VisualTutorGraphSpec:
+    numeric_points = [
+        VisualTutorGraphPoint(x=float(point_x), y=float(point_y))
+        for point_x, point_y in points
+    ]
+    values = [coordinate for point in numeric_points for coordinate in (point.x, point.y)]
+    minimum = min([-5.0, *values]) - 1.0
+    maximum = max([5.0, *values]) + 1.0
+    return VisualTutorGraphSpec(
+        x_min=max(-20.0, minimum), x_max=min(20.0, maximum),
+        y_min=max(-20.0, minimum), y_max=min(20.0, maximum),
+        function_expression=expression,
+        domain=[max(-10.0, minimum), min(10.0, maximum)],
+        points=numeric_points,
+        annotations=[
+            VisualTutorGraphAnnotation(text=text, x=float(point_x), y=float(point_y))
+            for text, point_x, point_y in annotations
+        ],
+    )
+
+
+def _function_graph_actions(
+    graph: dict,
+    *,
+    task: str,
+    reveal_final: bool,
+) -> list[VisualTutorBoardAction]:
+    actions = [
+        _live_action(
+            id="function-graph", type=VisualTutorCanvasActionType.SHOW_GRAPH,
+            sequence_index=0, x=32, y=32, width=680, height=390,
+            group_id="graph", metadata={"current_step": True, "accepted_form": graph["accepted_form"]},
+            graph=graph["graph"],
+        ),
+        _live_action(
+            id="function-task", type=VisualTutorCanvasActionType.STUDENT_TASK,
+            sequence_index=1, text=task, x=32, y=450, width=680, height=56,
+            requires_student_response=True, group_id="student-task",
+            metadata={"current_step": True},
+        ),
+    ]
+    if reveal_final:
+        actions.append(
+            _live_action(
+                id="function-final", type=VisualTutorCanvasActionType.REVEAL_ANSWER,
+                sequence_index=2, text=graph["final_summary"], x=32, y=530,
+                width=680, height=56, group_id="final-answer",
+                metadata={"is_final_answer": True, "deterministically_verified": True},
+            )
+        )
+    return actions
+
+
+def _build_function_graph_board(
+    graph: dict,
+    *,
+    reveal_partial: bool,
+    reveal_final: bool,
+    feedback: Optional[str],
+) -> VisualTutorBoard:
+    items = [
+        VisualTutorBoardItem(label="Function", content=graph["equation"], status="active"),
+        VisualTutorBoardItem(label="Graph", content="Read one highlighted feature at a time.", status="active"),
+        VisualTutorBoardItem(label="Current feature", content=(f"{graph['primary_key']} = {graph['primary_value']}" if reveal_partial else "Current graph feature is waiting for your answer."), status="complete" if reveal_partial else "active", metadata={"locked_safe_partial": reveal_partial}),
+        VisualTutorBoardItem(label="Final", content=graph["final_summary"] if reveal_final else "Final answer is locked.", status="complete" if reveal_final else "locked"),
+    ]
+    metadata: dict[str, Any] = {"problem_type": "basic_quadratic_graph" if "quadratic" in graph["accepted_form"] else "straight_line_graph", "normalized_problem": graph["normalized"], "current_step_index": 1 if reveal_partial else 0}
+    if feedback:
+        metadata["feedback"] = feedback
+    return VisualTutorBoard(type=VisualTutorBoardType.GRAPH_HINT, title="Function Graph", items=items, metadata=metadata)
 
 
 def _generic_live_actions_from_board(
@@ -5018,3 +5777,116 @@ def _input_understanding_from_policy(
         return VisualTutorInputUnderstandingResult.model_validate(payload)
     except Exception:
         return None
+
+
+class PhysicsKinematicsSolver(LiveTeacherMoveMixin):
+    problem_type = "physics_kinematics"
+
+    def can_handle(self, understanding: VisualTutorProblemUnderstandingResult) -> bool:
+        return understanding.problem_type == self.problem_type
+
+    def solver_facts(
+        self,
+        request: VisualTutorTurnRequest,
+        understanding: VisualTutorProblemUnderstandingResult,
+        policy: VisualTutorPolicyDecision,
+    ) -> VisualTutorSolverFacts:
+        problem = understanding.extracted_problem or request.current_state.problem_text or ""
+        return VisualTutorSolverFacts(
+            solver_name=self.__class__.__name__,
+            problem_type=self.problem_type,
+            normalized_problem=problem,
+            variable="unknown",
+            known_solution="depends on variables",
+            current_step_index=request.current_state.current_step_index,
+            expected_step="Identify knowns and unknowns",
+            expected_operation="List variables",
+            expected_equation="",
+            student_validation=VisualTutorStudentValidationFacts(
+                is_correct=False,
+                error_category="unknown",
+                detected_misconception=None,
+                feedback="Lets identify the variables first."
+            ),
+            verified_answer="",
+            sympy_verified=False,
+            next_concept="Select appropriate kinematic equation",
+            safe_formulas=["v = u + at", "s = ut + 1/2 at^2", "v^2 = u^2 + 2as"],
+            board_context={"problem": problem},
+            metadata={},
+        )
+
+    def _board_for_step(
+        self,
+        step_index: int,
+        facts: VisualTutorSolverFacts,
+        policy: VisualTutorPolicyDecision,
+    ) -> VisualTutorBoard:
+        actions = []
+        if step_index == 0:
+            actions.append(VisualTutorBoardAction(
+                action=VisualTutorCanvasActionType.WRITE_EQUATION,
+                content=facts.normalized_problem,
+                metadata={"id": "kinematics_eq_1"}
+            ))
+        return VisualTutorBoard(
+            type=VisualTutorBoardType.EQUATION_STEPS,
+            actions=actions,
+            metadata={"screen_state": "speaking_writing"}
+        )
+
+class ChemistryBalancingSolver(LiveTeacherMoveMixin):
+    problem_type = "chemistry_balancing_equations"
+
+    def can_handle(self, understanding: VisualTutorProblemUnderstandingResult) -> bool:
+        return understanding.problem_type == self.problem_type
+
+    def solver_facts(
+        self,
+        request: VisualTutorTurnRequest,
+        understanding: VisualTutorProblemUnderstandingResult,
+        policy: VisualTutorPolicyDecision,
+    ) -> VisualTutorSolverFacts:
+        problem = understanding.extracted_problem or request.current_state.problem_text or ""
+        return VisualTutorSolverFacts(
+            solver_name=self.__class__.__name__,
+            problem_type=self.problem_type,
+            normalized_problem=problem,
+            variable="coefficients",
+            known_solution="balanced equation",
+            current_step_index=request.current_state.current_step_index,
+            expected_step="Count atoms of each element",
+            expected_operation="Balance one element at a time",
+            expected_equation="",
+            student_validation=VisualTutorStudentValidationFacts(
+                is_correct=False,
+                error_category="unknown",
+                detected_misconception=None,
+                feedback="Lets check the atom counts on both sides."
+            ),
+            verified_answer="",
+            sympy_verified=False,
+            next_concept="Adjust coefficients",
+            safe_formulas=["Law of Conservation of Mass"],
+            board_context={"problem": problem},
+            metadata={},
+        )
+
+    def _board_for_step(
+        self,
+        step_index: int,
+        facts: VisualTutorSolverFacts,
+        policy: VisualTutorPolicyDecision,
+    ) -> VisualTutorBoard:
+        actions = []
+        if step_index == 0:
+            actions.append(VisualTutorBoardAction(
+                action=VisualTutorCanvasActionType.WRITE_EQUATION,
+                content=facts.normalized_problem,
+                metadata={"id": "chem_eq_1"}
+            ))
+        return VisualTutorBoard(
+            type=VisualTutorBoardType.EQUATION_STEPS,
+            actions=actions,
+            metadata={"screen_state": "speaking_writing"}
+        )

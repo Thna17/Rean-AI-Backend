@@ -13,6 +13,7 @@ from api.models.visual_tutor import (
     VisualTutorTurnRequest,
 )
 from api.services.visual_tutor.intent import detect_visual_tutor_student_intent
+from api.services.curriculum.khmer_glossary import glossary_metadata_from_context
 
 FINAL_HINT_UNLOCK_THRESHOLD = 3
 FINAL_WRONG_UNLOCK_THRESHOLD = 2
@@ -56,7 +57,8 @@ def decide_visual_tutor_policy(
 ) -> VisualTutorPolicyDecision:
     hint_count = _hint_count(request)
     wrong_attempts = _wrong_attempts(request)
-    use_khmer = _should_use_khmer(request)
+    language_mode = _language_mode(request)
+    use_khmer = language_mode in {"khmer", "bilingual"}
     explain_differently = request.action == VisualTutorAction.EXPLAIN_DIFFERENTLY
     intent_detection = detect_visual_tutor_student_intent(request)
     if (
@@ -97,6 +99,8 @@ def decide_visual_tutor_policy(
         "problem_type": problem_type or "unknown",
         "known_solver_available": known_solver_available,
         "use_khmer_explanation": use_khmer,
+        "language_mode": language_mode,
+        **_approved_glossary_metadata(request),
         "explain_differently": explain_differently,
         "detected_intent": detected_intent.value,
         "student_intent": detected_intent.value,
@@ -513,11 +517,33 @@ def _should_redirect_input(
 
 
 def _should_use_khmer(request: VisualTutorTurnRequest) -> bool:
+    return _language_mode(request) in {"khmer", "bilingual"}
+
+
+def _language_mode(request: VisualTutorTurnRequest) -> str:
+    requested = str(request.metadata.get("language_mode") or "").lower()
+    if requested in {"khmer", "english", "bilingual"}:
+        return requested
+    # Explicit API field is preferred; null preserves locale routing for older
+    # clients that did not have a language-mode selector.
+    if request.language_mode is not None:
+        return request.language_mode.value
     locale = (request.locale or "").lower()
     if locale.startswith("km") or locale.startswith("kh"):
-        return True
+        return "khmer"
 
     message = request.message.lower()
     if "khmer" in message or "ភាសាខ្មែរ" in message:
-        return True
-    return bool(re.search(r"[\u1780-\u17ff]", request.message))
+        return "khmer"
+    return "khmer" if re.search(r"[\u1780-\u17ff]", request.message) else "english"
+
+
+def _approved_glossary_metadata(request: VisualTutorTurnRequest) -> dict[str, Any]:
+    requested = request.metadata.get("required_glossary_terms")
+    required = requested if isinstance(requested, list) else []
+    # Request metadata is student-controlled.  In particular, never treat a
+    # bare ``khmer_terms`` dictionary as reviewed curriculum vocabulary.
+    return glossary_metadata_from_context(
+        request.metadata.get("curriculum_context"),
+        required_terms=required,
+    )

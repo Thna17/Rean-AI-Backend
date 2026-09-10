@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from pymongo import DESCENDING
+from pymongo import DESCENDING, ReturnDocument
 
 from api.models.visual_tutor import (
     VisualTutorAction,
@@ -31,6 +31,7 @@ MAX_VALIDATION_HISTORY = 120
 MAX_RESPONSE_SOURCE_HISTORY = 120
 MAX_BOARD_ACTION_HISTORY = 120
 MAX_REPLAY_SNAPSHOTS = 40
+MAX_EXPERT_STEP_EVALUATIONS = 120
 
 
 def _bounded_push(value: Any, limit: int) -> Dict[str, Any]:
@@ -66,6 +67,10 @@ class BoardVersionConflictError(Exception):
         self.message = message
         self.expected_version = expected_version
         self.client_version = client_version
+
+
+class ExpertStepConflictError(Exception):
+    """Raised when another request has already changed expert step state."""
 
 
 def _safe_int(value: Any) -> Optional[int]:
@@ -280,7 +285,9 @@ class VisualTutorSessionStore:
                 or request.metadata.get("grade")
             ),
             "topic": request.topic,
-            "skill_tags": _string_list(request.skill_tags or request.metadata.get("skill_tags")),
+            "skill_tags": _string_list(
+                request.skill_tags or request.metadata.get("skill_tags")
+            ),
             "difficulty": request.difficulty or request.metadata.get("difficulty"),
             "problem_text": request.problem_text,
             "normalized_problem": None,
@@ -334,6 +341,10 @@ class VisualTutorSessionStore:
             "created_at": now,
             "updated_at": now,
             "metadata": request.metadata,
+            "teaching_sequence": [],
+            "step_evaluations": [],
+            "expert_metadata": {},
+            "expert_step_version": 0,
         }
         await self._sessions.update_one(
             {"session_id": doc["session_id"]},
@@ -347,6 +358,66 @@ class VisualTutorSessionStore:
         if not doc:
             return None
         return VisualTutorSession(**_clean_doc(doc))
+
+    async def persist_expert_step_state(
+        self,
+        *,
+        session_id: str,
+        teaching_sequence: list[dict[str, Any]],
+        current_step_index: int,
+        evaluation: dict[str, Any] | None,
+        expert_metadata: dict[str, Any],
+        user_id: str,
+        expected_expert_step_version: int,
+    ) -> VisualTutorSession:
+        """Atomically persist the additive expert-step state for an owned session."""
+        update: dict[str, Any] = {
+            "teaching_sequence": teaching_sequence,
+            "current_step_index": current_step_index,
+            "expert_metadata": expert_metadata,
+            "updated_at": _now_iso(),
+        }
+        query: dict[str, Any] = {
+            "session_id": session_id,
+            "user_id": user_id,
+        }
+        if expected_expert_step_version == 0:
+            query["$or"] = [
+                {"expert_step_version": 0},
+                {"expert_step_version": {"$exists": False}},
+            ]
+        else:
+            query["expert_step_version"] = expected_expert_step_version
+        if evaluation is not None:
+            update["$push"] = {
+                "step_evaluations": _bounded_push(
+                    evaluation, MAX_EXPERT_STEP_EVALUATIONS
+                )
+            }
+            result = await self._sessions.find_one_and_update(
+                query,
+                {
+                    "$set": {
+                        key: value for key, value in update.items() if key != "$push"
+                    },
+                    "$push": update["$push"],
+                    "$inc": {"expert_step_version": 1},
+                },
+                return_document=ReturnDocument.AFTER,
+            )
+        else:
+            result = await self._sessions.find_one_and_update(
+                query,
+                {"$set": update, "$inc": {"expert_step_version": 1}},
+                return_document=ReturnDocument.AFTER,
+            )
+        if result is None:
+            if await self._sessions.find_one(
+                {"session_id": session_id, "user_id": user_id}
+            ):
+                raise ExpertStepConflictError("Visual Tutor step state changed; retry")
+            raise LookupError("Visual Tutor session not found")
+        return VisualTutorSession(**_clean_doc(result))
 
     async def list_user_sessions(self, user_id: str) -> List[VisualTutorSessionSummary]:
         docs = await (
@@ -415,8 +486,9 @@ class VisualTutorSessionStore:
 
             current_board_version: int = getattr(session, "board_version", None) or 0
             client_ver = _safe_int(
-                getattr(request, "client_board_version", None)
-                or request.metadata.get("client_board_version")
+                request.client_board_version
+                if request.client_board_version is not None
+                else request.metadata.get("client_board_version")
             )
             if client_ver is not None and client_ver != current_board_version:
                 raise BoardVersionConflictError(
@@ -440,6 +512,11 @@ class VisualTutorSessionStore:
                     "board_version": next_board_version,
                     "base_board_version": current_board_version,
                 },
+                "authoritative_lesson_state": {
+                    **response.authoritative_lesson_state,
+                    "board_version": next_board_version,
+                    "base_board_version": current_board_version,
+                },
             }
         )
         if session is None:
@@ -448,7 +525,12 @@ class VisualTutorSessionStore:
                     user_id=request.user_id,
                     subject=request.subject,
                     topic=request.topic,
-                    grade_level=str(request.metadata.get("grade_level") or request.metadata.get("grade") or "") or None,
+                    grade_level=str(
+                        request.metadata.get("grade_level")
+                        or request.metadata.get("grade")
+                        or ""
+                    )
+                    or None,
                     skill_tags=_string_list(request.metadata.get("skill_tags")),
                     difficulty=str(request.metadata.get("difficulty") or "") or None,
                     problem_text=request.current_state.problem_text,
@@ -635,7 +717,11 @@ class VisualTutorSessionStore:
                 "last_verification": verification,
                 "mastery_signal": response.mastery_signal.value,
                 "status": status,
-                "completed_at": now if status == "completed" else getattr(session, "completed_at", None),
+                "completed_at": (
+                    now
+                    if status == "completed"
+                    else getattr(session, "completed_at", None)
+                ),
                 "targeted_practice": targeted_practice,
                 "canvas_state": canvas_snapshot,
                 "locked_canvas_element_ids": canvas_snapshot[
@@ -661,6 +747,7 @@ class VisualTutorSessionStore:
                 "curriculum_chunk_ids": live_snapshot["curriculum_chunk_ids"],
                 "updated_at": now,
                 "board_version": next_board_version,
+                "authoritative_lesson_state": response_for_storage.authoritative_lesson_state,
             },
             "$push": {
                 "turns": _bounded_push(turn_doc, MAX_SESSION_TURNS),
@@ -1168,8 +1255,10 @@ def _validation_history_entry(
     verification = response.metadata.get("verification")
     verification = verification if isinstance(verification, dict) else None
     validation_result = (
-        verification.get("status") if verification else None
-    ) or response.metadata.get("verification_result") or response.metadata.get("validation_result")
+        (verification.get("status") if verification else None)
+        or response.metadata.get("verification_result")
+        or response.metadata.get("validation_result")
+    )
     input_relevance = response.metadata.get("input_relevance")
     if validation_result is None and input_relevance is None:
         return None
@@ -1204,7 +1293,11 @@ def _verification_record(
         return None
     contract = response.metadata.get("verification")
     if isinstance(contract, dict):
-        return {"turn_id": entry["turn_id"], "timestamp": entry["timestamp"], **contract}
+        return {
+            "turn_id": entry["turn_id"],
+            "timestamp": entry["timestamp"],
+            **contract,
+        }
     return {
         "turn_id": entry["turn_id"],
         "status": entry.get("validation_result") or "cannot_verify",
@@ -1219,7 +1312,9 @@ def _verification_record(
 
 
 def _session_status(response: VisualTutorTurnResponse) -> str:
-    stage = response.teaching_stage.lesson_state.value if response.teaching_stage else None
+    stage = (
+        response.teaching_stage.lesson_state.value if response.teaching_stage else None
+    )
     if stage == "complete" or response.mastery_signal.value == "mastered":
         return "completed"
     return "active"
@@ -1316,24 +1411,31 @@ def _next_strategy_history(
 ) -> list[dict[str, Any]]:
     history = [entry for entry in previous_history if isinstance(entry, dict)]
     interaction_type = (
-        response.interaction.type.value
-        if response.interaction is not None
-        else None
+        response.interaction.type.value if response.interaction is not None else None
     )
     mistake_category = None
     if validation_entry is not None:
-        mistake_category = (
-            validation_entry.get("mistake_category")
-            or validation_entry.get("misconception_type")
-        )
+        mistake_category = validation_entry.get(
+            "mistake_category"
+        ) or validation_entry.get("misconception_type")
     if not mistake_category:
-        mistake_category = (
-            response.metadata.get("mistake_category")
-            or response.metadata.get("misconception_type")
-        )
+        mistake_category = response.metadata.get(
+            "mistake_category"
+        ) or response.metadata.get("misconception_type")
     adaptive_decision = response.metadata.get("adaptive_tutor_decision")
     if not isinstance(adaptive_decision, dict):
         adaptive_decision = {}
+    teaching_plan = response.metadata.get("teaching_plan")
+    teaching_plan = teaching_plan if isinstance(teaching_plan, dict) else {}
+    teaching_plan_rationale = response.metadata.get("teaching_plan_rationale")
+    teaching_plan_rationale = (
+        teaching_plan_rationale if isinstance(teaching_plan_rationale, dict) else {}
+    )
+    reason_code = (
+        adaptive_decision.get("reason")
+        or response.metadata.get("adaptation_override")
+        or teaching_plan_rationale.get("representation_reason")
+    )
     entry = {
         "turn_id": response.turn_id,
         "timestamp": timestamp,
@@ -1342,11 +1444,22 @@ def _next_strategy_history(
         or adaptive_decision.get("tutor_move"),
         "interaction_type": interaction_type,
         "mistake_category_addressed": mistake_category,
-        "board_update_mode": response.metadata.get("board_update_mode", "replace"),
+        "board_update_mode": (
+            "replace"
+            if response.metadata.get("board_update_mode") == "merge"
+            else response.metadata.get("board_update_mode", "replace")
+        ),
         "asked_for_student_attempt": _response_asked_for_student_attempt(response),
         "explanation_strategy": response.metadata.get("explanation_strategy")
         or adaptive_decision.get("explanation_strategy"),
         "mastery_signal": response.mastery_signal.value,
+        "representation": teaching_plan.get("representation")
+        or adaptive_decision.get("representation"),
+        # Bounded policy/audit labels only—never a model rationale or answer.
+        "reason_code": reason_code,
+        "task_profile": adaptive_decision.get("task_profile"),
+        "teaching_plan_source": response.metadata.get("teaching_plan_source"),
+        "teaching_plan_rationale": response.metadata.get("teaching_plan_rationale"),
     }
     history.append(entry)
     return history[-limit:]

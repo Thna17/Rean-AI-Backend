@@ -244,3 +244,19 @@ def mock_kg_service_global(monkeypatch):
             pass
 
 
+@pytest.fixture(autouse=True)
+def visual_tutor_scope_lock_disabled_by_default(monkeypatch):
+    """VISUAL_TUTOR_SCOPE_LOCK defaults to "grade12_math_limits" in production
+    to keep the still-stabilizing dynamic pipeline focused on one topic (see
+    api/core/config.py and orchestrator.py's _scope_lock_active()). Most
+    tests exercise other subjects/topics/grades and are not testing the lock
+    itself, so it is disabled here by default -- otherwise every one of them
+    would need to know about a flag unrelated to what they actually test.
+    Tests that ARE testing the lock's own behavior
+    (test_visual_tutor_scope_lock.py) explicitly re-enable it.
+    """
+    from api.core.config import settings
+
+    monkeypatch.setattr(settings, "VISUAL_TUTOR_SCOPE_LOCK", "")
+
+

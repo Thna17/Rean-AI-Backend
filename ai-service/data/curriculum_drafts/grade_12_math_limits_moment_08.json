@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "record_type": "interactive_teaching_moment_draft",
+  "status": "source_transcribed_for_local_mvp",
+  "student_delivery": "disabled",
+  "grade": 12,
+  "subject": "Mathematics",
+  "lesson": {
+    "id": "math.g12.lesson1.limits-of-functions",
+    "khmer_source_label": "លីមីតនៃអនុគមន៍",
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 15
+  },
+  "teaching_moment_id": "math.g12.lesson1.limits-of-functions.trigonometric.08",
+  "curriculum_version": "local-g12-math-limits-2025-10-01-v1",
+  "source": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "file_name": "Pages from 2025-10-01-00007213.pdf",
+    "provided_local_path": "/Users/macbookpro/Documents/Pages from 2025-10-01-00007213.pdf",
+    "pdf_pages": [15, 16],
+    "printed_pages": [16, 17]
+  },
+  "glossary_terms": [
+    {"term_id": "limit", "term_khmer": "លីមីត", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 1, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"},
+    {"term_id": "trigonometric_function", "term_khmer": "អនុគមន៍ត្រីកោណមាត្រ", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 15, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"}
+  ],
+  "prerequisite_concepts": [
+    {"id": "unit-circle-sine-cosine-tangent", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 15},
+    {"id": "squeeze-comparison-theorem", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 11}
+  ],
+  "learning_objectives": [
+    {"text": "Use the unit circle to see that sin x -> 0, cos x -> 1, tan x -> 0 as x -> 0, as the starting point for the special limit lim (sin x)/x = 1.", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 15}
+  ],
+  "source_formulas": [
+    {"expression": "lim sin(x) = 0, lim cos(x) = 1, lim tan(x) = 0, as x -> 0", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 15},
+    {"expression": "cos(theta) <= sin(theta)/theta <= 1, for 0 < theta < pi/2", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 15},
+    {"expression": "lim sin(x)/x = 1, as x -> 0", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 16},
+    {"expression": "lim (1 - cos(x))/x = 0, as x -> 0", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 16}
+  ],
+  "common_misconceptions": [
+    {"category": "assuming_sin_x_over_x_can_be_simplified_by_canceling_x_the_way_a_polynomial_ratio_would", "review_status": "pedagogical_review_required"}
+  ],
+  "teaching_plan": {
+    "representation": "unit_circle_diagram",
+    "spoken_explanation": {
+      "text": "តាមរង្វង់ត្រីកោណមាត្រ កាលណា x ខិតជិត 0 sin x ខិតទៅរកសូន្យ ចុះ cos x វិញ?",
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 15,
+      "glossary_term_ids": ["trigonometric_function", "limit"]
+    },
+    "board_actions": [
+      {"id": "trig-title", "type": "write_equation", "sequence_index": 0, "duration_ms": 500, "layout_zone": "problem", "layout_flow": "vertical", "latex": "\\lim_{x \\to 0} \\sin x, \\quad \\lim_{x \\to 0} \\cos x, \\quad \\lim_{x \\to 0} \\tan x", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 15},
+      {"id": "trig-student-task", "type": "student_task", "sequence_index": 1, "duration_ms": 0, "layout_zone": "student_task", "layout_flow": "vertical", "text": "តាមរង្វង់ត្រីកោណមាត្រ កាលណា x ខិតជិត 0 តើ sin x, cos x, tan x ខិតជិតលេខណានីមួយៗ?", "requires_student_response": true, "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 15}
+    ],
+    "student_task": {
+      "task_type": "conceptual_operation",
+      "requires_student_response": true,
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 15
+    },
+    "hidden_answer_policy": {"mode": "hidden", "deterministic_policy_permits_final_reveal": false},
+    "waiting_for_student_input": true,
+    "answer_revealed": false
+  },
+  "interactive_progression": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 15,
+    "steps": [
+      {"id": "observe-unit-circle", "representation": "unit_circle_diagram", "task": "តាមរង្វង់ត្រីកោណមាត្រ កាលណា x ខិតជិត 0 តើ sin x, cos x, tan x ខិតជិតលេខណានីមួយៗ?", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 15},
+      {"id": "squeeze-inequality", "representation": "symbolic_transformation", "formula": "\\cos\\theta \\le \\frac{\\sin\\theta}{\\theta} \\le 1", "task": "ដោយប្រៀបធៀបផ្ទៃកន្លះត្រីកោណ និងផ្ទៃចម្រៀកចាប់មុំ θ សូមបញ្ចប់វិសមភាព cosθ ≤ sinθ/θ ≤ 1។", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 15},
+      {"id": "apply-squeeze-to-sinx-over-x", "representation": "symbolic_transformation", "task": "ដោយ cosθ → 1 កាលណា θ → 0 សូមអនុវត្តទ្រឹស្តីបទប្រៀបធៀប ដើម្បីសន្និដ្ឋាន lim sinθ/θ កាលណា θ → 0។", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 16}
+    ]
+  },
+  "publication_requirements": {
+    "source_transcription_qa": "required",
+    "approved_lesson_chunk": "required",
+    "reviewed_glossary_set": "required"
+  }
+}

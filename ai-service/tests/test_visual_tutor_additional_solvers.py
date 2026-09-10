@@ -53,7 +53,7 @@ SOLVER_CASES = [
         "factoring",
     ),
     (
-        "arithmetic_expression",
+        "integer_arithmetic",
         "calculate 12 + 7 * 3",
         "Final answer:",
         "operation",
@@ -534,7 +534,7 @@ def test_line_equation_showcase_reveals_final_when_student_requests_answer() -> 
         ),
         ("Find slope between A(0, 1) and B(1, 3)", "slope_from_two_points"),
         ("solve x^2 - 5x + 6 = 0", "quadratic_equation"),
-        ("calculate 12 + 7 * 3", "arithmetic_expression"),
+        ("calculate 12 + 7 * 3", "integer_arithmetic"),
         ("What is 20% of 50?", "simple_percentage_word_problem"),
     ],
 )

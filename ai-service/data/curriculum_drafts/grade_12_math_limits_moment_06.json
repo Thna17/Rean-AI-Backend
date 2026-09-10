@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "record_type": "interactive_teaching_moment_draft",
+  "status": "source_transcribed_for_local_mvp",
+  "student_delivery": "disabled",
+  "grade": 12,
+  "subject": "Mathematics",
+  "lesson": {
+    "id": "math.g12.lesson1.limits-of-functions",
+    "khmer_source_label": "លីមីតនៃអនុគមន៍",
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 11
+  },
+  "teaching_moment_id": "math.g12.lesson1.limits-of-functions.comparison.06",
+  "curriculum_version": "local-g12-math-limits-2025-10-01-v1",
+  "source": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "file_name": "Pages from 2025-10-01-00007213.pdf",
+    "provided_local_path": "/Users/macbookpro/Documents/Pages from 2025-10-01-00007213.pdf",
+    "pdf_pages": [11],
+    "printed_pages": [12]
+  },
+  "glossary_terms": [
+    {"term_id": "limit", "term_khmer": "លីមីត", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 1, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"},
+    {"term_id": "comparison_theorem", "term_khmer": "លីមីតតាមការប្រៀបធៀប", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 11, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"}
+  ],
+  "prerequisite_concepts": [
+    {"id": "limit-at-infinity", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 4},
+    {"id": "rationalizing-a-radical-expression", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 11}
+  ],
+  "learning_objectives": [
+    {"text": "Apply the squeeze (pinching) theorem: if g(x) <= f(x) <= h(x) near a and g, h share the same limit, then f shares it too.", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 11}
+  ],
+  "source_formulas": [
+    {"expression": "f(x) = sqrt(x+1) - sqrt(x) = 1/(sqrt(x+1) + sqrt(x))", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 11},
+    {"expression": "1/(2*sqrt(x+1)) <= f(x) <= 1/(2*sqrt(x))", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 11}
+  ],
+  "common_misconceptions": [
+    {"category": "trying_to_evaluate_infinity_minus_infinity_by_direct_subtraction_instead_of_rationalizing_first", "review_status": "pedagogical_review_required"}
+  ],
+  "teaching_plan": {
+    "representation": "inequality_comparison",
+    "spoken_explanation": {
+      "text": "f(x) = √(x+1) - √x មានទម្រង់ ∞ - ∞។ បន្ទាប់ពីធ្វើឲ្យសនិទាន (rationalize) តើកន្សោមនេះស្ថិតនៅចន្លោះកន្សោមណាពីរ?",
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 11,
+      "glossary_term_ids": ["comparison_theorem", "limit"]
+    },
+    "board_actions": [
+      {"id": "comparison-title", "type": "write_equation", "sequence_index": 0, "duration_ms": 500, "layout_zone": "problem", "layout_flow": "vertical", "latex": "f(x) = \\sqrt{x+1} - \\sqrt{x}, \\quad x \\to +\\infty", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 11},
+      {"id": "comparison-rationalized", "type": "transform_equation", "sequence_index": 1, "duration_ms": 650, "layout_zone": "working", "layout_flow": "vertical", "latex": "\\frac{1}{2\\sqrt{x+1}} \\le \\frac{1}{\\sqrt{x+1}+\\sqrt{x}} \\le \\frac{1}{2\\sqrt{x}}", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 11},
+      {"id": "comparison-student-task", "type": "student_task", "sequence_index": 2, "duration_ms": 0, "layout_zone": "student_task", "layout_flow": "vertical", "text": "តើកន្សោមទាំងសងខាង (1/(2√(x+1)) និង 1/(2√x)) ខិតជិតលេខណា នៅពេល x → +∞? ដូច្នេះ f(x) ខិតជិតលេខណា?", "requires_student_response": true, "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 11}
+    ],
+    "student_task": {
+      "task_type": "conceptual_operation",
+      "requires_student_response": true,
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 11
+    },
+    "hidden_answer_policy": {"mode": "hidden", "deterministic_policy_permits_final_reveal": false},
+    "waiting_for_student_input": true,
+    "answer_revealed": false
+  },
+  "interactive_progression": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 11,
+    "steps": [
+      {"id": "rationalize", "representation": "symbolic_transformation", "formula": "f(x) = \\frac{1}{\\sqrt{x+1}+\\sqrt{x}}", "task": "ដើម្បីលុបទម្រង់ ∞-∞ សូមគុណនិងចែកនឹងកន្សោមផ្សំ (√(x+1)+√x)។ លទ្ធផលថ្មីជាអ្វី?", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 11},
+      {"id": "bound-between-two-functions", "representation": "conceptual_operation", "task": "ដោយសារ √x ≤ √(x+1), សូមកំណត់កន្សោមតូចជាង និងធំជាង f(x) ទាំងពីរ។", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 11},
+      {"id": "apply-squeeze-theorem", "representation": "symbolic_transformation", "task": "ដោយសារកន្សោមទាំងសងខាងខិតជិត 0 សូមសន្និដ្ឋានលីមីតរបស់ f(x) កាលណា x → +∞។", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 11}
+    ]
+  },
+  "publication_requirements": {
+    "source_transcription_qa": "required",
+    "approved_lesson_chunk": "required",
+    "reviewed_glossary_set": "required"
+  }
+}

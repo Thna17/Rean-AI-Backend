@@ -26,7 +26,11 @@ _TRANSFORMATIONS = standard_transformations + (implicit_multiplication_applicati
 SUPPORTED_PROBLEM_TYPES = frozenset({
     "linear_equation_one_variable",
     "integer_arithmetic",
+    "fraction_decimal_arithmetic",
+    "simple_percentage_word_problem",
     "slope_from_points",
+    "line_through_two_points",
+    "basic_quadratic_graph",
 })
 
 
@@ -52,6 +56,8 @@ def generate_topic_quiz(
 
     if response is None:
         response = _deterministic_fallback_quiz(request)
+        if request.use_llm:
+            response.metadata = {**response.metadata, "source": "deterministic_fallback"}
 
     response.cache_hit = False
     response.metadata = {
@@ -74,7 +80,7 @@ def _try_generate_with_llm(
         )
         payload = _extract_json(raw)
         response = QuizGenerationResponse.model_validate(payload)
-        if not _verify_quiz_response(response):
+        if not _verify_quiz_response(response, requested_type=request.problem_type or _problem_type_for_topic(request.topic)):
             return None
         response.metadata = {
             **response.metadata,
@@ -102,7 +108,11 @@ def _deterministic_fallback_quiz(
     question_builders = {
         "linear_equation_one_variable": _linear_equation_questions,
         "integer_arithmetic": _integer_arithmetic_questions,
+        "fraction_decimal_arithmetic": _fraction_decimal_questions,
+        "simple_percentage_word_problem": _percentage_questions,
         "slope_from_points": _slope_questions,
+        "line_through_two_points": _line_questions,
+        "basic_quadratic_graph": _quadratic_graph_questions,
     }
     questions = question_builders[problem_type](request, topic, difficulty)
     response = QuizGenerationResponse(
@@ -122,14 +132,30 @@ def _deterministic_fallback_quiz(
     return response
 
 
-def _verify_quiz_response(response: QuizGenerationResponse) -> bool:
-    return all(_verify_quiz_question(question) for question in response.questions)
+def _verify_quiz_response(
+    response: QuizGenerationResponse,
+    *,
+    requested_type: str | None,
+) -> bool:
+    """Reject a plausible quiz if it quietly changes the learner's topic."""
+    return (
+        response.verified
+        and requested_type in SUPPORTED_PROBLEM_TYPES
+        and response.problem_type == requested_type
+        and 3 <= len(response.questions) <= 5
+        and all(
+            question.problem_type == requested_type and _verify_quiz_question(question)
+            for question in response.questions
+        )
+    )
 
 
 def _verify_quiz_question(question: QuizQuestion) -> bool:
+    if question.problem_type not in SUPPORTED_PROBLEM_TYPES:
+        return False
     equation = str(question.metadata.get("equation") or "")
     if not equation or "=" not in equation:
-        return True
+        return question.metadata.get("verified_by") in {"deterministic", "sympy"}
     solved = _solve_linear_equation(equation)
     expected_answer = question.expected_answer or _choice_text(question)
     return solved is not None and _normalize_answer(solved) == _normalize_answer(
@@ -165,15 +191,23 @@ def _normalize_answer(value: str) -> str:
     return re.sub(r"\s+", "", value.strip().lower())
 
 
-def _problem_type_for_topic(topic: str) -> str:
+def _problem_type_for_topic(topic: str) -> str | None:
     normalized = topic.strip().lower().replace("-", " ")
     if "linear" in normalized and "equation" in normalized:
         return "linear_equation_one_variable"
-    if any(word in normalized for word in ("integer", "arithmetic", "addition", "subtraction")):
+    if any(word in normalized for word in ("integer", "addition", "subtraction")):
         return "integer_arithmetic"
+    if any(word in normalized for word in ("fraction", "decimal")):
+        return "fraction_decimal_arithmetic"
+    if "percent" in normalized:
+        return "simple_percentage_word_problem"
+    if "straight" in normalized or "equation of a line" in normalized:
+        return "line_through_two_points"
+    if "quadratic" in normalized:
+        return "basic_quadratic_graph"
     if "slope" in normalized or "coordinate" in normalized:
         return "slope_from_points"
-    return "linear_equation_one_variable"
+    return None
 
 
 def _quiz_id(subject: str, topic: str, problem_type: str, difficulty: str, request: QuizGenerationRequest) -> str:
@@ -193,7 +227,7 @@ def _cache_key(request: QuizGenerationRequest) -> str:
 def _quiz_system_prompt() -> str:
     return (
         "Return only strict JSON matching QuizGenerationResponse. "
-        "Generate 3 to 5 short questions using only supported types: linear_equation_one_variable, integer_arithmetic, slope_from_points. "
+        "Generate 3 to 5 short questions using only supported types: linear_equation_one_variable, integer_arithmetic, fraction_decimal_arithmetic, simple_percentage_word_problem, slope_from_points, line_through_two_points, basic_quadratic_graph. "
         "Fields must include quiz_id, subject, topic, problem_type, difficulty, "
         "questions, verified, cache_hit, metadata. "
         "Each question must include id, type, question_text, choices or expected_answer, "
@@ -203,14 +237,20 @@ def _quiz_system_prompt() -> str:
 
 
 def _personalization_metadata(request: QuizGenerationRequest) -> dict[str, Any]:
-    needs_support = request.hint_count >= 2 or any(
+    needs_support = request.hint_count >= 2 or request.stuck_count > 0 or bool(request.misconceptions) or any(
         result in {"invalid", "incomplete", "cannot_verify"}
         for result in request.verification_results
     )
     difficulty = "beginner" if needs_support or (request.prior_mastery or 0) < 0.4 else (
         "advanced" if (request.prior_mastery or 0) >= 0.8 and (request.prior_quiz_score or 0) >= 80 else "intermediate"
     )
-    return {"recommended_difficulty": difficulty, "skill_tags": request.skill_tags[:8], "hint_count": request.hint_count}
+    return {
+        "recommended_difficulty": difficulty,
+        "skill_tags": request.skill_tags[:8],
+        "hint_count": request.hint_count,
+        "stuck_count": request.stuck_count,
+        "misconception_count": len(request.misconceptions),
+    }
 
 
 def _choice_question(*, question_id: str, text: str, choices: list[str], correct_index: int,
@@ -253,6 +293,32 @@ def _integer_arithmetic_questions(request: QuizGenerationRequest, topic: str, di
     ) for index, (left, right) in enumerate(values)]
 
 
+def _fraction_decimal_questions(request: QuizGenerationRequest, topic: str, difficulty: str) -> list[QuizQuestion]:
+    variants = [("1/2 + 1/4", "3/4"), ("0.6 + 0.25", "0.85"), ("3/5 - 1/10", "1/2")]
+    return [
+        _choice_question(
+            question_id=f"fraction-decimal-{index + 1}", text=f"Calculate: {expression}",
+            choices=[answer, "1/4", "1", "0"], correct_index=0,
+            explanation="Keep the fraction or decimal form clear and simplify one operation at a time.",
+            difficulty=difficulty, topic=topic, problem_type="fraction_decimal_arithmetic",
+            metadata={"verified_by": "deterministic", "expression": expression, "skill_tags": request.skill_tags},
+        ) for index, (expression, answer) in enumerate(variants)
+    ]
+
+
+def _percentage_questions(request: QuizGenerationRequest, topic: str, difficulty: str) -> list[QuizQuestion]:
+    variants = [(20, 50), (15, 80), (12.5, 40)]
+    return [
+        _choice_question(
+            question_id=f"percentage-{index + 1}", text=f"What is {percent}% of {base}?",
+            choices=[sympy.sstr(sympy.Rational(str(percent)) * sympy.Rational(str(base)) / 100), "0", str(base), str(percent)],
+            correct_index=0, explanation="Convert the percent to a rate out of 100, then multiply by the base.",
+            difficulty=difficulty, topic=topic, problem_type="simple_percentage_word_problem",
+            metadata={"verified_by": "deterministic", "percent": percent, "base": base, "skill_tags": request.skill_tags},
+        ) for index, (percent, base) in enumerate(variants)
+    ]
+
+
 def _slope_questions(request: QuizGenerationRequest, topic: str, difficulty: str) -> list[QuizQuestion]:
     points = [((1, 2), (3, 6)), ((-1, 4), (2, 10)), ((0, -2), (4, 2))]
     questions: list[QuizQuestion] = []
@@ -266,6 +332,32 @@ def _slope_questions(request: QuizGenerationRequest, topic: str, difficulty: str
             problem_type="slope_from_points", metadata={"points": [[x1, y1], [x2, y2]], "verified_by": "deterministic", "skill_tags": request.skill_tags},
         ))
     return questions
+
+
+def _line_questions(request: QuizGenerationRequest, topic: str, difficulty: str) -> list[QuizQuestion]:
+    variants = [((0, 1), (1, 3), "y = 2x + 1"), ((1, 2), (3, 6), "y = 2x"), ((0, -1), (2, 3), "y = 2x - 1")]
+    return [
+        _choice_question(
+            question_id=f"line-{index + 1}", text=f"Which line goes through {first} and {second}?",
+            choices=[answer, "y = x + 1", "y = -2x + 1", "y = 2x + 2"], correct_index=0,
+            explanation="Use the two points to find slope, then find the intercept.", difficulty=difficulty,
+            topic=topic, problem_type="line_through_two_points",
+            metadata={"verified_by": "deterministic", "points": [first, second], "skill_tags": request.skill_tags},
+        ) for index, (first, second, answer) in enumerate(variants)
+    ]
+
+
+def _quadratic_graph_questions(request: QuizGenerationRequest, topic: str, difficulty: str) -> list[QuizQuestion]:
+    variants = [("y = x^2 - 4x + 3", "2"), ("y = x^2 + 2x - 3", "-1"), ("y = 2x^2 - 8x + 1", "2")]
+    return [
+        _choice_question(
+            question_id=f"quadratic-graph-{index + 1}", text=f"What is the x-coordinate of the vertex of {equation}?",
+            choices=[vertex_x, "0", "1", "-2"], correct_index=0,
+            explanation="For y = ax² + bx + c, the vertex x-coordinate is -b/(2a).",
+            difficulty=difficulty, topic=topic, problem_type="basic_quadratic_graph",
+            metadata={"verified_by": "deterministic", "function": equation, "skill_tags": request.skill_tags},
+        ) for index, (equation, vertex_x) in enumerate(variants)
+    ]
 
 
 def _extract_json(raw: str) -> dict[str, Any]:

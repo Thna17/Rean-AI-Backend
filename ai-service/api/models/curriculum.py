@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -147,6 +148,98 @@ class CurriculumMisconception(BaseModel):
     source: Optional[CurriculumSource] = None
     tags: List[str] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CurriculumReviewStatus(str, Enum):
+    DRAFT = "draft"
+    IN_REVIEW = "in_review"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ReviewedKhmerGlossaryTerm(BaseModel):
+    """A Khmer STEM term that has passed curriculum review.
+
+    Raw ``khmer_terms`` on an authoring chunk are deliberately not accepted by
+    this contract.  A term is student-facing only after its source and review
+    information are present.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    english: str = Field(min_length=1, max_length=160)
+    khmer: str = Field(min_length=1, max_length=240)
+    glossary_version: str = Field(min_length=1, max_length=80)
+    source_id: str = Field(min_length=1, max_length=160)
+    reviewer_status: CurriculumReviewStatus
+    curriculum_version: str = Field(min_length=1, max_length=80)
+
+    @model_validator(mode="after")
+    def must_be_approved(self) -> "ReviewedKhmerGlossaryTerm":
+        if self.reviewer_status != CurriculumReviewStatus.APPROVED:
+            raise ValueError("only approved Khmer glossary terms may be displayed")
+        return self
+
+
+class ReviewedKhmerGlossarySet(BaseModel):
+    """Reviewed terminology for one exact Cambodian curriculum lesson."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+    grade: int = Field(ge=10, le=12)
+    subject: str = Field(min_length=1)
+    lesson: str = Field(min_length=1)
+    glossary_version: str = Field(min_length=1)
+    curriculum_version: str = Field(min_length=1)
+    source_id: str = Field(min_length=1)
+    reviewer_status: CurriculumReviewStatus
+    terms: List[ReviewedKhmerGlossaryTerm] = Field(min_length=1, max_length=80)
+
+    @model_validator(mode="after")
+    def must_have_consistent_approved_terms(self) -> "ReviewedKhmerGlossarySet":
+        if self.reviewer_status != CurriculumReviewStatus.APPROVED:
+            raise ValueError("only approved Khmer glossary sets may be displayed")
+        if any(
+            term.glossary_version != self.glossary_version
+            or term.curriculum_version != self.curriculum_version
+            for term in self.terms
+        ):
+            raise ValueError("glossary terms must match their set version")
+        return self
+
+
+class ReviewedLessonChunk(BaseModel):
+    """Strict production lesson record; authoring drafts stay outside this contract."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+    grade: int = Field(ge=10, le=12)
+    subject: str = Field(min_length=1)
+    topic: str = Field(min_length=1)
+    lesson: str = Field(min_length=1)
+    curriculum_version: str = Field(min_length=1)
+    learning_objectives: List[str] = Field(min_length=1, max_length=8)
+    formulas: List[CurriculumFormula] = Field(default_factory=list)
+    prerequisites: List[str] = Field(default_factory=list)
+    dependent_concepts: List[str] = Field(default_factory=list)
+    common_misconceptions: List[CurriculumMisconception] = Field(default_factory=list)
+    visual_representations: List[str] = Field(min_length=1, max_length=8)
+    khmer_terms: Dict[str, str] = Field(default_factory=dict)
+    language: str = Field(default="en", min_length=1)
+    source_ids: List[str] = Field(min_length=1, max_length=12)
+    review_status: CurriculumReviewStatus
+
+    @model_validator(mode="after")
+    def approved_requires_complete_evidence(self) -> "ReviewedLessonChunk":
+        if self.review_status != CurriculumReviewStatus.APPROVED:
+            raise ValueError("only approved lesson chunks may enter the production store")
+        if any(not value.strip() for value in [*self.learning_objectives, *self.source_ids]):
+            raise ValueError("reviewed lesson has blank objective or source ID")
+        if any(not key.strip() or not value.strip() for key, value in self.khmer_terms.items()):
+            raise ValueError("Khmer glossary entries must be approved non-empty values")
+        return self
 
 
 class CurriculumChunk(BaseModel):

@@ -28,9 +28,11 @@ class TTSService:
         try:
             from piper import PiperVoice  # type: ignore
         except Exception as exc:  # pragma: no cover - runtime dependency
-            raise RuntimeError(
-                "Piper is not installed. Add 'piper-tts' to requirements."
-            ) from exc
+            logger.warning(
+                "Piper TTS is not installed. TTS is disabled. "
+                "Add 'piper-tts' to requirements to enable voice."
+            )
+            return None
 
         model_path = settings.TTS_MODEL_PATH
         config_path = settings.TTS_CONFIG_PATH
@@ -66,14 +68,32 @@ class TTSService:
             )
 
         logger.info(f"Loading TTS model: {resolved_model_path}")
+        if not os.path.exists(resolved_model_path):
+            logger.warning(
+                f"TTS model file not found at {resolved_model_path}. "
+                "TTS is disabled. Please download the model files to models/piper/."
+            )
+            return None
+
         self._voice = PiperVoice.load(
             resolved_model_path,
             config_path=resolved_config_path,
         )
         return self._voice
 
+    def _generate_silent_wav(self) -> bytes:
+        wav_io = io.BytesIO()
+        with wave.open(wav_io, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(22050)
+            wav_file.writeframes(b'\x00\x00' * 22050)  # 1 second of silence
+        return wav_io.getvalue()
+
     def synthesize(self, text: str) -> bytes:
         voice = self._load_voice()
+        if voice is None:
+            return self._generate_silent_wav()
 
         # Newer piper-tts versions return AudioChunk iterables.
         chunks = list(voice.synthesize(text))

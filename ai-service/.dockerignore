@@ -1,6 +1,11 @@
 # Version control
 .git
 .gitignore
+.env
+.env.*
+*.pem
+*service-account*.json
+*credential*.json
 
 # Python artifacts
 __pycache__

@@ -990,7 +990,43 @@ async def ai_tutor_stream_chat(
             api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
             if not ai_tutor_response:
                 async with httpx.AsyncClient() as client:
-                    if api_key:
+                    
+                    provider = os.getenv("VISUAL_TUTOR_LLM_PROVIDER", "auto").strip().lower()
+                    if provider == "gemini":
+                        gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
+                        model_used = f"gemini/{gemini_model}"
+                        from google import genai
+                        from google.genai import types
+                        import google.auth
+                        
+                        api_key = os.getenv("GEMINI_API_KEY")
+                        if api_key:
+                            genai_client = genai.Client(api_key=api_key)
+                        else:
+                            credentials, project_id = google.auth.default()
+                            project = os.getenv("GOOGLE_CLOUD_PROJECT", project_id) or getattr(credentials, "quota_project_id", None)
+                            if not project:
+                                raise ValueError("No Google Cloud Project found for ADC. Set GOOGLE_CLOUD_PROJECT.")
+                            genai_client = genai.Client(vertexai=True, project=project, location="us-central1")
+                        
+                        contents = []
+                        for msg in llm_messages:
+                            role = "user" if msg["role"] == "user" else "model"
+                            contents.append(types.Content(role=role, parts=[types.Part.from_text(msg["content"])]))
+                        
+                        response_stream = await genai_client.aio.models.generate_content_stream(
+                            model=gemini_model,
+                            contents=contents,
+                            config=types.GenerateContentConfig(
+                                system_instruction=system_prompt,
+                                temperature=0.7,
+                            )
+                        )
+                        async for chunk in response_stream:
+                            if chunk.text:
+                                tokens.append(chunk.text)
+                                yield f"event: chunk\ndata: {json.dumps({'text': chunk.text})}\n\n"
+                    elif api_key:
                         headers = {
                             "Authorization": f"Bearer {api_key}",
                             "HTTP-Referer": "https://ai_tutor.app",

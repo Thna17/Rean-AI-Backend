@@ -1,0 +1,588 @@
+// Rean AI Visual Tutor logical ERD - dbdiagram.io compatible
+
+Table users {
+  user_id varchar [pk]
+  firebase_uid varchar [unique]
+  full_name varchar
+  email varchar [unique]
+  role varchar
+  profile_image_url varchar
+  account_status varchar
+  preferred_language varchar
+  created_at timestamp
+  updated_at timestamp
+  last_login_at timestamp
+}
+
+Table student_profiles {
+  student_profile_id varchar [pk]
+  user_id varchar [unique]
+  grade_level_id varchar
+  explanation_level varchar
+  learning_goal varchar
+  onboarding_completed boolean
+  current_streak varchar
+  longest_streak varchar
+  total_learning_time varchar
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table grade_levels {
+  grade_level_id varchar [pk]
+  grade_name varchar
+  grade_number int [unique]
+  description varchar
+  status varchar
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table subjects {
+  subject_id varchar [pk]
+  subject_name varchar
+  subject_code varchar [unique]
+  icon_url varchar
+  description varchar
+  status varchar
+  display_order int
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table student_subjects {
+  student_subject_id varchar [pk]
+  student_profile_id varchar
+  subject_id varchar
+  selected_at timestamp
+  current_progress decimal
+  mastery_level decimal
+  status varchar
+}
+
+Table curriculum_units {
+  unit_id varchar [pk]
+  subject_id varchar
+  grade_level_id varchar
+  unit_name varchar
+  description varchar
+  display_order int
+  status varchar
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table topics {
+  topic_id varchar [pk]
+  unit_id varchar
+  subject_id varchar
+  grade_level_id varchar
+  topic_name varchar
+  topic_code varchar
+  description varchar
+  difficulty_level varchar
+  learning_objective varchar
+  visualization_support boolean
+  verification_support boolean
+  status varchar
+  display_order int
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table topic_prerequisites {
+  prerequisite_id varchar [pk]
+  topic_id varchar
+  prerequisite_topic_id varchar
+  relationship_type varchar
+  created_at timestamp
+}
+
+Table lessons {
+  lesson_id varchar [pk]
+  topic_id varchar
+  title varchar
+  summary varchar
+  content_reference varchar
+  estimated_duration int
+  difficulty_level varchar
+  status varchar
+  created_by varchar
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table tutor_sessions {
+  tutor_session_id varchar [pk]
+  student_profile_id varchar
+  subject_id varchar
+  topic_id varchar
+  lesson_id varchar
+  original_question varchar
+  detected_language varchar
+  detected_intent varchar
+  detected_problem_type varchar
+  tutor_mode varchar
+  current_stage varchar
+  teaching_strategy varchar
+  explanation_level varchar
+  session_status varchar
+  answer_revealed boolean
+  verification_status varchar
+  started_at timestamp
+  completed_at timestamp
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table tutor_turns {
+  tutor_turn_id varchar [pk]
+  tutor_session_id varchar
+  turn_number int
+  sender_type varchar
+  message_text varchar
+  stage varchar
+  teaching_strategy varchar
+  interaction_type varchar
+  expected_answer varchar
+  hint_level int
+  ai_provider varchar
+  model_name varchar
+  response_latency_ms int
+  structured_payload json
+  created_at timestamp
+}
+
+Table visualizations {
+  visualization_id varchar [pk]
+  tutor_turn_id varchar [unique]
+  visualization_type varchar
+  visualization_data json
+  title varchar
+  description varchar
+  render_version varchar
+  validation_status varchar
+  created_at timestamp
+}
+
+Table student_attempts {
+  attempt_id varchar [pk]
+  tutor_session_id varchar
+  tutor_turn_id varchar
+  student_profile_id varchar
+  submitted_answer varchar
+  answer_format varchar
+  is_correct boolean
+  is_partially_correct boolean
+  score decimal
+  response_time_seconds int
+  hint_used varchar
+  attempt_number int
+  feedback varchar
+  misconception_id varchar
+  created_at timestamp
+}
+
+Table hint_usages {
+  hint_usage_id varchar [pk]
+  tutor_session_id varchar
+  tutor_turn_id varchar
+  student_profile_id varchar
+  hint_level int
+  hint_type varchar
+  hint_content varchar
+  requested_at timestamp
+}
+
+Table mathematical_verifications {
+  verification_id varchar [pk]
+  tutor_session_id varchar
+  tutor_turn_id varchar
+  verification_type varchar
+  input_expression varchar
+  expected_result varchar
+  generated_result varchar
+  verification_status varchar
+  verification_details json
+  engine_name varchar
+  regeneration_count int
+  verified_at timestamp
+}
+
+Table misconceptions {
+  misconception_id varchar [pk]
+  topic_id varchar
+  misconception_code varchar
+  misconception_name varchar
+  description varchar
+  recommended_strategy varchar
+  status varchar
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table student_misconceptions {
+  student_misconception_id varchar [pk]
+  student_profile_id varchar
+  misconception_id varchar
+  tutor_session_id varchar
+  detection_count int
+  confidence_score decimal
+  first_detected_at timestamp
+  last_detected_at timestamp
+  resolved_at timestamp
+  status varchar
+}
+
+Table quizzes {
+  quiz_id varchar [pk]
+  subject_id varchar
+  topic_id varchar
+  grade_level_id varchar
+  generated_from_session_id varchar
+  title varchar
+  description varchar
+  difficulty_level varchar
+  generation_source varchar
+  verification_status varchar
+  time_limit_minutes int
+  total_questions int
+  status varchar
+  created_by varchar
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table quiz_questions {
+  quiz_question_id varchar [pk]
+  quiz_id varchar
+  question_order varchar
+  question_text varchar
+  question_type varchar
+  visualization_data json
+  difficulty_level varchar
+  explanation varchar
+  verification_status varchar
+  created_at timestamp
+}
+
+Table quiz_options {
+  quiz_option_id varchar [pk]
+  quiz_question_id varchar
+  option_label varchar
+  option_text varchar
+  is_correct boolean
+  display_order int
+}
+
+Table quiz_attempts {
+  quiz_attempt_id varchar [pk]
+  quiz_id varchar
+  student_profile_id varchar
+  score decimal
+  correct_count int
+  incorrect_count int
+  skipped_count int
+  started_at timestamp
+  submitted_at timestamp
+  completion_status varchar
+  created_at timestamp
+}
+
+Table quiz_answers {
+  quiz_answer_id varchar [pk]
+  quiz_attempt_id varchar
+  quiz_question_id varchar
+  selected_option_id varchar
+  submitted_answer varchar
+  is_correct boolean
+  is_partially_correct boolean
+  score_awarded decimal
+  feedback varchar
+  misconception_id varchar
+  answered_at timestamp
+}
+
+Table student_topic_progress {
+  progress_id varchar [pk]
+  student_profile_id varchar
+  topic_id varchar
+  mastery_score decimal
+  lessons_completed boolean
+  quizzes_completed boolean
+  average_quiz_score decimal
+  correct_attempts varchar
+  incorrect_attempts varchar
+  hints_used varchar
+  last_activity_at timestamp
+  status varchar
+  updated_at timestamp
+}
+
+Table learning_activities {
+  activity_id varchar [pk]
+  student_profile_id varchar
+  activity_type varchar
+  subject_id varchar
+  topic_id varchar
+  tutor_session_id varchar
+  quiz_attempt_id varchar
+  title varchar
+  duration_seconds int
+  completion_status varchar
+  activity_at timestamp
+}
+
+Table study_streaks {
+  streak_id varchar [pk]
+  student_profile_id varchar
+  activity_date timestamp
+  study_minutes int
+  activity_count int
+  streak_qualified boolean
+  created_at timestamp
+}
+
+Table voice_sessions {
+  voice_session_id varchar [pk]
+  student_profile_id varchar
+  tutor_session_id varchar
+  language varchar
+  session_status varchar
+  started_at timestamp
+  ended_at timestamp
+  created_at timestamp
+}
+
+Table voice_interactions {
+  voice_interaction_id varchar [pk]
+  voice_session_id varchar
+  audio_input_url varchar
+  transcript_text varchar
+  confidence_score decimal
+  ai_response_text varchar
+  audio_response_url varchar
+  processing_status varchar
+  processing_time_ms int
+  created_at timestamp
+}
+
+Table notification_preferences {
+  preference_id varchar [pk]
+  user_id varchar [unique]
+  study_reminder_enabled boolean
+  streak_reminder_enabled boolean
+  announcement_enabled boolean
+  reminder_time varchar
+  timezone varchar
+  updated_at timestamp
+}
+
+Table device_tokens {
+  device_token_id varchar [pk]
+  user_id varchar
+  token varchar [unique]
+  platform varchar
+  device_name varchar
+  is_active boolean
+  last_used_at timestamp
+  created_at timestamp
+}
+
+Table notifications {
+  notification_id varchar [pk]
+  title varchar
+  message varchar
+  notification_type varchar
+  target_grade_id varchar
+  target_subject_id varchar
+  scheduled_at timestamp
+  sent_at timestamp
+  status varchar
+  created_by varchar
+  created_at timestamp
+}
+
+Table notification_deliveries {
+  delivery_id varchar [pk]
+  notification_id varchar
+  user_id varchar
+  device_token_id varchar
+  delivery_status varchar
+  provider_response json
+  delivered_at timestamp
+  opened_at timestamp
+}
+
+Table reported_ai_responses {
+  report_id varchar [pk]
+  student_profile_id varchar
+  tutor_session_id varchar
+  tutor_turn_id varchar
+  report_type varchar
+  description varchar
+  severity varchar
+  verification_status varchar
+  assigned_admin_id varchar
+  report_status varchar
+  resolution_note varchar
+  reported_at timestamp
+  resolved_at timestamp
+}
+
+Table ai_request_logs {
+  ai_request_log_id varchar [pk]
+  tutor_session_id varchar
+  request_type varchar
+  provider varchar
+  model_name varchar
+  prompt_version varchar
+  response_status varchar
+  response_latency_ms int
+  token_input int
+  token_output int
+  estimated_cost decimal
+  retry_count int
+  error_code varchar
+  created_at timestamp
+}
+
+Table ai_error_logs {
+  ai_error_log_id varchar [pk]
+  ai_request_log_id varchar
+  service_name varchar
+  error_type varchar
+  error_message varchar
+  severity varchar
+  retry_status varchar
+  resolved_status varchar
+  created_at timestamp
+  resolved_at timestamp
+}
+
+Table tutor_response_cache {
+  cache_id varchar [pk]
+  query_fingerprint varchar [unique]
+  normalized_query varchar
+  subject_id varchar
+  topic_id varchar
+  grade_level_id varchar
+  problem_type varchar
+  explanation_level varchar
+  structured_response json
+  verification_status varchar
+  response_version varchar
+  usage_count int
+  created_at timestamp
+  expires_at timestamp
+  last_used_at timestamp
+}
+
+Table cache_reuse_logs {
+  reuse_log_id varchar [pk]
+  cache_id varchar
+  tutor_session_id varchar
+  reuse_type varchar
+  compatibility_status varchar
+  rejection_reason varchar
+  latency_saved_ms int
+  created_at timestamp
+}
+
+Table audit_logs {
+  audit_log_id varchar [pk]
+  admin_user_id varchar
+  action_type varchar
+  module varchar
+  target_entity_type varchar
+  target_entity_id varchar
+  previous_data json
+  new_data json
+  ip_address varchar
+  device_info varchar
+  action_result varchar
+  created_at timestamp
+}
+
+Table system_settings {
+  setting_id varchar [pk]
+  setting_group varchar
+  setting_key varchar
+  setting_value varchar
+  value_type varchar
+  is_sensitive boolean
+  updated_by varchar
+  updated_at timestamp
+}
+
+Ref: student_profiles.user_id > users.user_id
+Ref: student_profiles.grade_level_id > grade_levels.grade_level_id
+Ref: student_subjects.student_profile_id > student_profiles.student_profile_id
+Ref: student_subjects.subject_id > subjects.subject_id
+Ref: curriculum_units.subject_id > subjects.subject_id
+Ref: curriculum_units.grade_level_id > grade_levels.grade_level_id
+Ref: topics.unit_id > curriculum_units.unit_id
+Ref: topics.subject_id > subjects.subject_id
+Ref: topics.grade_level_id > grade_levels.grade_level_id
+Ref: topic_prerequisites.topic_id > topics.topic_id
+Ref: topic_prerequisites.prerequisite_topic_id > topics.topic_id
+Ref: lessons.topic_id > topics.topic_id
+Ref: lessons.created_by > users.user_id
+Ref: tutor_sessions.student_profile_id > student_profiles.student_profile_id
+Ref: tutor_sessions.subject_id > subjects.subject_id
+Ref: tutor_sessions.topic_id > topics.topic_id
+Ref: tutor_sessions.lesson_id > lessons.lesson_id
+Ref: tutor_turns.tutor_session_id > tutor_sessions.tutor_session_id
+Ref: visualizations.tutor_turn_id > tutor_turns.tutor_turn_id
+Ref: student_attempts.tutor_session_id > tutor_sessions.tutor_session_id
+Ref: student_attempts.tutor_turn_id > tutor_turns.tutor_turn_id
+Ref: student_attempts.student_profile_id > student_profiles.student_profile_id
+Ref: student_attempts.misconception_id > misconceptions.misconception_id
+Ref: hint_usages.tutor_session_id > tutor_sessions.tutor_session_id
+Ref: hint_usages.tutor_turn_id > tutor_turns.tutor_turn_id
+Ref: hint_usages.student_profile_id > student_profiles.student_profile_id
+Ref: mathematical_verifications.tutor_session_id > tutor_sessions.tutor_session_id
+Ref: mathematical_verifications.tutor_turn_id > tutor_turns.tutor_turn_id
+Ref: misconceptions.topic_id > topics.topic_id
+Ref: student_misconceptions.student_profile_id > student_profiles.student_profile_id
+Ref: student_misconceptions.misconception_id > misconceptions.misconception_id
+Ref: student_misconceptions.tutor_session_id > tutor_sessions.tutor_session_id
+Ref: quizzes.subject_id > subjects.subject_id
+Ref: quizzes.topic_id > topics.topic_id
+Ref: quizzes.grade_level_id > grade_levels.grade_level_id
+Ref: quizzes.generated_from_session_id > tutor_sessions.tutor_session_id
+Ref: quizzes.created_by > users.user_id
+Ref: quiz_questions.quiz_id > quizzes.quiz_id
+Ref: quiz_options.quiz_question_id > quiz_questions.quiz_question_id
+Ref: quiz_attempts.quiz_id > quizzes.quiz_id
+Ref: quiz_attempts.student_profile_id > student_profiles.student_profile_id
+Ref: quiz_answers.quiz_attempt_id > quiz_attempts.quiz_attempt_id
+Ref: quiz_answers.quiz_question_id > quiz_questions.quiz_question_id
+Ref: quiz_answers.selected_option_id > quiz_options.quiz_option_id
+Ref: quiz_answers.misconception_id > misconceptions.misconception_id
+Ref: student_topic_progress.student_profile_id > student_profiles.student_profile_id
+Ref: student_topic_progress.topic_id > topics.topic_id
+Ref: learning_activities.student_profile_id > student_profiles.student_profile_id
+Ref: study_streaks.student_profile_id > student_profiles.student_profile_id
+Ref: voice_sessions.student_profile_id > student_profiles.student_profile_id
+Ref: voice_sessions.tutor_session_id > tutor_sessions.tutor_session_id
+Ref: voice_interactions.voice_session_id > voice_sessions.voice_session_id
+Ref: notification_preferences.user_id > users.user_id
+Ref: device_tokens.user_id > users.user_id
+Ref: notifications.created_by > users.user_id
+Ref: notification_deliveries.notification_id > notifications.notification_id
+Ref: notification_deliveries.user_id > users.user_id
+Ref: notification_deliveries.device_token_id > device_tokens.device_token_id
+Ref: reported_ai_responses.student_profile_id > student_profiles.student_profile_id
+Ref: reported_ai_responses.tutor_session_id > tutor_sessions.tutor_session_id
+Ref: reported_ai_responses.tutor_turn_id > tutor_turns.tutor_turn_id
+Ref: reported_ai_responses.assigned_admin_id > users.user_id
+Ref: ai_request_logs.tutor_session_id > tutor_sessions.tutor_session_id
+Ref: ai_error_logs.ai_request_log_id > ai_request_logs.ai_request_log_id
+Ref: tutor_response_cache.subject_id > subjects.subject_id
+Ref: tutor_response_cache.topic_id > topics.topic_id
+Ref: tutor_response_cache.grade_level_id > grade_levels.grade_level_id
+Ref: cache_reuse_logs.cache_id > tutor_response_cache.cache_id
+Ref: cache_reuse_logs.tutor_session_id > tutor_sessions.tutor_session_id
+Ref: audit_logs.admin_user_id > users.user_id
+Ref: system_settings.updated_by > users.user_id

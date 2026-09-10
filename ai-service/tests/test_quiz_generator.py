@@ -170,6 +170,38 @@ def test_personalization_uses_hints_and_supported_types() -> None:
     assert all(question.problem_type == "slope_from_points" for question in response.questions)
 
 
+@pytest.mark.parametrize(
+    ("topic", "problem_type"),
+    [
+        ("Linear Equations", "linear_equation_one_variable"),
+        ("Integer Arithmetic", "integer_arithmetic"),
+        ("Fractions and Decimals", "fraction_decimal_arithmetic"),
+        ("Percentages", "simple_percentage_word_problem"),
+        ("Slope from Two Points", "slope_from_points"),
+        ("Straight Line Graphs", "line_through_two_points"),
+        ("Basic Quadratic Graphs", "basic_quadratic_graph"),
+    ],
+)
+def test_every_mvp_topic_generates_only_its_validated_practice_type(
+    topic: str, problem_type: str
+) -> None:
+    response = generate_topic_quiz(
+        QuizGenerationRequest(
+            grade=8,
+            topic=topic,
+            problem_type=problem_type,
+            stuck_count=1,
+            misconceptions=["recent verified misconception"],
+        )
+    )
+
+    assert response.verified is True
+    assert 3 <= len(response.questions) <= 5
+    assert response.problem_type == problem_type
+    assert all(question.problem_type == problem_type for question in response.questions)
+    assert response.metadata["personalization"]["recommended_difficulty"] == "beginner"
+
+
 def test_unsupported_generated_practice_is_rejected() -> None:
     with pytest.raises(ValueError, match="Unsupported targeted-practice"):
         generate_topic_quiz(QuizGenerationRequest(problem_type="geometry_proof"))

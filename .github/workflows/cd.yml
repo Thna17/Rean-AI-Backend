@@ -9,152 +9,82 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ──────────────────────────────────────────────
-  # Flutter Web → Vercel
-  # ──────────────────────────────────────────────
   deploy-flutter-web:
-    name: Deploy Flutter Web → Vercel
+    name: Build and deploy Flutter web
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: flutter-app
-
     steps:
       - uses: actions/checkout@v6
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 20
-
-      - name: Get dependencies
+      - name: Install dependencies
+        working-directory: ai_tutor
         run: flutter pub get
-
-      - name: Create firebase_options.dart
+      - name: Build release web bundle
+        working-directory: ai_tutor
         env:
-          FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
-          FIREBASE_WEB_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID }}
-          FIREBASE_MESSAGING_SENDER_ID: ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
-          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
-          FIREBASE_MEASUREMENT_ID: ${{ vars.FIREBASE_MEASUREMENT_ID }}
+          APP_ENV: production
+          BACKEND_BASE_URL: ${{ vars.BACKEND_BASE_URL }}
+          AI_SERVICE_BASE_URL: ${{ vars.AI_SERVICE_BASE_URL }}
         run: |
-          : "${FIREBASE_WEB_API_KEY:?Set FIREBASE_WEB_API_KEY repository variable}"
-          : "${FIREBASE_WEB_APP_ID:?Set FIREBASE_WEB_APP_ID repository variable}"
-          : "${FIREBASE_MESSAGING_SENDER_ID:?Set FIREBASE_MESSAGING_SENDER_ID repository variable}"
-          : "${FIREBASE_PROJECT_ID:?Set FIREBASE_PROJECT_ID repository variable}"
-          : "${FIREBASE_MEASUREMENT_ID:?Set FIREBASE_MEASUREMENT_ID repository variable}"
-          sed \
-            -e "s|YOUR_WEB_API_KEY|${FIREBASE_WEB_API_KEY}|" \
-            -e "s|YOUR_WEB_APP_ID|${FIREBASE_WEB_APP_ID}|" \
-            -e "s|YOUR_MESSAGING_SENDER_ID|${FIREBASE_MESSAGING_SENDER_ID}|g" \
-            -e "s|YOUR_PROJECT_ID|${FIREBASE_PROJECT_ID}|g" \
-            -e "s|YOUR_MEASUREMENT_ID|${FIREBASE_MEASUREMENT_ID}|" \
-            lib/firebase_options.dart.example > lib/firebase_options.dart
-
-      - name: Create public env config for build
-        env:
-          GOOGLE_SERVER_CLIENT_ID: ${{ vars.GOOGLE_SERVER_CLIENT_ID }}
-        run: |
-          : "${GOOGLE_SERVER_CLIENT_ID:?Set GOOGLE_SERVER_CLIENT_ID repository variable}"
-          cat > assets/env/prod_config <<'EOF'
-          ENVIRONMENT=production
-          API_BASE_URL=https://api.lexilingo.me/api/v1
-          API_BASE_URL_FALLBACK=
-          AI_SERVICE_URL=https://api.lexilingo.me/api/v1
-          AI_SERVICE_URL_FALLBACK=
-          ENABLE_VOICE_FEATURE=true
-          ENABLE_GAMIFICATION=true
-          ENABLE_STARTER_REWARD=false
-          DEBUG_MODE=false
-          EOF
-          printf 'GOOGLE_SERVER_CLIENT_ID=%s\n' "$GOOGLE_SERVER_CLIENT_ID" >> assets/env/prod_config
-
-      - name: Build Flutter web (release)
-        run: flutter build web --release --no-pub
-
-      - name: Verify vocabulary collection API compatibility
-        run: |
-          if grep -Fq 'vocabulary/collection?limit=1000' build/web/main.dart.js; then
-            echo "Unsupported vocabulary collection limit found in production bundle"
-            exit 1
-          fi
-          grep -Fq 'vocabulary/collection?limit=100' build/web/main.dart.js
-
-      - name: Install JS deps for Vercel hooks
-        run: npm ci
-
-      - name: Verify Vercel build prerequisites
-        run: npm run vercel-build
-
-      - name: Install latest Vercel CLI
-        run: npm install -g vercel@latest
-
-      - name: Pull Vercel project settings
+          : "${BACKEND_BASE_URL:?Set BACKEND_BASE_URL as a repository variable}"
+          : "${AI_SERVICE_BASE_URL:?Set AI_SERVICE_BASE_URL as a repository variable}"
+          flutter build web --release --no-pub \
+            --dart-define=APP_ENV="$APP_ENV" \
+            --dart-define=BACKEND_BASE_URL="$BACKEND_BASE_URL" \
+            --dart-define=AI_SERVICE_BASE_URL="$AI_SERVICE_BASE_URL"
+      - name: Deploy static web bundle to Vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_FLUTTER }}
-        run: vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
+        run: |
+          : "${VERCEL_TOKEN:?Set VERCEL_TOKEN in GitHub Secrets}"
+          : "${VERCEL_ORG_ID:?Set VERCEL_ORG_ID in GitHub Secrets}"
+          : "${VERCEL_PROJECT_ID:?Set VERCEL_PROJECT_ID_FLUTTER in GitHub Secrets}"
+          npx --yes vercel@39.1.1 link --yes --project "$VERCEL_PROJECT_ID" --scope "$VERCEL_ORG_ID"
+          npx --yes vercel@39.1.1 deploy "$GITHUB_WORKSPACE/ai_tutor/build/web" \
+            --prod --yes --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
 
-      - name: Build Vercel prebuilt output
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_FLUTTER }}
-        run: vercel build --prod --token "$VERCEL_TOKEN"
-
-      - name: Deploy to Vercel (prebuilt)
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_FLUTTER }}
-        run: vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN"
-
-  # ──────────────────────────────────────────────
-  # Backend Docker → GitHub Container Registry
-  # ──────────────────────────────────────────────
-  build-backend-docker:
-    name: Build & Push Backend Docker Image
+  publish-container-images:
+    name: Build and publish service images
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
       packages: write
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: node-gateway
+            context: backend-ai-tutor/backend
+            dockerfile: backend-ai-tutor/backend/Dockerfile
+          - image: ai-service
+            context: ai-service
+            dockerfile: ai-service/Dockerfile.prod
+          - image: admin
+            context: admin-ai-tutor
+            dockerfile: admin-ai-tutor/Dockerfile
     steps:
       - uses: actions/checkout@v6
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract Docker metadata
-        id: meta
+      - id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository }}/backend
+          images: ghcr.io/${{ github.repository }}/${{ matrix.image }}
           tags: |
-            type=ref,event=branch
             type=sha,prefix=sha-
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
+            type=raw,value=latest
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
         with:
-          context: backend-service
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

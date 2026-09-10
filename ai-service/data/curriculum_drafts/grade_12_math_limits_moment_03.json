@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "record_type": "interactive_teaching_moment_draft",
+  "status": "source_transcribed_for_local_mvp",
+  "student_delivery": "disabled",
+  "grade": 12,
+  "subject": "Mathematics",
+  "lesson": {
+    "id": "math.g12.lesson1.limits-of-functions",
+    "khmer_source_label": "លីមីតនៃអនុគមន៍",
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 4
+  },
+  "teaching_moment_id": "math.g12.lesson1.limits-of-functions.at-infinity.03",
+  "curriculum_version": "local-g12-math-limits-2025-10-01-v1",
+  "source": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "file_name": "Pages from 2025-10-01-00007213.pdf",
+    "provided_local_path": "/Users/macbookpro/Documents/Pages from 2025-10-01-00007213.pdf",
+    "pdf_pages": [4, 5],
+    "printed_pages": [5, 6]
+  },
+  "glossary_terms": [
+    {"term_id": "limit", "term_khmer": "លីមីត", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 1, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"},
+    {"term_id": "limit_at_infinity", "term_khmer": "លីមីតនៅត្រង់ក្រៅអនន្ត", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 4, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"}
+  ],
+  "prerequisite_concepts": [
+    {"id": "function-values", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 4},
+    {"id": "infinite-limit-at-a-point", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 3}
+  ],
+  "learning_objectives": [
+    {"text": "Use a value table to observe that f(x) = 1/x approaches 0 as x grows without bound in either direction.", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 4}
+  ],
+  "source_formulas": [
+    {"expression": "y = f(x) = 1/x", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 4},
+    {"expression": "y = x^2", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 4},
+    {"expression": "f(x) = (4x + 1)/(2x + 1)", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 5}
+  ],
+  "common_misconceptions": [
+    {"category": "assuming_a_limit_at_infinity_requires_the_function_to_reach_the_limiting_value", "review_status": "pedagogical_review_required"}
+  ],
+  "teaching_plan": {
+    "representation": "value_table",
+    "spoken_explanation": {
+      "text": "សូមសង្កេតតារាងតម្លៃ​នៃ 1/x នៅពេល x កាន់តែធំ ហើយនៅពេល x កាន់តែតូច (អវិជ្ជមាន)។",
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 4,
+      "glossary_term_ids": ["limit_at_infinity"]
+    },
+    "board_actions": [
+      {"id": "at-infinity-title", "type": "write_text", "sequence_index": 0, "duration_ms": 500, "layout_zone": "problem", "layout_flow": "vertical", "text": "y = f(x) = 1/x", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 4},
+      {"id": "at-infinity-table", "type": "show_table", "sequence_index": 1, "duration_ms": 700, "layout_zone": "visual", "layout_flow": "vertical", "columns": ["x", "y"], "rows": [["-10000", "-0.0001"], ["-1000", "-0.001"], ["-100", "-0.01"], ["-10", "-0.1"], ["10", "0.1"], ["100", "0.01"], ["1000", "0.001"], ["10000", "0.0001"]], "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 4},
+      {"id": "at-infinity-student-task", "type": "student_task", "sequence_index": 2, "duration_ms": 0, "layout_zone": "student_task", "layout_flow": "vertical", "text": "តើ y ខិតជិតលេខណា នៅពេល x កាន់តែធំ (→ +∞)? ចុះនៅពេល x កាន់តែតូច (→ -∞)?", "requires_student_response": true, "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 4}
+    ],
+    "student_task": {
+      "task_type": "table_observation",
+      "requires_student_response": true,
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 4
+    },
+    "hidden_answer_policy": {"mode": "hidden", "deterministic_policy_permits_final_reveal": false},
+    "waiting_for_student_input": true,
+    "answer_revealed": false
+  },
+  "interactive_progression": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 4,
+    "steps": [
+      {"id": "observe-table", "representation": "value_table", "task": "តើ y ខិតជិតលេខណា នៅពេល x កាន់តែធំ? ចុះនៅពេល x កាន់តែតូច?", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 4},
+      {"id": "state-both-limits", "representation": "symbolic_transformation", "formula": "\\lim_{x \\to +\\infty} \\frac{1}{x} = 0, \\quad \\lim_{x \\to -\\infty} \\frac{1}{x} = 0", "task": "សូមសរសេរលីមីតទាំងពីរដោយប្រើសញ្ញា x → +∞ និង x → -∞។", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 5},
+      {"id": "compare-y-equals-x-squared", "representation": "symbolic_transformation", "formula": "y = x^2", "task": "ចំពោះ y = x², តើលីមីត នៅពេល x → +∞ ដូចគ្នា ឬខុសគ្នា ពី 1/x?", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 5}
+    ]
+  },
+  "publication_requirements": {
+    "source_transcription_qa": "required",
+    "approved_lesson_chunk": "required",
+    "reviewed_glossary_set": "required"
+  }
+}

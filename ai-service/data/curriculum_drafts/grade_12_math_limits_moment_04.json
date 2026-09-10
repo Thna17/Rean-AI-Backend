@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "record_type": "interactive_teaching_moment_draft",
+  "status": "source_transcribed_for_local_mvp",
+  "student_delivery": "disabled",
+  "grade": 12,
+  "subject": "Mathematics",
+  "lesson": {
+    "id": "math.g12.lesson1.limits-of-functions",
+    "khmer_source_label": "លីមីតនៃអនុគមន៍",
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 6
+  },
+  "teaching_moment_id": "math.g12.lesson1.limits-of-functions.algebraic-laws.04",
+  "curriculum_version": "local-g12-math-limits-2025-10-01-v1",
+  "source": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "file_name": "Pages from 2025-10-01-00007213.pdf",
+    "provided_local_path": "/Users/macbookpro/Documents/Pages from 2025-10-01-00007213.pdf",
+    "pdf_pages": [6, 7],
+    "printed_pages": [7, 8]
+  },
+  "glossary_terms": [
+    {"term_id": "limit", "term_khmer": "លីមីត", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 1, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"},
+    {"term_id": "limit_operations", "term_khmer": "ប្រមាណវិធីលើលីមីត", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 6, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"}
+  ],
+  "prerequisite_concepts": [
+    {"id": "finite-limit-at-a-point", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 1},
+    {"id": "factoring-polynomials", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 6}
+  ],
+  "learning_objectives": [
+    {"text": "Factor a rational expression to remove a common (x - a) factor, using the algebraic limit rules, before evaluating a 0/0 limit.", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 6}
+  ],
+  "source_formulas": [
+    {"expression": "lim[f(x) ± g(x)] = L ± M", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 6},
+    {"expression": "lim[f(x)·g(x)·h(x)] = L·M·N", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 6},
+    {"expression": "lim[f(x)/g(x)] = L/M, for M ≠ 0", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 6},
+    {"expression": "(x^2 - 1)/(x^2 - 3x + 2) = (x - 1)(x + 1) / [(x - 1)(x - 2)] = (x + 1)/(x - 2), for x ≠ 1", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 6}
+  ],
+  "common_misconceptions": [
+    {"category": "substituting_directly_into_a_quotient_rule_without_checking_the_denominator_limit_is_nonzero", "review_status": "pedagogical_review_required"}
+  ],
+  "teaching_plan": {
+    "representation": "equation_transformation",
+    "spoken_explanation": {
+      "text": "ដើម្បីគណនាលីមីត lim (x²-1)/(x²-3x+2) កាលណា x ខិតជិត 1 តើអាចជំនួស x=1 ដោយផ្ទាល់បានទេ? ហេតុអ្វី?",
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 6,
+      "glossary_term_ids": ["limit_operations"]
+    },
+    "board_actions": [
+      {"id": "algebra-laws-title", "type": "write_equation", "sequence_index": 0, "duration_ms": 500, "layout_zone": "problem", "layout_flow": "vertical", "latex": "\\lim_{x \\to 1} \\frac{x^2 - 1}{x^2 - 3x + 2}", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 6},
+      {"id": "algebra-laws-student-task", "type": "student_task", "sequence_index": 1, "duration_ms": 0, "layout_zone": "student_task", "layout_flow": "vertical", "text": "តើអាចជំនួស x = 1 ដោយផ្ទាល់ក្នុងកន្សោមនេះបានទេ? ហេតុអ្វី?", "requires_student_response": true, "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 6}
+    ],
+    "student_task": {
+      "task_type": "conceptual_operation",
+      "requires_student_response": true,
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 6
+    },
+    "hidden_answer_policy": {"mode": "hidden", "deterministic_policy_permits_final_reveal": false},
+    "waiting_for_student_input": true,
+    "answer_revealed": false
+  },
+  "interactive_progression": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 6,
+    "steps": [
+      {"id": "recognize-zero-over-zero", "representation": "conceptual_operation", "task": "តើអាចជំនួស x = 1 ដោយផ្ទាល់ក្នុងកន្សោមនេះបានទេ? ហេតុអ្វី?", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 6},
+      {"id": "factor-expression", "representation": "symbolic_transformation", "formula": "\\frac{x^2-1}{x^2-3x+2} = \\frac{(x-1)(x+1)}{(x-1)(x-2)} = \\frac{x+1}{x-2}, \\; x \\neq 1", "task": "សូមផាកតូ (factor) លេខអង្កត់ និងភាគបែង ដើម្បីលុបកត្តារួម (x - 1)។", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 6},
+      {"id": "evaluate-simplified", "representation": "symbolic_transformation", "task": "ឥឡូវជំនួស x = 1 ក្នុងកន្សោមដែលបានសម្រួល (x+1)/(x-2)។ លទ្ធផលគឺប៉ុន្មាន?", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 6}
+    ]
+  },
+  "publication_requirements": {
+    "source_transcription_qa": "required",
+    "approved_lesson_chunk": "required",
+    "reviewed_glossary_set": "required"
+  }
+}

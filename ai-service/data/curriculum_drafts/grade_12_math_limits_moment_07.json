@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "record_type": "interactive_teaching_moment_draft",
+  "status": "source_transcribed_for_local_mvp",
+  "student_delivery": "disabled",
+  "grade": 12,
+  "subject": "Mathematics",
+  "lesson": {
+    "id": "math.g12.lesson1.limits-of-functions",
+    "khmer_source_label": "លីមីតនៃអនុគមន៍",
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 12
+  },
+  "teaching_moment_id": "math.g12.lesson1.limits-of-functions.indeterminate-forms.07",
+  "curriculum_version": "local-g12-math-limits-2025-10-01-v1",
+  "source": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "file_name": "Pages from 2025-10-01-00007213.pdf",
+    "provided_local_path": "/Users/macbookpro/Documents/Pages from 2025-10-01-00007213.pdf",
+    "pdf_pages": [12, 14],
+    "printed_pages": [13, 15]
+  },
+  "glossary_terms": [
+    {"term_id": "limit", "term_khmer": "លីមីត", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 1, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"},
+    {"term_id": "indeterminate_form", "term_khmer": "ទម្រង់មិនកំណត់", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 12, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"}
+  ],
+  "prerequisite_concepts": [
+    {"id": "limit-operations", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 6},
+    {"id": "factoring-a-difference-of-cubes", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 12}
+  ],
+  "learning_objectives": [
+    {"text": "Recognize the 0/0 indeterminate form and resolve it by factoring out the common (x - a) term.", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 12}
+  ],
+  "source_formulas": [
+    {"expression": "lim (x^3 - 8)/(x - 2) as x -> 2, form 0/0", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 12},
+    {"expression": "(x^3 - 8)/(x - 2) = (x - 2)(x^2 + 2x + 4)/(x - 2) = x^2 + 2x + 4, for x != 2", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 12},
+    {"expression": "lim (x^3 + x)/(x^4 - 3x^2 + 1) as x -> +infinity, form infinity/infinity", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 13},
+    {"expression": "lim (x^3 - x^2 + 5) as x -> +infinity, form infinity - infinity", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 13}
+  ],
+  "common_misconceptions": [
+    {"category": "concluding_the_limit_does_not_exist_as_soon_as_direct_substitution_gives_0_over_0_instead_of_simplifying_first", "review_status": "pedagogical_review_required"}
+  ],
+  "teaching_plan": {
+    "representation": "equation_transformation",
+    "spoken_explanation": {
+      "text": "ចំពោះ lim (x³-8)/(x-2) កាលណា x → 2 ការជំនួសដោយផ្ទាល់ឲ្យទម្រង់ 0/0។ ត្រូវធ្វើដូចម្តេចបន្ត?",
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 12,
+      "glossary_term_ids": ["indeterminate_form", "limit"]
+    },
+    "board_actions": [
+      {"id": "indeterminate-title", "type": "write_equation", "sequence_index": 0, "duration_ms": 500, "layout_zone": "problem", "layout_flow": "vertical", "latex": "\\lim_{x \\to 2} \\frac{x^3 - 8}{x - 2} = \\frac{0}{0}", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 12},
+      {"id": "indeterminate-student-task", "type": "student_task", "sequence_index": 1, "duration_ms": 0, "layout_zone": "student_task", "layout_flow": "vertical", "text": "ការជំនួស x = 2 ដោយផ្ទាល់ឲ្យទម្រង់ 0/0 ដែលមិនកំណត់។ តើត្រូវធ្វើដូចម្តេចបន្ត?", "requires_student_response": true, "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 12}
+    ],
+    "student_task": {
+      "task_type": "conceptual_operation",
+      "requires_student_response": true,
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 12
+    },
+    "hidden_answer_policy": {"mode": "hidden", "deterministic_policy_permits_final_reveal": false},
+    "waiting_for_student_input": true,
+    "answer_revealed": false
+  },
+  "interactive_progression": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 12,
+    "steps": [
+      {"id": "recognize-form", "representation": "conceptual_operation", "task": "ការជំនួស x = 2 ដោយផ្ទាល់ឲ្យទម្រង់ 0/0 ដែលមិនកំណត់។ តើត្រូវធ្វើដូចម្តេចបន្ត?", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 12},
+      {"id": "factor-difference-of-cubes", "representation": "symbolic_transformation", "formula": "\\frac{x^3-8}{x-2} = \\frac{(x-2)(x^2+2x+4)}{x-2} = x^2+2x+4, \\; x \\neq 2", "task": "សូមផាកតូ x³-8 ជាកន្សោមខុសគ្នានៃគូប (x-2)(x²+2x+4) រួចលុបកត្តារួម។", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 12},
+      {"id": "evaluate-simplified", "representation": "symbolic_transformation", "task": "ជំនួស x = 2 ក្នុងកន្សោមដែលបានសម្រួល x²+2x+4។ លទ្ធផលថ្មីជាអ្វី?", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 12}
+    ]
+  },
+  "publication_requirements": {
+    "source_transcription_qa": "required",
+    "approved_lesson_chunk": "required",
+    "reviewed_glossary_set": "required"
+  }
+}

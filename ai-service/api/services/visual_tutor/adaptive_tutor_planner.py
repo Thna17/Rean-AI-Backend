@@ -47,6 +47,7 @@ class VisualTutorAnswerLockDecision(str, Enum):
 class VisualTutorExplanationMode(str, Enum):
     ENGLISH = "english"
     KHMER = "khmer"
+    BILINGUAL = "bilingual"
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,7 @@ def plan_adaptive_tutor_move(
     allow_final_answer: bool = False,
     student_model: Optional[dict[str, Any]] = None,
     strategy_history: Optional[list[dict[str, Any]]] = None,
+    language_mode: str | None = None,
 ) -> AdaptiveTutorDecision:
     """Choose the next canvas-first teaching move.
 
@@ -137,6 +139,8 @@ def plan_adaptive_tutor_move(
     explanation_mode = _explanation_mode(
         problem_understanding,
         student_input_understanding,
+        safe_student_model,
+        language_mode,
     )
     answer_lock_decision = _answer_lock_decision(
         allow_final_answer=allow_final_answer,
@@ -148,6 +152,7 @@ def plan_adaptive_tutor_move(
     base_metadata = {
         "planner": ADAPTIVE_TUTOR_PLANNER_VERSION,
         "problem_type": problem_understanding.problem_type,
+        "selected_concept": problem_understanding.problem_type,
         "known_solver_available": problem_understanding.known_solver_available,
         "confidence": problem_understanding.confidence,
         "student_intent": effective_intent.value,
@@ -176,18 +181,49 @@ def plan_adaptive_tutor_move(
         "strategy_history_available": bool(safe_strategy_history),
         "recent_mistakes": recent_mistakes,
     }
+    learner_memory = _learner_memory_from_student_model(safe_student_model)
+    learner_level = _learner_level(learner_memory)
     representation, alternate_representation = _representation_plan(
         problem_type=problem_understanding.problem_type,
         strategy_history=safe_strategy_history,
         explain_differently=effective_intent
-        == VisualTutorStudentIntent.REQUEST_EXPLAIN_DIFFERENTLY,
+        in {
+            VisualTutorStudentIntent.REQUEST_EXPLAIN_DIFFERENTLY,
+            VisualTutorStudentIntent.REQUEST_HINT,
+        },
+        learner_memory=learner_memory,
+        stuck=stuck_count > 0 or effective_intent == VisualTutorStudentIntent.STUCK,
+        learner_level=learner_level,
     )
     base_metadata.update(
         {
             "representation": representation,
             "alternate_representation": alternate_representation,
-            "explain_differently_requires_representation_change": (
-                effective_intent == VisualTutorStudentIntent.REQUEST_EXPLAIN_DIFFERENTLY
+                "explain_differently_requires_representation_change": (
+                effective_intent
+                in {
+                    VisualTutorStudentIntent.REQUEST_EXPLAIN_DIFFERENTLY,
+                    VisualTutorStudentIntent.REQUEST_HINT,
+                }
+            ),
+            # This is deliberately a coarse flag. Detailed learner evidence stays
+            # server-side and is never placed in the Flutter response metadata.
+            "adaptive_memory_applied": bool(learner_memory),
+            "learner_level": learner_level,
+            "task_profile": _task_profile(
+                learner_level=learner_level,
+                intent=effective_intent,
+                learner_memory=learner_memory,
+            ),
+            "concise_challenge": learner_level == "confident",
+            "pace": (
+                "brisk" if learner_level == "confident"
+                else "slow" if learner_level == "beginner"
+                else "guided"
+            ),
+            "prerequisite_review": (
+                learner_level == "beginner"
+                and (stuck_count > 0 or effective_wrong_attempts > 0)
             ),
         }
     )
@@ -298,6 +334,7 @@ def plan_adaptive_tutor_move(
                 "do_not_count_as_submitted_step": True,
                 "board_should_advance": False,
                 "wrong_input_does_not_advance_board": True,
+                "misconception_diagnosis_limit": 1,
             },
         )
 
@@ -369,6 +406,7 @@ def plan_adaptive_tutor_move(
                 "highlight_first_mistake_only": True,
                 "board_should_advance": False,
                 "wrong_input_does_not_advance_board": True,
+                "misconception_diagnosis_limit": 1,
             },
         )
 
@@ -488,6 +526,24 @@ def _decision(
             == VisualTutorAnswerLockDecision.ALLOW_FULL_REVEAL,
         ),
         "llm_cannot_bypass_policy": True,
+        "step_advance_count": 1
+        if metadata.get("board_should_advance") is True
+        else 0,
+        "misconception_count": 1
+        if tutor_move == VisualTutorMove.DIAGNOSE_WRONG_INPUT
+        else 0,
+        "reteach_scope": (
+            "current_misconception_only"
+            if tutor_move == VisualTutorMove.DIAGNOSE_WRONG_INPUT
+            else None
+        ),
+        "representation_changed": _representation_changed(metadata),
+        "must_change_representation_before_rewording": tutor_move
+        in {
+            VisualTutorMove.RETEACH_DIFFERENTLY,
+            VisualTutorMove.SHOW_VISUAL_HINT,
+            VisualTutorMove.GIVE_INSTANT_HELP,
+        },
     }
     return AdaptiveTutorDecision(
         tutor_move=tutor_move,
@@ -495,13 +551,27 @@ def _decision(
         tutor_status=tutor_status,
         stage_state=stage_state,
         lesson_state=lesson_state,
-        board_action_budget=max(1, board_action_budget),
+        # A turn is one interactive teaching moment. Rich visuals are allowed,
+        # but never an unbounded mini-lesson in one response.
+        board_action_budget=min(3, max(1, board_action_budget)),
         interaction_type=interaction_type,
         quick_actions=quick_actions,
         answer_lock_decision=answer_lock_decision,
         explanation_mode=explanation_mode,
         metadata=decision_metadata,
     )
+
+
+def _representation_changed(metadata: dict[str, Any]) -> bool:
+    history = metadata.get("strategy_history")
+    previous = None
+    if isinstance(history, list):
+        for item in reversed(history):
+            if isinstance(item, dict) and item.get("representation"):
+                previous = str(item["representation"])
+                break
+    current = metadata.get("representation")
+    return bool(current and (previous is None or str(current) != previous))
 
 
 def _apply_adaptive_strategy_overrides(
@@ -543,9 +613,9 @@ def _apply_adaptive_strategy_overrides(
     recent_mistakes = metadata.get("recent_mistakes")
     if not isinstance(recent_mistakes, list):
         recent_mistakes = []
-    latest_mistake = str(recent_mistakes[0]) if recent_mistakes else None
+    latest_mistake = str(recent_mistakes[-1]) if recent_mistakes else None
     repeated_mistake = (
-        len(recent_mistakes) >= 2 and str(recent_mistakes[0]) == str(recent_mistakes[1])
+        len(recent_mistakes) >= 2 and str(recent_mistakes[-1]) == str(recent_mistakes[-2])
     )
     wrong_attempts = _safe_int(metadata.get("wrong_attempts"), default=0)
     student_intent = str(metadata.get("student_intent") or "")
@@ -760,30 +830,132 @@ def _representation_plan(
     problem_type: str,
     strategy_history: list[dict[str, Any]],
     explain_differently: bool,
+    learner_memory: dict[str, Any] | None = None,
+    stuck: bool = False,
+    learner_level: str = "beginner",
 ) -> tuple[str, str]:
     """Choose a suitable visual, then a genuinely different fallback visual."""
     choices = {
-        "linear_equation_one_variable": ("equation_transformation", "balance_scale"),
-        "slope_from_two_points": ("coordinate_graph", "rise_over_run_table"),
-        "line_through_two_points": ("coordinate_graph", "value_table"),
-        "quadratic_equation_basic": ("factor_pairs", "parabola_graph"),
-    }.get(problem_type, ("guided_text_visual", "worked_example_comparison"))
+        "linear_equation_one_variable": ("equation_transformation", "balance_scale", "worked_example", "error_analysis"),
+        "integer_arithmetic": ("number_line", "conceptual_explanation", "worked_example", "error_analysis"),
+        "arithmetic_expression": ("number_line", "conceptual_explanation", "worked_example", "error_analysis"),
+        "fraction_decimal_arithmetic": ("number_line", "table", "worked_example", "error_analysis"),
+        "simple_percentage_word_problem": ("table", "number_line", "worked_example", "error_analysis"),
+        "slope_from_two_points": ("coordinate_graph", "table", "worked_example", "error_analysis"),
+        "line_through_two_points": ("coordinate_graph", "table", "worked_example", "error_analysis"),
+        "straight_line_graph": ("coordinate_graph", "table", "equation_transformation", "error_analysis"),
+        "quadratic_equation_basic": ("coordinate_graph", "worked_example", "table", "error_analysis"),
+        "quadratic_equation": ("coordinate_graph", "worked_example", "table", "error_analysis"),
+        "basic_quadratic_graph": ("coordinate_graph", "table", "worked_example", "error_analysis"),
+    }.get(problem_type, ("conceptual_explanation", "worked_example", "table", "error_analysis"))
     prior = [str(item.get("representation")) for item in strategy_history if item.get("representation")]
-    if explain_differently or (prior and prior[-1] == choices[0]):
+    memory = learner_memory or {}
+    memory_reps = [str(item) for item in memory.get("representations_used", []) if item]
+    successful_reps = [
+        str(item)
+        for item in memory.get("preferred_successful_representations", [])
+        if item
+    ]
+    board_reps = [str(item) for item in memory.get("recent_board_representations", []) if item]
+    used = [*prior, *memory_reps, *board_reps]
+    misconceptions = [str(item) for item in memory.get("misconceptions", []) if item]
+    repeated_mistake = len(misconceptions) >= 2 and misconceptions[-1] == misconceptions[-2]
+    if repeated_mistake and "error_analysis" in choices:
+        return "error_analysis", choices[0]
+    if learner_level == "beginner":
+        # Prefer an intuitive visual before a symbolic transformation whenever
+        # the topic supports one. Arithmetic/graph topics already begin with
+        # their appropriate visual representation.
+        beginner_choice = (
+            choices[0]
+            if choices[0] in {"number_line", "table", "coordinate_graph"}
+            else next(
+                (item for item in ("balance_scale", "conceptual_explanation", "worked_example") if item in choices),
+                choices[0],
+            )
+        )
+        if not (stuck or explain_differently) and not used:
+            alternate = next((item for item in choices if item != beginner_choice), choices[0])
+            return beginner_choice, alternate
+    if learner_level == "confident" and "equation_transformation" in choices:
+        preferred = next((item for item in reversed(successful_reps) if item in choices), None)
+        if preferred is not None:
+            alternate = next((item for item in choices if item != preferred), choices[0])
+            return preferred, alternate
+        alternate = next((item for item in choices if item != "equation_transformation"), choices[0])
+        return "equation_transformation", alternate
+    # A stuck learner should not see the representation that just failed unless
+    # the caller explicitly chooses it later for a documented pedagogical reason.
+    if explain_differently or (stuck and used and used[-1] == choices[0]) or (prior and prior[-1] == choices[0]):
+        for option in choices[1:]:
+            if option not in used or explain_differently:
+                return option, choices[0]
         return choices[1], choices[0]
-    return choices
+    return choices[0], choices[1]
+
+
+def _learner_level(memory: dict[str, Any]) -> str:
+    attempts = _safe_int(memory.get("verified_attempt_count"), default=0)
+    readiness = str(memory.get("readiness") or "")
+    if readiness == "ready_for_challenge" and attempts >= 3:
+        return "confident"
+    if attempts == 0:
+        return "beginner"
+    return "guided"
+
+
+def _task_profile(
+    *,
+    learner_level: str,
+    intent: VisualTutorStudentIntent,
+    learner_memory: dict[str, Any],
+) -> str:
+    misconceptions = learner_memory.get("misconceptions")
+    repeated_mistake = (
+        isinstance(misconceptions, list)
+        and len(misconceptions) >= 2
+        and misconceptions[-1] == misconceptions[-2]
+    )
+    if repeated_mistake:
+        return "targeted_error_analysis_micro_task"
+    if intent == VisualTutorStudentIntent.STUCK:
+        return "worked_example_then_micro_task"
+    if learner_level == "confident":
+        return "concise_transformation_challenge"
+    if learner_level == "beginner":
+        return "conceptual_micro_task"
+    return "guided_next_step"
+
+
+def _learner_memory_from_student_model(student_model: dict[str, Any]) -> dict[str, Any]:
+    metadata = student_model.get("metadata") if isinstance(student_model, dict) else None
+    memory = metadata.get("learner_memory") if isinstance(metadata, dict) else None
+    return dict(memory) if isinstance(memory, dict) else {}
 
 
 def _explanation_mode(
     problem_understanding: VisualTutorProblemUnderstandingResult,
     student_input_understanding: Optional[VisualTutorInputUnderstandingResult],
+    student_model: Optional[dict[str, Any]] = None,
+    language_mode: str | None = None,
 ) -> VisualTutorExplanationMode:
+    requested = (language_mode or "").lower()
+    if requested == VisualTutorExplanationMode.BILINGUAL.value:
+        return VisualTutorExplanationMode.BILINGUAL
+    if requested == VisualTutorExplanationMode.KHMER.value:
+        return VisualTutorExplanationMode.KHMER
+    if requested == VisualTutorExplanationMode.ENGLISH.value:
+        return VisualTutorExplanationMode.ENGLISH
     if problem_understanding.language == "km":
         return VisualTutorExplanationMode.KHMER
     if student_input_understanding and (
         student_input_understanding.metadata.get("language") == "km"
         or student_input_understanding.metadata.get("use_khmer_explanation") is True
     ):
+        return VisualTutorExplanationMode.KHMER
+    if isinstance(student_model, dict) and str(
+        student_model.get("preferred_language") or ""
+    ).lower().startswith("km"):
         return VisualTutorExplanationMode.KHMER
     return VisualTutorExplanationMode.ENGLISH
 

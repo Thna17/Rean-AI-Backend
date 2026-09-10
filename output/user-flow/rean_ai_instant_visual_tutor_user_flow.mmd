@@ -1,0 +1,166 @@
+# Rean AI Instant Visual Tutor - Mermaid Flowchart Source
+
+## 1. System Overview
+```mermaid
+flowchart LR
+  S([Student stuck]) --> M[Submit problem: text/photo/upload/voice/work/recent]
+  M --> A[Immediate acknowledgement]
+  A --> B[Backend creates Tutor Session]
+  B --> AI[AI analyzes internally]
+  AI --> F[First useful hint/visual/step/question]
+  F --> R[Student responds]
+  R --> E{Response correct?}
+  E -->|Yes| N[Next learning step]
+  E -->|Partly| P[Explain missing part and ask revise]
+  E -->|No| H[Detect misconception and give targeted hint]
+  H --> R
+  P --> R
+  N --> V[Verify mathematical result]
+  V --> U[Understanding check]
+  U --> G[Save progress and update dashboard]
+```
+
+## 2. Authentication And Onboarding
+```mermaid
+flowchart TD
+  A([Open Rean AI]) --> B[Splash Screen]
+  B --> C{Authenticated?}
+  C -->|Yes| D{Onboarding completed?}
+  C -->|No| E[Welcome Screen]
+  E --> F[Sign Up: full name, email, password]
+  E --> G[Sign In: email/password]
+  E --> H[Google Sign-In]
+  E --> I[Forgot Password -> email -> reset link -> confirmation]
+  F --> J[Validate fields]
+  G --> K[Validate credentials]
+  H --> L[Authenticate with Google]
+  J --> M[Create Firebase account]
+  K --> N[Sign in]
+  L --> O[Create or retrieve backend profile]
+  M --> O
+  N --> O
+  O --> D
+  D -->|No| P[Select grade, subjects, language, explanation level, optional goal]
+  P --> Q[Save preferences]
+  D -->|Yes| R[Open Dashboard]
+  Q --> R
+  J -->|Invalid/failure| X[Show clear error and allow retry]
+  X --> E
+```
+
+## 3. Instant Help Entry
+```mermaid
+flowchart TD
+  A([Tap I'm Stuck]) --> B[Open Instant Help Screen]
+  B --> C[Choose input: type, photo, upload, speak, paste work, recent unfinished problem]
+  C --> D[Submit problem]
+  D --> E[Show immediate acknowledgement]
+  D --> F[Backend creates Tutor Session]
+  F --> G[Forward media/transcript/context safely]
+  G --> H[AI analyzes problem in background]
+  D -->|Upload/network failure| X[Retry, change input, or save draft]
+  X --> C
+```
+
+## 4. Background Analysis
+```mermaid
+flowchart TD
+  A[Analyze subject, topic, grade, language, intent, problem type, knowns, unknowns, visualization, solver, work provided, confidence] --> B{Problem clear and supported?}
+  B -->|Clear and supported| C[Select safest first intervention]
+  B -->|Unclear| D[Ask one short clarification question]
+  D --> E[Student responds]
+  E --> A
+  B -->|Unsupported| F[Explain limitation, suggest related supported topic, allow rephrase]
+  F --> G[Log unsupported/low-confidence case]
+```
+
+## 5. Interactive Tutor Loop
+```mermaid
+flowchart TD
+  A[Show one short tutor message] --> B[Show matching visual or formula]
+  B --> C[Ask one focused question]
+  C --> D[Student responds]
+  D --> E{Correct?}
+  E -->|Yes| F[Concise feedback and next step]
+  E -->|Partially| G[Acknowledge correct part, explain missing part, ask revise]
+  E -->|No| H[Detect misconception, targeted feedback, next hint, try again]
+  G --> D
+  H --> D
+  F --> I{Problem complete?}
+  I -->|No| A
+  I -->|Yes| J[Verification and understanding check]
+```
+
+## 6. Verification And Answer Reveal
+```mermaid
+flowchart TD
+  A[AI generates step or final result] --> B[Send expression to SymPy verification]
+  B --> C{Verification status}
+  C -->|Verified| D[Mark Verified and show result]
+  C -->|Partially verified| E[Show verified portion only and label limitation]
+  C -->|Failed| F[Reject generated result and regenerate]
+  F --> B
+  F -->|Repeated failure| G[Safe failure message, log error, offer manual explanation or another problem]
+  H[Student asks for full solution early] --> I{One more hint or complete solution?}
+  I -->|Hint| A
+  I -->|Complete solution| B
+  D --> J[Record answer reveal when full solution shown]
+  J --> K[Require follow-up understanding check]
+```
+
+## 7. Quiz Flow
+```mermaid
+flowchart TD
+  A([Start Quiz]) --> B[Select subject/topic]
+  B --> C[Select difficulty]
+  C --> D[Load or generate quiz]
+  D --> E[Show quiz introduction]
+  E --> F[Show question]
+  F --> G[Student answers, skips, flags, previous/next]
+  G --> H[Save answer]
+  H --> I{More questions?}
+  I -->|Yes| F
+  I -->|No| J[Submit quiz and confirm]
+  J --> K[Evaluate answers]
+  K --> L[Save attempt and update progress]
+  L --> M[Show results and recommended lesson]
+  D -->|Failure| X[Retry, choose another quiz, or return]
+```
+
+## 8. Voice Tutor Flow
+```mermaid
+flowchart TD
+  A([Open Voice Tutor]) --> B[Request microphone permission]
+  B --> C{Permission granted?}
+  C -->|No| D[Show permission instructions, retry, or return]
+  C -->|Yes| E[Record voice and stop]
+  E --> F[Upload audio]
+  F --> G[Speech to text]
+  G --> H[Show transcript]
+  H --> I{Transcript accurate?}
+  I -->|No| J[Edit transcript or record again]
+  J --> E
+  I -->|Yes| K[Send transcript to tutor session]
+  K --> L[Generate tutor response]
+  L --> M[Convert response to audio]
+  M --> N[Play AI voice and continue or end]
+  F -->|Failure| X[Retry, type instead, or return]
+```
+
+## 9. Simplified Admin Flow
+```mermaid
+flowchart TD
+  A([Admin opens dashboard]) --> B[Check authentication and Admin role]
+  B --> C{Authorized admin?}
+  C -->|No| D[Permission denied]
+  C -->|Yes| E[Admin dashboard]
+  E --> F[Users: search, view status, activate/deactivate]
+  E --> G[Curriculum: view/edit subjects and topics]
+  E --> H[Reported AI Responses: review, resolve, dismiss]
+  E --> I[AI Monitoring: health, verification failures, errors]
+  E --> J[Basic Settings: subjects, provider config, verification rules]
+  F --> K[Audit log]
+  G --> K
+  H --> K
+  J --> K
+```

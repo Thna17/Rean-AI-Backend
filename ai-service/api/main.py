@@ -15,6 +15,8 @@ from contextlib import asynccontextmanager
 import logging
 import os
 import httpx
+import time
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 from pymongo import ASCENDING, DESCENDING
@@ -25,6 +27,7 @@ from api.core.database import mongodb_manager
 from api.core.redis_client import RedisClient, get_redis
 from api.core.groq_key_pool import build_groq_key_pool, GroqKeyPool
 from api.core.config import get_settings
+from api.routes import internal_curriculum
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -168,6 +171,17 @@ async def _ensure_mongo_indexes() -> None:
         [("user_id", ASCENDING), ("status", ASCENDING), ("updated_at", DESCENDING)],
         name="visual_tutor_sessions_user_status_updated_at_idx",
     )
+    await _create_index_safe(
+        "visual_tutor_learner_memory",
+        [("user_id", ASCENDING), ("subject_key", ASCENDING), ("topic_key", ASCENDING)],
+        name="visual_tutor_learner_memory_owner_topic_uq",
+        unique=True,
+    )
+    await _create_index_safe(
+        "visual_tutor_learner_memory",
+        [("user_id", ASCENDING), ("updated_at", DESCENDING)],
+        name="visual_tutor_learner_memory_owner_updated_at_idx",
+    )
 
 
 @asynccontextmanager
@@ -248,6 +262,22 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+@app.middleware("http")
+async def correlation_logging(request, call_next):
+    """Echo a bounded correlation ID without logging bodies or credentials."""
+    supplied = request.headers.get("x-request-id", "").strip()
+    request_id = supplied if supplied and len(supplied) <= 128 and all(ch.isalnum() or ch in "._:-" for ch in supplied) else str(uuid.uuid4())
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("http_request_failed request_id=%s method=%s path=%s", request_id, request.method, request.url.path)
+        raise
+    response.headers["X-Request-Id"] = request_id
+    logger.info("http_request_completed request_id=%s method=%s path=%s status=%s duration_ms=%d", request_id, request.method, request.url.path, response.status_code, int((time.perf_counter() - started) * 1000))
+    return response
+
 # Middleware
 app.add_middleware(
     CORSMiddleware,
@@ -278,8 +308,10 @@ from api.routes import (
     notification_agent as notification_agent_router,
     ollama_router,
     pronunciation,
+    problems,
     quiz,
     stt,
+    step_sequencing,
     translate,
     tts,
     visual_tutor,
@@ -300,9 +332,23 @@ app.include_router(visual_tutor.router)
 app.include_router(visual_tutor_scan.router)
 app.include_router(visual_tutor_voice.router)
 app.include_router(curriculum.router)
+app.include_router(internal_curriculum.router)
+app.include_router(problems.router)
+app.include_router(step_sequencing.router)  # Phase 2: Step Sequencing Routes
 app.include_router(quiz.router)
 app.include_router(ollama_router.router, prefix="/api/v1", tags=["Ollama"])
 app.include_router(notification_agent_router.router, tags=["Notification Agent"])
+
+# Initialize Step Sequencing Services (Phase 2)
+try:
+    from api.services.step_sequencing_service import StepSequencingService
+    _step_seq_service = StepSequencingService()
+    _problem_repo = problems.problem_repo  # Reuse from problems router
+    _spaced_rep_service = problems.spaced_rep_service  # Reuse from problems router
+    step_sequencing.initialize_services(_step_seq_service, _problem_repo, _spaced_rep_service)
+    logger.info("Step Sequencing services initialized")
+except Exception as e:
+    logger.warning(f"Failed to initialize Step Sequencing services: {e}")
 
 # Static files (dev tools / visualizers)
 _static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
@@ -329,11 +375,20 @@ async def health_check():
     except Exception:
         mongo_ok = False
     ai_ok = await visual_tutor._llm_provider_ready()
+    optional = {
+        "ocr": "healthy" if settings.VISUAL_TUTOR_OCR_ENABLED and bool(settings.GEMINI_API_KEY) else "degraded",
+        "stt": "healthy" if settings.VISUAL_TUTOR_STT_ENABLED and bool(settings.STT_MODEL_NAME) else "degraded",
+        "tts": "healthy" if settings.VISUAL_TUTOR_TTS_ENABLED and bool(settings.TTS_MODEL_PATH) else "degraded",
+    }
+    status_value = "unavailable" if not mongo_ok or not ai_ok else (
+        "degraded" if "degraded" in optional.values() else "healthy"
+    )
     return {
-        "status": "healthy" if mongo_ok and ai_ok else "unavailable",
+        "status": status_value,
         "dependencies": {
             "durable_session_store": "healthy" if mongo_ok else "unavailable",
             "visual_tutor_ai": "healthy" if ai_ok else "unavailable",
+            **optional,
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

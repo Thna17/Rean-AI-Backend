@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "record_type": "curriculum_source_draft",
+  "status": "authoritative_source_confirmed",
+  "student_delivery": "disabled",
+  "grade": 10,
+  "subject": "Mathematics",
+  "chapter": {
+    "number": 1,
+    "english_label": "Logic",
+    "khmer_source_label": "តក្កវិជ្ជា",
+    "source_table_of_contents_pdf_page": 5
+  },
+  "source": {
+    "source_id": "moeys-math-g10-part1-2020-ch1-logic",
+    "type": "provided_pdf",
+    "file_name": "Math-Part1-1.pdf",
+    "title": "Math G10 Part I",
+    "publisher": "Ministry of Education, Youth and Sport / Publishing and Distribution House",
+    "isbn": "978-995-000-714",
+    "edition_year": 2020,
+    "provided_local_path": "/Users/macbookpro/Downloads/Math-Part1-1.pdf",
+    "authority_status": "official_curriculum_source_confirmed_by_project_owner",
+    "copyright_status": "distribution_rights_require_confirmation_before_publication",
+    "evidence": {
+      "cover_pdf_page": 2,
+      "publication_details_pdf_page": 3,
+      "table_of_contents_pdf_page": 5,
+      "chapter_title_pdf_page": 8,
+      "lesson_pdf_pages": {
+        "start": 9,
+        "end": 24,
+        "basis": "printed lesson pages 2–17; the next table-of-contents section begins at printed page 18"
+      }
+    }
+  },
+  "review_requirements": {
+    "source_transcription_qa": "required",
+    "distribution_rights_confirmation": "required",
+    "approved_lesson_chunk": "required",
+    "reviewed_glossary_set": "required"
+  },
+  "safe_authoring_scope": {
+    "may_create": [
+      "page-linked lesson draft",
+      "source-linked learning objectives",
+      "source-linked formulas",
+      "source-linked common misconceptions",
+      "safe visual-representation proposals"
+    ],
+    "must_not_create_without_review": [
+      "student-facing Khmer terminology that is not transcribed from the source",
+      "answer keys",
+      "claims that the lesson is production-supported",
+      "invented objectives, formulas, or translations"
+    ]
+  },
+  "publication_state": {
+    "curriculum_version": "moeys-upper-secondary-2020.draft",
+    "review_status": "authoritative_source_confirmed",
+    "production_retrieval_enabled": false,
+    "pilot_enabled": false
+  }
+}

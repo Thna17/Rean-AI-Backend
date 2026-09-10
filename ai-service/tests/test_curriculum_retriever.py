@@ -104,7 +104,7 @@ def test_grade_11_quadratic_retrieval_uses_problem_type_mapping() -> None:
     assert "zero product property" in result.khmer_terms
 
 
-def test_problem_type_fallback_beats_stale_grade_topic_context() -> None:
+def test_problem_type_never_crosses_grade_boundary_from_stale_context() -> None:
     result = retrieve_curriculum_context(
         CurriculumRetrievalRequest(
             grade=10,
@@ -115,8 +115,8 @@ def test_problem_type_fallback_beats_stale_grade_topic_context() -> None:
         )
     )
 
-    assert result.curriculum_chunk_ids[0] == "math.g11.quadratic_functions.basic"
-    assert "ax^2 + bx + c = 0" in result.formulas
+    assert result.curriculum_chunk_ids == []
+    assert result.confidence == 0.0
 
 
 def test_grade_12_function_transformation_retrieval() -> None:

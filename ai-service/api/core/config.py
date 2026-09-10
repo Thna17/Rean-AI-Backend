@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     # Environment
     # ============================================================
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    # Kept separate from ENVIRONMENT because deployment tooling sometimes sets
+    # one independently. Development-only tutor providers require both values.
+    APP_ENV: str = os.getenv("APP_ENV", "development")
+    ALLOW_DEVELOPMENT_FALLBACKS: bool = (
+        os.getenv("ALLOW_DEVELOPMENT_FALLBACKS", "false").lower() == "true"
+    )
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
     API_VERSION: str = "1.0.0"
     APP_NAME: str = "AI Tutor AI Service"
@@ -151,6 +157,11 @@ class Settings(BaseSettings):
         if self.ENVIRONMENT not in {"production", "staging"}:
             return self
 
+        if self.APP_ENV != self.ENVIRONMENT:
+            raise ValueError("APP_ENV must match ENVIRONMENT in staging and production")
+        if self.ALLOW_DEVELOPMENT_FALLBACKS:
+            raise ValueError("ALLOW_DEVELOPMENT_FALLBACKS is development-only")
+
         if self.DEBUG:
             raise ValueError("DEBUG must be false when ENVIRONMENT=production")
 
@@ -191,12 +202,16 @@ class Settings(BaseSettings):
             self._validate_production_etl_pins()
 
         visual_provider = self.VISUAL_TUTOR_LLM_PROVIDER.strip().lower()
-        if visual_provider in {"codex", "codex_cli", "codex_bridge", "codex_cli_bridge"}:
-            raise ValueError("Codex CLI Visual Tutor provider is development-only")
-        if visual_provider in {"openrouter", "auto"} and not self.OPENROUTER_API_KEY:
-            raise ValueError(
-                "OPENROUTER_API_KEY is required for production Visual Tutor LLM fallback"
-            )
+        if visual_provider not in {"openrouter", "deepseek"}:
+            raise ValueError("VISUAL_TUTOR_LLM_PROVIDER must be openrouter or deepseek in staging and production")
+        if visual_provider == "openrouter" and (
+            not self.OPENROUTER_API_KEY or self._looks_like_placeholder(self.OPENROUTER_API_KEY)
+        ):
+            raise ValueError("A real OPENROUTER_API_KEY is required for the production Visual Tutor LLM")
+        if visual_provider == "deepseek" and (
+            not self.DEEPSEEK_API_KEY or self._looks_like_placeholder(self.DEEPSEEK_API_KEY)
+        ):
+            raise ValueError("A real DEEPSEEK_API_KEY is required for the production Visual Tutor LLM")
         if self.VISUAL_TUTOR_OCR_ENABLED and not self.GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY is required when Visual Tutor OCR is enabled")
         if self.VISUAL_TUTOR_STT_ENABLED and not self.STT_MODEL_NAME:
@@ -205,6 +220,10 @@ class Settings(BaseSettings):
             raise ValueError("TTS_MODEL_PATH is required when Visual Tutor TTS is enabled")
 
         return self
+
+    @staticmethod
+    def _looks_like_placeholder(value: str) -> bool:
+        return value.strip().lower() in {"", "your_api_key", "your-openrouter-key", "replace-me", "changeme"} or value.strip().lower().startswith("your_")
 
     def _validate_production_etl_pins(self) -> None:
         moving_refs = {"head", "latest", "main", "master", "stable", "trunk"}
@@ -272,6 +291,7 @@ class Settings(BaseSettings):
     # ============================================================
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
     OPENROUTER_MODEL: str = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     HUGGINGFACE_API_KEY: str = os.getenv("HUGGINGFACE_API_KEY", "")
 
@@ -287,13 +307,45 @@ class Settings(BaseSettings):
         "codex exec --ephemeral --skip-git-repo-check --ignore-rules -",
     )
     VISUAL_TUTOR_CODEX_CLI_TIMEOUT: int = int(
-        os.getenv("VISUAL_TUTOR_CODEX_CLI_TIMEOUT", "60")
+        os.getenv("VISUAL_TUTOR_CODEX_CLI_TIMEOUT", "8")
+    )
+    VISUAL_TUTOR_PLANNER_TIMEOUT_SECONDS: float = float(
+        os.getenv("VISUAL_TUTOR_PLANNER_TIMEOUT_SECONDS", "8")
     )
     # Private shared credential used only by the TypeScript gateway.
     VISUAL_TUTOR_INTERNAL_TOKEN: str = os.getenv("VISUAL_TUTOR_INTERNAL_TOKEN", "")
     VISUAL_TUTOR_OCR_ENABLED: bool = os.getenv("VISUAL_TUTOR_OCR_ENABLED", "true").lower() == "true"
     VISUAL_TUTOR_STT_ENABLED: bool = os.getenv("VISUAL_TUTOR_STT_ENABLED", "true").lower() == "true"
     VISUAL_TUTOR_TTS_ENABLED: bool = os.getenv("VISUAL_TUTOR_TTS_ENABLED", "true").lower() == "true"
+    # Logs the real LLM/DeepSeek exception (type, message, HTTP status) instead
+    # of only a generic fallback status string, and attaches it to
+    # response.metadata.debug_llm_error. Never shown to the student. On by
+    # default outside production; explicit env value always wins.
+    VISUAL_TUTOR_DEBUG_ERRORS: bool = os.getenv(
+        "VISUAL_TUTOR_DEBUG_ERRORS",
+        "false" if ENVIRONMENT == "production" else "true",
+    ).lower() == "true"
+    # Restricts every Visual Tutor turn to Grade 12 limits-of-functions while
+    # the rest of the pipeline is being stabilized. Set to "" (empty) to lift
+    # the lock once other scopes are ready again; physics/chemistry/other
+    # grades stay in the codebase, just gated off, not deleted.
+    VISUAL_TUTOR_SCOPE_LOCK: str = os.getenv("VISUAL_TUTOR_SCOPE_LOCK", "grade12_math_limits")
+    # local_limits_demo.py's fully scripted, deterministic board for the
+    # Grade 12 limits-of-functions lesson is kept only as a reference/known-
+    # good comparison now that LimitOfFunctionSolver + the dynamic LLM
+    # planner handle this topic for real. Off by default: students get the
+    # dynamic path. An operator can still opt back into the scripted demo
+    # explicitly (e.g. to diff its output against the dynamic path) by
+    # setting this to true.
+    VISUAL_TUTOR_LOCAL_LIMITS_DEMO_ENABLED: bool = os.getenv(
+        "VISUAL_TUTOR_LOCAL_LIMITS_DEMO_ENABLED", "false"
+    ).lower() == "true"
+    # Disabled by default. A pilot cannot be opened by a client request alone.
+    VISUAL_TUTOR_PILOT_ENABLED: bool = os.getenv("VISUAL_TUTOR_PILOT_ENABLED", "false").lower() == "true"
+    VISUAL_TUTOR_PILOT_GRADES: str = os.getenv("VISUAL_TUTOR_PILOT_GRADES", "10")
+    VISUAL_TUTOR_PILOT_SUBJECTS: str = os.getenv("VISUAL_TUTOR_PILOT_SUBJECTS", "")
+    VISUAL_TUTOR_PILOT_LESSONS: str = os.getenv("VISUAL_TUTOR_PILOT_LESSONS", "")
+    VISUAL_TUTOR_PILOT_LANGUAGE_MODES: str = os.getenv("VISUAL_TUTOR_PILOT_LANGUAGE_MODES", "khmer,english,bilingual")
     
     # ============================================================
     # Ollama (Local LLM) Configuration

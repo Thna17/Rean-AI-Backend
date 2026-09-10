@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "record_type": "interactive_teaching_moment_draft",
+  "status": "source_transcribed_for_local_mvp",
+  "student_delivery": "disabled",
+  "grade": 12,
+  "subject": "Mathematics",
+  "lesson": {
+    "id": "math.g12.lesson1.limits-of-functions",
+    "khmer_source_label": "លីមីតនៃអនុគមន៍",
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 19
+  },
+  "teaching_moment_id": "math.g12.lesson1.limits-of-functions.logarithmic.10",
+  "curriculum_version": "local-g12-math-limits-2025-10-01-v1",
+  "source": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "file_name": "Pages from 2025-10-01-00007213.pdf",
+    "provided_local_path": "/Users/macbookpro/Documents/Pages from 2025-10-01-00007213.pdf",
+    "pdf_pages": [19, 21],
+    "printed_pages": [20, 22]
+  },
+  "glossary_terms": [
+    {"term_id": "limit", "term_khmer": "លីមីត", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 1, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"},
+    {"term_id": "logarithmic_function", "term_khmer": "អនុគមន៍លោការីតដែរ", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 19, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"}
+  ],
+  "prerequisite_concepts": [
+    {"id": "natural-logarithm-as-inverse-of-exponential", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 19},
+    {"id": "limit-at-infinity", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 4}
+  ],
+  "learning_objectives": [
+    {"text": "Use a value table to observe ln x -> +infinity as x -> +infinity, and reason (by substitution) that ln x -> -infinity as x -> 0 from the right.", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 19}
+  ],
+  "source_formulas": [
+    {"expression": "f(x) = ln x, x > 0", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 19},
+    {"expression": "lim ln x = +infinity as x -> +infinity; lim ln x = -infinity as x -> 0+", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 19},
+    {"expression": "g(x) = (ln x)/x", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 20},
+    {"expression": "lim (ln x)/x^n = 0 as x -> +infinity, for n >= 0; lim x^n * ln x = 0 as x -> 0+, for n >= 0", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 21}
+  ],
+  "common_misconceptions": [
+    {"category": "assuming_ln_x_is_undefined_or_has_no_limit_as_x_approaches_0_from_the_right_instead_of_diverging_to_negative_infinity", "review_status": "pedagogical_review_required"}
+  ],
+  "teaching_plan": {
+    "representation": "value_table",
+    "spoken_explanation": {
+      "text": "សូមសង្កេតតារាងតម្លៃនៃ ln x នៅពេល x កាន់តែធំ។ បន្ទាប់មកសាកគិតទៅមុខ៖ ចុះនៅពេល x ខិតជិត 0 ពីខាងស្តាំ?",
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 19,
+      "glossary_term_ids": ["logarithmic_function", "limit"]
+    },
+    "board_actions": [
+      {"id": "logarithmic-title", "type": "write_text", "sequence_index": 0, "duration_ms": 500, "layout_zone": "problem", "layout_flow": "vertical", "text": "f(x) = ln x, x > 0", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 19},
+      {"id": "logarithmic-table", "type": "show_table", "sequence_index": 1, "duration_ms": 700, "layout_zone": "visual", "layout_flow": "vertical", "columns": ["x", "ln x"], "rows": [["20", "2.995"], ["40", "3.668"], ["60", "4.094"], ["80", "4.382"], ["100", "4.605"]], "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 19},
+      {"id": "logarithmic-student-task", "type": "student_task", "sequence_index": 2, "duration_ms": 0, "layout_zone": "student_task", "layout_flow": "vertical", "text": "តើ ln x ខិតជិតលេខណា នៅពេល x កាន់តែធំ (→ +∞)? ចុះនៅពេល x ខិតជិត 0 ពីខាងស្តាំ (→ 0⁺)?", "requires_student_response": true, "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 19}
+    ],
+    "student_task": {
+      "task_type": "table_observation",
+      "requires_student_response": true,
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 19
+    },
+    "hidden_answer_policy": {"mode": "hidden", "deterministic_policy_permits_final_reveal": false},
+    "waiting_for_student_input": true,
+    "answer_revealed": false
+  },
+  "interactive_progression": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 19,
+    "steps": [
+      {"id": "observe-table", "representation": "value_table", "task": "តើ ln x ខិតជិតលេខណា នៅពេល x កាន់តែធំ?", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 19},
+      {"id": "state-limit-at-zero-plus", "representation": "symbolic_transformation", "formula": "\\lim_{x \\to 0^+} \\ln x = -\\infty", "task": "ដោយប្រើការជំនួស X = 1/x, សូមសន្និដ្ឋាន lim ln x កាលណា x ខិតជិត 0 ពីខាងស្តាំ។", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 19},
+      {"id": "compare-growth-rate", "representation": "conceptual_operation", "task": "ចំពោះ g(x) = (ln x)/x, តើ ln x ឬ x ដែលកើនលឿនជាង នៅពេល x → +∞? តើ lim (ln x)/x ស្មើនឹងអ្វី?", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 20}
+    ]
+  },
+  "publication_requirements": {
+    "source_transcription_qa": "required",
+    "approved_lesson_chunk": "required",
+    "reviewed_glossary_set": "required"
+  }
+}

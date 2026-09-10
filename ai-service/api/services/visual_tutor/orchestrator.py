@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import uuid
 from typing import Any
 from typing import Optional
 
+import httpx
+
+from api.core.config import settings
 from api.models.curriculum import CurriculumRetrievalRequest
 from api.models.visual_tutor import (
     CanvasElementStyle,
@@ -35,23 +39,46 @@ from api.models.visual_tutor import (
     VisualTutorTurnRequest,
     VisualTutorTurnResponse,
     VisualTutorVisualFocus,
+    VisualTutorStepTurnRequest,
+    VisualTutorStepTurnResponse,
 )
+from api.models.curriculum_cambodia import RichProblem
+from api.services.subject_experts import get_expert
 from api.services.curriculum.curriculum_retriever import (
     curriculum_metadata,
     retrieve_curriculum_context,
 )
+from api.services.curriculum.curriculum_store import get_default_curriculum_store
+from api.services.curriculum.grounded_visual_tutor_retrieval import (
+    retrieve_grounded_visual_tutor_context,
+)
+from api.services.kg_service_v3 import get_kg_service
 from api.services.visual_tutor.adaptive_tutor_planner import (
     AdaptiveTutorDecision,
     VisualTutorAnswerLockDecision,
     VisualTutorMove,
     plan_adaptive_tutor_move,
 )
+from api.services.visual_tutor.observability import record_turn_response
 from api.services.visual_tutor.input_understanding import (
     understand_visual_tutor_student_input,
 )
 from api.services.visual_tutor.llm_teaching_planner import (
+    DeepSeekVisualTutorLLMClient,
     VisualTutorLLMClient,
+    _default_llm_client,
     plan_visual_tutor_turn_with_llm,
+)
+from api.services.visual_tutor.local_limits_deepseek_planner import (
+    consult_deepseek_limits_planner,
+)
+from api.services.visual_tutor.local_logic_demo import (
+    build_local_logic_demo_turn,
+    matches_local_logic_demo,
+)
+from api.services.visual_tutor.local_limits_demo import (
+    build_local_limits_demo_turn,
+    matches_local_limits_demo,
 )
 from api.services.visual_tutor.intent import (
     detect_visual_tutor_student_intent,
@@ -67,6 +94,9 @@ from api.services.visual_tutor.response_sanitizer import (
 from api.services.visual_tutor.teaching_stage_policy import (
     apply_live_teaching_stage_policy,
 )
+from api.services.visual_tutor.teaching_plan_builder import (
+    attach_validated_teaching_plan,
+)
 from api.services.visual_tutor.solver_registry import (
     DEFAULT_VISUAL_TUTOR_SOLVER_REGISTRY,
     VisualTutorSolverRegistry,
@@ -79,6 +109,24 @@ from api.services.visual_tutor.solvers import (
     parse_linear_equation,
 )
 
+MAX_EXPERT_SEQUENCE_STEPS = 48
+
+logger = logging.getLogger(__name__)
+
+
+def _llm_debug_error_payload(exc: Exception) -> dict[str, Any]:
+    """Structured detail for response.metadata['debug_llm_error'] (dev-only).
+
+    Deliberately excludes str(exc): provider error bodies can echo back the
+    student's own prompt text, and metadata must stay safe to expose. The
+    full message and traceback still go to logger.exception() instead.
+    """
+    http_status = getattr(getattr(exc, "response", None), "status_code", None)
+    payload: dict[str, Any] = {"exception_type": type(exc).__name__}
+    if http_status is not None:
+        payload["http_status"] = http_status
+    return payload
+
 
 class _ImmediateTemplateFallbackLLMClient:
     def complete(self, *, system_prompt: str, user_prompt: str) -> str:
@@ -88,15 +136,209 @@ class _ImmediateTemplateFallbackLLMClient:
         )
 
 
+_SCOPE_LOCK_GRADE12_MATH_LIMITS = "grade12_math_limits"
+_SCOPE_LOCK_TOPIC_ID = "math-g12-limits-of-functions"
+
+
+def _scope_lock_active() -> bool:
+    return (
+        settings.VISUAL_TUTOR_SCOPE_LOCK.strip().lower()
+        == _SCOPE_LOCK_GRADE12_MATH_LIMITS
+    )
+
+
+def _is_grade12_math_limits_request(
+    *, grade: Optional[int], subject: str, topic: str, topic_id: str
+) -> bool:
+    if grade != 12:
+        return False
+    if (subject or "").strip().lower() not in {"mathematics", "math"}:
+        return False
+    normalized_topic_id = (topic_id or "").strip().lower()
+    if normalized_topic_id:
+        return normalized_topic_id == _SCOPE_LOCK_TOPIC_ID
+    # Callers that never set topic_id (most of the app today) are matched on
+    # the free-text topic instead -- this is the same fallback
+    # matches_local_limits_demo() already relies on for this exact topic.
+    return (topic or "").strip().lower() == "limits of functions"
+
+
+def _out_of_scope_turn(
+    request: VisualTutorTurnRequest,
+    *,
+    session_id: str,
+) -> VisualTutorTurnResponse:
+    """Scoped-out response while VISUAL_TUTOR_SCOPE_LOCK restricts traffic to
+    Grade 12 limits of functions (see api.core.config.Settings). Physics,
+    chemistry, other grades, and other math topics stay implemented -- this
+    is a temporary gate during stabilization, not a deletion.
+    """
+    message = (
+        "This tutor is currently focused on Grade 12 limits of functions "
+        "only. Other subjects, topics, and grades aren't available yet."
+    )
+    metadata = {
+        "screen_state": "unsupported_problem",
+        "generation_path": "scope_locked",
+        "fallback_reason": "out_of_scope_lock",
+        "scope_lock": settings.VISUAL_TUTOR_SCOPE_LOCK,
+    }
+    return VisualTutorTurnResponse(
+        session_id=session_id,
+        turn_id=str(uuid.uuid4()),
+        spoken_text=message,
+        display_text=message,
+        teaching_mode=VisualTutorTeachingMode.GUIDED_QUESTION,
+        final_answer_locked=True,
+        student_task="Try a Grade 12 limits of functions problem.",
+        board=VisualTutorBoard(
+            type=VisualTutorBoardType.FORMULA_CARD,
+            title="Not in current scope",
+            items=[
+                VisualTutorBoardItem(
+                    label="Status",
+                    content=(
+                        "This build only teaches Grade 12 limits of "
+                        "functions right now."
+                    ),
+                    status="active",
+                ),
+            ],
+            metadata=metadata,
+        ),
+        speech=VisualTutorSpeech(text=message, language="en"),
+        interaction=VisualTutorInteraction(
+            type=VisualTutorInteractionType.TEXT_RESPONSE,
+            prompt="Try a Grade 12 limits of functions problem.",
+            input_enabled=True,
+            expected_answer_locked=False,
+        ),
+        allowed_actions=[],
+        mastery_signal=VisualTutorMasterySignal.EXPLORING,
+        metadata=metadata,
+    )
+
+
+def _out_of_scope_step_turn(
+    request: VisualTutorStepTurnRequest,
+    *,
+    grade: int,
+) -> VisualTutorStepTurnResponse:
+    """Step-sequencing counterpart of _out_of_scope_turn -- see there for why."""
+    message = (
+        "This tutor is currently focused on Grade 12 limits of functions "
+        "only. Other subjects, topics, and grades aren't available yet."
+    )
+    step = {"step_id": "scope-locked", "content": {"message": message}}
+    return VisualTutorStepTurnResponse(
+        session_id=request.session_id,
+        subject=request.subject,
+        current_step_index=0,
+        total_steps=1,
+        current_step=step,
+        recommended_action="out_of_scope",
+        teaching_sequence=[step],
+        expert_metadata={
+            "scope_locked": True,
+            "scope_lock": settings.VISUAL_TUTOR_SCOPE_LOCK,
+            "requested_grade": grade,
+        },
+    )
+
+
 def handle_visual_tutor_turn(
     request: VisualTutorTurnRequest,
     llm_client: Optional[VisualTutorLLMClient] = None,
     solver_registry: VisualTutorSolverRegistry = DEFAULT_VISUAL_TUTOR_SOLVER_REGISTRY,
 ) -> VisualTutorTurnResponse:
     session_id = request.session_id or str(uuid.uuid4())
+    if _scope_lock_active() and not _is_grade12_math_limits_request(
+        grade=_grade_from_request(request),
+        subject=request.subject,
+        topic=request.topic or "",
+        topic_id=str(request.metadata.get("topic_id") or ""),
+    ):
+        return _finalize_response(
+            request, _out_of_scope_turn(request, session_id=session_id)
+        )
+    # This is the only provider-independent student-facing curriculum demo.
+    # It is keyed by the explicit local curriculum version, not loose topic
+    # text, so it cannot shadow a production Lesson 1.1 publication.
+    if matches_local_logic_demo(request):
+        return _finalize_response(
+            request,
+            build_local_logic_demo_turn(request, session_id=session_id),
+        )
+    if settings.VISUAL_TUTOR_LOCAL_LIMITS_DEMO_ENABLED and matches_local_limits_demo(
+        request
+    ):
+        response = build_local_limits_demo_turn(request, session_id=session_id)
+        # The opening board moment is always deterministic. For later local
+        # moments DeepSeek can only review a bounded, source-linked plan; its
+        # output never replaces the authored response and failure is silent to
+        # the learner because the deterministic board remains available.
+        if request.action not in {VisualTutorAction.START, VisualTutorAction.SUBMIT_PROBLEM}:
+            debug_llm_error: dict[str, Any] = {}
+            planner_status = _consult_local_limits_deepseek(
+                request,
+                llm_client=llm_client,
+                debug=debug_llm_error,
+            )
+            updated_metadata = {
+                **response.metadata,
+                "deepseek_planner": planner_status,
+            }
+            if debug_llm_error:
+                updated_metadata["debug_llm_error"] = debug_llm_error
+            response = response.model_copy(update={"metadata": updated_metadata})
+        return _finalize_response(
+            request,
+            response,
+        )
     problem_message = _problem_message(request)
     if not problem_message:
         return _finalize_response(request, _greeting(request, session_id=session_id))
+
+    # Step-gating: if a student_task is pending (pending_interaction in
+    # session metadata) and the student sent a blank or non-substantive
+    # message, nudge them to respond before we generate new board content.
+    # This is what makes the tutor feel like a real teacher who waits —
+    # rather than a chatbot that generates the next step regardless.
+    # Note: pending_interaction.type is a VisualTutorInteractionType value
+    # (e.g. "text_response", "numeric_input") — we check input_enabled to
+    # confirm the board is actively waiting for a student response.
+    pending_interaction_raw = request.metadata.get("pending_interaction")
+    try:
+        if pending_interaction_raw and isinstance(pending_interaction_raw, dict):
+            pending_interaction = VisualTutorInteraction.model_validate(pending_interaction_raw)
+            is_waiting = pending_interaction.input_enabled
+        else:
+            is_waiting = False
+    except Exception:
+        is_waiting = False
+
+    if (
+        is_waiting
+        and request.action not in {
+            VisualTutorAction.SUBMIT_PROBLEM,
+            VisualTutorAction.GENERATE_PRACTICE,
+        }
+    ):
+        student_msg = (request.message or "").strip()
+        # A single word or empty message while waiting is non-substantive.
+        is_substantive = bool(student_msg) and len(student_msg.split()) > 1
+        is_quick_action = request.action in {
+            VisualTutorAction.REQUEST_HINT,
+            VisualTutorAction.REQUEST_STUCK_HELP,
+            VisualTutorAction.EXPLAIN_DIFFERENTLY,
+            VisualTutorAction.REQUEST_FINAL_ANSWER,
+            VisualTutorAction.SUBMIT_STEP,
+        }
+        if not is_substantive and not is_quick_action:
+            return _finalize_response(
+                request,
+                _step_gate_nudge(request, session_id=session_id),
+            )
 
     understanding = understand_visual_tutor_problem(
         VisualTutorProblemUnderstandingRequest(
@@ -123,13 +365,40 @@ def handle_visual_tutor_turn(
             message=problem_message,
             language=understanding.language,
             max_results=3,
-            metadata={
-                "session_id": request.session_id,
-                "visual_tutor": True,
+        metadata={
+            "session_id": request.session_id,
+            "visual_tutor": True,
+            "required_glossary_terms": request.metadata.get(
+                "required_glossary_terms", []
+            ),
             },
         )
     )
     curriculum_meta = curriculum_metadata(curriculum_result)
+    # Exact Cambodian curriculum scope is the primary grounding source. The
+    # legacy retrieval metadata remains for existing planner compatibility.
+    try:
+        grounded_context = retrieve_grounded_visual_tutor_context(
+            CurriculumRetrievalRequest(
+                grade=_grade_from_request(request),
+                subject=understanding.subject or request.subject,
+                topic=understanding.topic or request.topic,
+                problem_type=understanding.problem_type,
+                message=problem_message,
+                language=understanding.language,
+                max_results=3,
+            ),
+            store=get_default_curriculum_store(),
+            kg_service=get_kg_service(),
+        )
+        curriculum_meta.update(grounded_context.server_metadata())
+    except Exception:
+        # Grounding failure must never silently widen the curriculum scope.
+        curriculum_meta["grounded_teaching_context"] = {
+            "scope": {"grade": _grade_from_request(request), "subject": understanding.subject or request.subject, "topic": understanding.topic or request.topic},
+            "confidence": 0.0,
+            "clarification_required": True,
+        }
     solver = solver_registry.get_solver(understanding)
     preliminary_policy = decide_visual_tutor_policy(
         request,
@@ -158,6 +427,12 @@ def handle_visual_tutor_turn(
         input_understanding=input_understanding,
     )
     policy.metadata.update(curriculum_meta)
+    # This value came from server-side curriculum retrieval, unlike request
+    # metadata.  Keep the exact reviewed terminology selection stable for the
+    # rest of the session and surface only non-sensitive gap queue records.
+    reviewed_glossary = curriculum_meta.get("reviewed_khmer_glossary")
+    if isinstance(reviewed_glossary, dict):
+        policy.metadata.update(reviewed_glossary)
     if solver_facts is not None:
         policy.metadata["solver_facts"] = solver_facts.model_dump(mode="json")
     policy.metadata["orchestrator_flow"] = [
@@ -212,11 +487,12 @@ def handle_visual_tutor_turn(
                 ),
             }
         )
-        return handle_visual_tutor_turn(
-            new_problem_request,
-            llm_client=llm_client,
-            solver_registry=solver_registry,
-        )
+        # Continue this turn with reset state. Re-entering the orchestrator
+        # here is unsafe: the same student message remains a new-problem
+        # message, so input understanding can select this branch forever.
+        # The planner below already has the current message, curriculum,
+        # solver facts, and policy; it only needs the clean board state.
+        request = new_problem_request
 
     response = _planner_first_turn(
         request=request,
@@ -291,6 +567,7 @@ def _planner_first_turn(
         allow_final_answer=request.allow_final_answer or policy.full_solution_allowed,
         student_model=_student_model_from_request(request),
         strategy_history=_strategy_history_from_request(request),
+        language_mode=_language_mode_for_request(request),
     )
     policy.metadata.update(
         {
@@ -307,8 +584,60 @@ def _planner_first_turn(
             ),
             "student_model": _student_model_from_request(request),
             "strategy_history": _strategy_history_from_request(request),
+            "language_mode": _language_mode_for_request(request),
+            "curriculum_glossary_status": (
+                "approved"
+                if isinstance((curriculum_meta or {}).get("khmer_terms"), dict)
+                and (curriculum_meta or {}).get("khmer_terms")
+                else "gap_needs_curriculum_review"
+            ),
         }
     )
+
+    grounded = (curriculum_meta or {}).get("grounded_teaching_context")
+    has_configured_llm = not isinstance(
+        _configured_or_fallback_llm_client(llm_client),
+        _ImmediateTemplateFallbackLLMClient,
+    )
+    if (
+        solver is None
+        and not has_configured_llm
+        and not _should_return_graph_board(request.message, understanding)
+        and not _is_explicit_symbolic_rearrangement(
+            request.current_state.problem_text or request.message
+        )
+        and isinstance(grounded, dict)
+        and grounded.get("clarification_required") is True
+    ):
+        # Production curriculum coverage is a hard teaching boundary for
+        # LLM-generated content: without it, nothing anchors the planner's
+        # facts, so it must not invent an unreviewed lesson. The same
+        # exceptions as the matching "unsupported" gate just below apply
+        # here too (this gate must not be stricter than that one, or it
+        # simply intercepts the same requests first with less nuance): a
+        # deterministic solver's answer is not "curriculum content" at all
+        # -- it is computed straight from the math, independent of grounding
+        # -- an actually-usable LLM path (caller-injected, or a real
+        # provider configured via env var, which is how production actually
+        # runs -- no explicit llm_client is ever passed by the route) is an
+        # explicit request to let a configured planner teach, still bounded
+        # by the final-answer sanitizer downstream, a graph request has its
+        # own explicit visual fallback, and an explicit symbolic
+        # rearrangement can be taught without claiming a verified numeric
+        # answer. Without this, any request missing grade/subject/topic
+        # (e.g. the "ask a question" entry point, which does not send them
+        # -- see ai_tutor/lib/screens/tutor/tutor_screen.dart) fell through
+        # to this branch for ordinary, fully-supported problems like a
+        # linear equation, and got the generic "Unsupported Problem" screen
+        # instead of being taught.
+        return _mark_adaptive_generation_metadata(
+            _friendly_unsupported_turn(
+                request, understanding=understanding, policy=policy, session_id=session_id,
+            ),
+            adaptive_decision=adaptive_decision,
+            generation_path="curriculum_recovery",
+            fallback_reason="reviewed_curriculum_required",
+        )
 
     # An unsupported or ambiguous math prompt must never be handed to a
     # free-form planner that could invent mathematics. Graph requests are the
@@ -325,6 +654,13 @@ def _planner_first_turn(
         and not _is_explicit_symbolic_rearrangement(
             request.current_state.problem_text or request.message
         )
+        # A configured planner (caller-injected, or a real provider set via
+        # env var -- production never injects llm_client directly, so this
+        # must not check llm_client alone) is allowed to provide a
+        # transparent teaching/recovery turn. Its JSON still passes the
+        # strict schema and final-answer sanitizer; it is not allowed to
+        # invent a verified mathematical claim.
+        and not has_configured_llm
     ):
         return _mark_adaptive_generation_metadata(
             _friendly_unsupported_turn(
@@ -351,24 +687,10 @@ def _planner_first_turn(
             fallback_reason="graph_based_visual_guidance",
         )
 
-    # A registered solver is the source of truth for supported mathematics.  Do
-    # not replace its verified steps with an LLM completion just because a model
-    # happens to be configured.
-    if solver is not None:
-        return _mark_adaptive_generation_metadata(
-            _deterministic_template_turn_for_move(
-                request=request,
-                understanding=understanding,
-                solver=solver,
-                policy=policy,
-                session_id=session_id,
-                adaptive_decision=adaptive_decision,
-            ),
-            adaptive_decision=adaptive_decision,
-            generation_path="deterministic_solver",
-            fallback_reason=None,
-        )
-
+    # Let a configured planner choose *how* to teach, but never let it become
+    # the source of mathematical truth: solver facts and the response
+    # sanitizer remain authoritative, and an unavailable/invalid planner falls
+    # back to the deterministic solver below.
     llm_response = plan_visual_tutor_turn_with_llm(
         request=request,
         understanding=understanding,
@@ -409,11 +731,20 @@ def _planner_first_turn(
         session_id=session_id,
         adaptive_decision=adaptive_decision,
     )
+    no_configured_llm = llm_client is None
     return _mark_adaptive_generation_metadata(
         fallback,
         adaptive_decision=adaptive_decision,
-        generation_path="deterministic_template_fallback",
-        fallback_reason=llm_response.metadata.get("planner_error") or "llm_unavailable",
+        generation_path=(
+            "deterministic_solver"
+            if no_configured_llm
+            else "deterministic_template_fallback"
+        ),
+        fallback_reason=(
+            None
+            if no_configured_llm
+            else llm_response.metadata.get("planner_error") or "llm_unavailable"
+        ),
     )
 
 
@@ -429,10 +760,14 @@ def _enforce_requested_teaching_mode(
     cannot turn an explicit hint or stuck request into a generic first lesson.
     That would repeat the same step and make progressive help unreliable.
     """
-    if request.action not in {
-        VisualTutorAction.REQUEST_HINT,
-        VisualTutorAction.REQUEST_STUCK_HELP,
-    } and not policy.stuck_help:
+    if (
+        request.action
+        not in {
+            VisualTutorAction.REQUEST_HINT,
+            VisualTutorAction.REQUEST_STUCK_HELP,
+        }
+        and not policy.stuck_help
+    ):
         return response
     if response.teaching_mode == policy.teaching_mode:
         return response
@@ -465,9 +800,51 @@ def _configured_or_fallback_llm_client(
         return None
     if provider == "openrouter" and os.getenv("OPENROUTER_API_KEY", "").strip():
         return None
+    if provider == "deepseek" and os.getenv("DEEPSEEK_API_KEY", "").strip():
+        return None
     if provider == "auto" and os.getenv("OPENROUTER_API_KEY", "").strip():
         return None
+    if provider == "auto" and os.getenv("DEEPSEEK_API_KEY", "").strip():
+        return None
     return _ImmediateTemplateFallbackLLMClient()
+
+
+def _consult_local_limits_deepseek(
+    request: VisualTutorTurnRequest,
+    *,
+    llm_client: Optional[VisualTutorLLMClient],
+    debug: dict[str, Any] | None = None,
+) -> str:
+    """Return only a bounded planner status for later local Limits turns.
+
+    This deliberately requires the explicit ai-service-only DeepSeek setting.
+    An injected client is accepted solely for server tests; Node and Flutter
+    never receive a provider client or a provider credential.
+
+    The returned status stays a plain string for the student-facing metadata
+    contract. When VISUAL_TUTOR_DEBUG_ERRORS is on, the real exception is
+    also logged and, if a `debug` dict is supplied, written into it so the
+    caller can attach it to response.metadata separately.
+    """
+    if os.getenv("VISUAL_TUTOR_LLM_PROVIDER", "").strip().lower() != "deepseek":
+        return "not_configured"
+    try:
+        client = llm_client or _default_llm_client()
+        if llm_client is None and not isinstance(client, DeepSeekVisualTutorLLMClient):
+            return "not_configured"
+        return consult_deepseek_limits_planner(request, client=client)
+    except (TimeoutError, httpx.TimeoutException) as exc:
+        if settings.VISUAL_TUTOR_DEBUG_ERRORS:
+            logger.exception("local_limits_deepseek planner timed out")
+            if debug is not None:
+                debug.update(_llm_debug_error_payload(exc))
+        return "timeout_fallback"
+    except Exception as exc:
+        if settings.VISUAL_TUTOR_DEBUG_ERRORS:
+            logger.exception("local_limits_deepseek planner call failed")
+            if debug is not None:
+                debug.update(_llm_debug_error_payload(exc))
+        return "invalid_or_unavailable_fallback"
 
 
 def _deterministic_template_turn_for_move(
@@ -919,6 +1296,12 @@ def _mark_adaptive_generation_metadata(
         metadata["planner_fallback"] = True
         metadata["fallback_reason"] = fallback_reason or "llm_unavailable"
         metadata["solver_speech_bypassed"] = True
+    elif generation_path == "curriculum_recovery" and fallback_reason is not None:
+        # Otherwise the caller's fallback_reason (e.g.
+        # "reviewed_curriculum_required") is silently dropped, and the
+        # debug-metadata layer falls back to the generic
+        # "structured_template_response" instead of the real reason.
+        metadata["fallback_reason"] = fallback_reason
     return response.model_copy(update={"metadata": metadata})
 
 
@@ -956,9 +1339,11 @@ def _build_board_patch(
         patch_actions: Optional[list[VisualTutorBoardAction]] = None,
         errors: Optional[list[str]] = None,
     ) -> VisualTutorTurnResponse:
+        # Default to replace instead of merge, but allow patch
+        final_mode = "replace" if mode == "merge" else mode
         metadata = {
             **response.metadata,
-            "board_update_mode": mode,
+            "board_update_mode": final_mode,
             "patch_generated": patch_generated,
             "patch_ops": [
                 {
@@ -1232,6 +1617,7 @@ def _finalize_response(
             or policy.full_solution_allowed,
             student_model=_student_model_from_request(request),
             strategy_history=_strategy_history_from_request(request),
+            language_mode=_language_mode_for_request(request),
         )
         enriched_response = _apply_adaptive_tutor_decision(
             enriched_response,
@@ -1286,8 +1672,49 @@ def _finalize_response(
         response_metadata["answer_lock_decision"] = (
             adaptive_decision.answer_lock_decision.value
         )
-    if request.action == VisualTutorAction.SUBMIT_STEP:
-        problem = request.current_state.problem_text or request.metadata.get("problem_text")
+    conceptual_validation = (
+        input_understanding.metadata.get("validation_result")
+        if input_understanding is not None
+        and isinstance(input_understanding.metadata, dict)
+        else None
+    )
+    if conceptual_validation in {"correct_operation", "incorrect_relevant_step"}:
+        # The tutor deliberately asked for an operation in words.  Do not send
+        # that answer through the equation verifier, which correctly expects
+        # equation notation but would incorrectly reject a response such as
+        # "add 5". Input understanding has already matched the operation
+        # deterministically against the parsed linear equation.
+        expected_operation = input_understanding.metadata.get(
+            "matched_operation"
+        ) or input_understanding.metadata.get("expected_operation")
+        is_correct_operation = conceptual_validation == "correct_operation"
+        verification_contract = {
+            "status": "correct" if is_correct_operation else "invalid",
+            "verified": is_correct_operation,
+            "normalized_expression": None,
+            "solution": None,
+            "student_message": (
+                f"Correct. {expected_operation.capitalize()} is the inverse operation, so apply it to both sides."
+                if is_correct_operation and isinstance(expected_operation, str)
+                else "That operation does not keep this equation balanced. Recheck the inverse operation for the constant."
+            ),
+            "evidence": {
+                "method": "task_aware_conceptual_operation",
+                "task_type": "conceptual_operation",
+                "expected_operation": expected_operation,
+                "matched_operation": input_understanding.metadata.get(
+                    "matched_operation"
+                ),
+            },
+        }
+        response_metadata["verification"] = verification_contract
+        response_metadata["verification_result"] = verification_contract["status"]
+        response_metadata["verification_evidence"] = verification_contract["evidence"]
+        response_metadata["verification_verified"] = is_correct_operation
+    elif request.action == VisualTutorAction.SUBMIT_STEP:
+        problem = request.current_state.problem_text or request.metadata.get(
+            "problem_text"
+        )
         if isinstance(problem, str) and problem.strip():
             # Import at the execution boundary to avoid coupling the core
             # teaching service to FastAPI route-package initialisation. The
@@ -1297,9 +1724,18 @@ def _finalize_response(
             verification = verify_student_work(
                 problem=problem,
                 student_step=request.message,
-                expected_step=response_metadata.get("expected_step"),
+                # This must be the task the learner saw before this turn, not
+                # the next task generated while composing the response.
+                expected_step=request.metadata.get("persisted_expected_step"),
             )
             verification_contract = verification.model_dump(mode="json")
+            if enriched_response.final_answer_locked:
+                # A solution or expected-step string can disclose the answer.
+                # Keep only the status and student-facing evidence while locked.
+                verification_contract["solution"] = None
+                evidence = verification_contract.get("evidence")
+                if isinstance(evidence, dict):
+                    evidence.pop("expected_step", None)
             response_metadata["verification"] = verification_contract
             response_metadata["verification_result"] = verification.status
             response_metadata["verification_evidence"] = verification.evidence
@@ -1339,11 +1775,14 @@ def _finalize_response(
         ),
         "final_answer_locked": enriched_response.final_answer_locked,
         "final_answer_policy": (
-            "hidden" if enriched_response.final_answer_locked else "progressively_revealed"
+            "hidden"
+            if enriched_response.final_answer_locked
+            else "progressively_revealed"
         ),
         "verification": response_metadata.get("verification_result"),
     }
-    return enriched_response.model_copy(
+    response_metadata = _public_response_metadata(response_metadata)
+    final_response = enriched_response.model_copy(
         update={
             "student_intent": student_intent,
             "screen_state": screen_state,
@@ -1354,6 +1793,40 @@ def _finalize_response(
             "metadata": response_metadata,
         }
     )
+    # A plan is data-only and is validated after all policy, solver, and
+    # verification enrichment.  This makes the persisted plan describe the
+    # actual safe turn, not an earlier untrusted model draft.
+    finalized = attach_validated_teaching_plan(
+        response=final_response,
+        request=request,
+        policy=policy,
+        understanding=understanding,
+        adaptive_decision=adaptive_decision,
+    )
+    record_turn_response(
+        finalized,
+        curriculum_confidence=(curriculum_meta or {}).get("curriculum_confidence"),
+    )
+    return finalized
+
+
+def _public_response_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Remove private learner evidence and planner inputs before returning JSON.
+
+    The service persists the complete session separately.  Flutter only needs
+    the validated teaching plan and student-facing verification result.
+    """
+    result = dict(metadata)
+    for key in ("student_model", "strategy_history", "planner_inputs"):
+        result.pop(key, None)
+    for key in ("policy", "adaptive_tutor_decision"):
+        value = result.get(key)
+        if isinstance(value, dict):
+            safe_value = dict(value)
+            for private_key in ("student_model", "strategy_history", "planner_inputs"):
+                safe_value.pop(private_key, None)
+            result[key] = safe_value
+    return result
 
 
 def _representation_for_response(response: VisualTutorTurnResponse) -> str:
@@ -1365,7 +1838,10 @@ def _representation_for_response(response: VisualTutorTurnResponse) -> str:
         return "coordinate_graph"
     if "show_number_line" in action_types:
         return "number_line"
-    if "transform_equation" in action_types or response.board.type.value in {"equation", "equation_steps"}:
+    if "transform_equation" in action_types or response.board.type.value in {
+        "equation",
+        "equation_steps",
+    }:
         return "equation_transformation"
     return "guided_text_visual"
 
@@ -1386,9 +1862,7 @@ def _enforce_teaching_turn_contract(
     ]
     selected = task_actions[0] if task_actions else None
     actions = [
-        action
-        for action in response.board_actions
-        if action not in task_actions
+        action for action in response.board_actions if action not in task_actions
     ]
     if selected is None:
         active_group_id = next(
@@ -1398,7 +1872,10 @@ def _enforce_teaching_turn_contract(
         selected = VisualTutorBoardAction(
             id=f"student-task-{response.turn_id}",
             type=VisualTutorCanvasActionType.STUDENT_TASK,
-            sequence_index=max((action.sequence_index for action in actions), default=-1) + 1,
+            sequence_index=max(
+                (action.sequence_index for action in actions), default=-1
+            )
+            + 1,
             text=response.student_task,
             requires_student_response=True,
             group_id=active_group_id,
@@ -1410,7 +1887,9 @@ def _enforce_teaching_turn_contract(
                 "requires_student_response": True,
                 "text": selected.text or response.student_task,
                 "group_id": selected.group_id
-                or next((action.group_id for action in actions if action.group_id), None),
+                or next(
+                    (action.group_id for action in actions if action.group_id), None
+                ),
             }
         )
     actions.append(selected)
@@ -1419,7 +1898,9 @@ def _enforce_teaching_turn_contract(
         "active_student_task_id": selected.id,
         "discarded_student_task_count": max(0, len(task_actions) - 1),
     }
-    return response.model_copy(update={"board_actions": actions[:24], "metadata": metadata})
+    return response.model_copy(
+        update={"board_actions": actions[:24], "metadata": metadata}
+    )
 
 
 def _debug_metadata(
@@ -1502,7 +1983,11 @@ def _solver_name_for_understanding(understanding) -> Optional[str]:
         "quadratic_equation_basic": "QuadraticEquationBasicSolver",
         "quadratic_equation": "QuadraticEquationBasicSolver",
         "arithmetic_expression": "ArithmeticExpressionSolver",
+        "integer_arithmetic": "ArithmeticExpressionSolver",
+        "fraction_decimal_arithmetic": "ArithmeticExpressionSolver",
         "simple_percentage_word_problem": "SimplePercentageWordProblemSolver",
+        "straight_line_graph": "FunctionGraphSolver",
+        "basic_quadratic_graph": "FunctionGraphSolver",
     }.get(str(problem_type))
 
 
@@ -1512,14 +1997,25 @@ def _llm_provider_name() -> str:
         return provider
     if os.getenv("OPENROUTER_API_KEY", "").strip():
         return "openrouter"
+    if os.getenv("DEEPSEEK_API_KEY", "").strip():
+        return "deepseek"
     return "auto"
 
 
 def _fallback_reason(metadata: dict[str, Any], response_source: str) -> Optional[str]:
     if response_source == "deterministic_solver":
         return None
-    if metadata.get("planner_error"):
-        return str(metadata["planner_error"])
+    reason = metadata.get("fallback_reason") or metadata.get("planner_error")
+    if reason in {
+        "planner_timeout",
+        "invalid_model_output",
+        "provider_quota",
+        "provider_unavailable",
+        "structured_template_response",
+        "reviewed_curriculum_required",
+        "out_of_scope_lock",
+    }:
+        return str(reason)
     if response_source == "template_fallback":
         return "structured_template_response"
     return None
@@ -2228,11 +2724,20 @@ def _safe_canvas_id(value: str) -> str:
 
 
 def _uses_khmer(request: VisualTutorTurnRequest, metadata: dict) -> bool:
+    if _language_mode_for_request(request) in {"khmer", "bilingual"}:
+        return True
     locale = (request.locale or "").lower()
     if locale.startswith("km"):
         return True
     policy = metadata.get("policy") if isinstance(metadata.get("policy"), dict) else {}
     return bool(policy.get("use_khmer_explanation"))
+
+
+def _language_mode_for_request(request: VisualTutorTurnRequest) -> str | None:
+    if request.language_mode is not None:
+        return request.language_mode.value
+    value = request.metadata.get("language_mode")
+    return str(value).lower() if value in {"khmer", "english", "bilingual"} else None
 
 
 def _should_understand_student_input(request: VisualTutorTurnRequest) -> bool:
@@ -2319,6 +2824,225 @@ def _input_validation_turn(
             "redirect_reason": policy.reason,
         },
     )
+
+
+async def handle_visual_tutor_step_turn(
+    request: VisualTutorStepTurnRequest,
+    *,
+    problem_text: str,
+    grade: int = 10,
+    existing_sequence: list[dict[str, Any]] | None = None,
+    current_step_index: int = 0,
+) -> VisualTutorStepTurnResponse:
+    """Run one deterministic expert step without changing the legacy turn flow.
+
+    The route supplies the owned session state.  This function deliberately
+    returns JSON-serialisable visual steps so the Flutter client can dispatch
+    their renderer payloads without relying on an LLM response format.
+    """
+    if _scope_lock_active() and not _is_grade12_math_limits_request(
+        grade=grade,
+        subject=request.subject,
+        topic="",
+        topic_id=str(request.metadata.get("topic_id") or ""),
+    ):
+        return _out_of_scope_step_turn(request, grade=grade)
+    if not problem_text.strip():
+        raise ValueError("A step-based tutor turn requires a problem")
+
+    expert = await get_expert(request.subject)
+    problem_id = str(
+        request.metadata.get("problem_id") or f"{request.subject}_step_problem"
+    )
+    problem = RichProblem(
+        problem_id=_expert_problem_id(problem_id, request.subject),
+        subject=request.subject,
+        grade=grade if grade in {10, 11, 12} else 10,
+        unit=str(request.metadata.get("unit") or "General"),
+        topic_id=str(request.metadata.get("topic_id") or "general"),
+        problem_text=problem_text,
+        problem_text_khmer=str(
+            request.metadata.get("problem_text_khmer") or problem_text
+        ),
+        problem_type=str(request.metadata.get("problem_type") or "guided_visual"),
+        visualizations_needed=["diagram"],
+        concepts=list(request.metadata.get("concepts") or ["general"]),
+        prerequisites=[],
+    )
+    sequence = existing_sequence or [
+        step.model_dump(mode="json")
+        for step in (
+            await expert.create_visualization_plan(problem)
+        ).visualization_steps
+    ]
+    if not sequence:
+        raise ValueError("Expert returned an empty teaching sequence")
+
+    index = min(max(current_step_index, 0), len(sequence) - 1)
+    evaluation: dict[str, Any] | None = None
+    recommended_action = "continue" if existing_sequence else "start"
+
+    if request.action == "hint":
+        hint_level = _hint_level(request.metadata.get("hint_level"))
+        hint = await expert.provide_hint(sequence[index]["step_id"], hint_level)
+        current_content = dict(sequence[index].get("content") or {})
+        sequence[index] = {
+            **sequence[index],
+            "content": {**current_content, "hint": hint, "hint_level": hint_level},
+        }
+        recommended_action = "hint"
+    elif request.action == "skip":
+        index = min(index + 1, len(sequence) - 1)
+        recommended_action = "skip_step"
+    elif request.step_id:
+        active_step_id = str(sequence[index].get("step_id") or "")
+        if request.step_id != active_step_id:
+            raise ValueError("The submitted step is not the active teaching step")
+        expected_answer = _server_step_value(sequence[index], "expected_answer")
+        validation_strategy = _server_step_value(sequence[index], "validation_strategy")
+        if not expected_answer:
+            evaluation = {
+                "is_correct": False,
+                "condition": "awaiting_server_rubric",
+                "confidence": 1.0,
+                "feedback_message": "This step needs a teacher-authored rubric before it can be marked.",
+                "should_offer_hint": True,
+            }
+            recommended_action = "await_rubric"
+            return _step_turn_response(
+                request,
+                sequence,
+                index,
+                evaluation,
+                recommended_action,
+                expert,
+                problem.grade,
+                problem.teaching_approach,
+            )
+        result = await expert.evaluate_student_response(
+            request.message,
+            request.step_id,
+            expected_answer,
+            validation_strategy,
+        )
+        evaluation = result.model_dump(mode="json")
+        if result.is_correct:
+            index = min(index + 1, len(sequence) - 1)
+            recommended_action = "next_step"
+        else:
+            if len(sequence) >= MAX_EXPERT_SEQUENCE_STEPS:
+                evaluation["feedback_message"] = (
+                    "Let's pause and try a different explanation with your teacher."
+                )
+                recommended_action = "explain_differently"
+                return _step_turn_response(
+                    request,
+                    sequence,
+                    index,
+                    evaluation,
+                    recommended_action,
+                    expert,
+                    problem.grade,
+                    problem.teaching_approach,
+                )
+            reteach = await expert.generate_reteach_step(
+                request.step_id,
+                evaluation.get("misconception") if evaluation else None,
+            )
+            sequence.insert(
+                index, _reteach_visualization_step(reteach.model_dump(mode="json"))
+            )
+            recommended_action = "reteach"
+
+    return _step_turn_response(
+        request,
+        sequence,
+        index,
+        evaluation,
+        recommended_action,
+        expert,
+        problem.grade,
+        problem.teaching_approach,
+    )
+
+
+def _step_turn_response(
+    request: VisualTutorStepTurnRequest,
+    sequence: list[dict[str, Any]],
+    index: int,
+    evaluation: dict[str, Any] | None,
+    recommended_action: str,
+    expert: Any,
+    grade: int,
+    teaching_approach: str,
+) -> VisualTutorStepTurnResponse:
+    """Build the transport DTO from server-authored sequence state."""
+    return VisualTutorStepTurnResponse(
+        session_id=request.session_id,
+        subject=request.subject,
+        current_step_index=index,
+        total_steps=len(sequence),
+        current_step=sequence[index],
+        evaluation=evaluation,
+        recommended_action=recommended_action,
+        teaching_sequence=sequence,
+        expert_metadata={
+            "expert": type(expert).__name__,
+            "subject": request.subject,
+            "grade": grade,
+            "teaching_approach": teaching_approach,
+        },
+    )
+
+
+def _expert_problem_id(value: str, subject: str) -> str:
+    """Normalise an external problem ID to the curriculum model contract."""
+    normalized = re.sub(r"[^a-z0-9_]+", "_", value.casefold()).strip("_")
+    return normalized or f"{subject}_step_problem"
+
+
+def _server_step_value(step: dict[str, Any], key: str) -> str | None:
+    """Read evaluation configuration only from the persisted plan."""
+    value = step.get(key)
+    if value is None and isinstance(step.get("content"), dict):
+        value = step["content"].get(key)
+    return str(value).strip() if value is not None and str(value).strip() else None
+
+
+def _hint_level(value: Any) -> int:
+    """Limit hint escalation to the subject-expert contract."""
+    try:
+        level = int(value or 1)
+    except (TypeError, ValueError):
+        level = 1
+    return min(max(level, 1), 3)
+
+
+def _reteach_visualization_step(reteach: dict[str, Any]) -> dict[str, Any]:
+    """Adapt the shared ``TeachingStep`` contract to a RichMediaCanvas step."""
+    interaction = reteach.get("interaction") or {}
+    visualizations = reteach.get("visualizations") or []
+    first_visual = visualizations[0] if visualizations else {}
+    question = str(
+        interaction.get("question_text")
+        or "What relationship can you identify in this simpler representation?"
+    )
+    return {
+        "step_id": str(reteach.get("id") or "reteach"),
+        "visualization_type": str(first_visual.get("type") or "diagram"),
+        "content": {
+            "renderer": "RichMediaCanvas",
+            "reteach": reteach,
+            "visualization": first_visual,
+        },
+        "animation_type": "fade_in",
+        "duration_ms": 1000,
+        "student_question": question,
+        "student_question_khmer": question,
+        "expected_response_type": "text",
+        "on_correct": "next_step",
+        "on_incorrect": "reteach",
+    }
 
 
 def _should_return_graph_board(problem_message: str, understanding) -> bool:
@@ -2648,9 +3372,11 @@ def _friendly_unsupported_turn(
             input_enabled=allow_problem_retry,
             expected_answer_locked=not allow_problem_retry,
             metadata={
-                "recovery_action": "submit_another_problem"
-                if allow_problem_retry
-                else "choose_supported_topic"
+                "recovery_action": (
+                    "submit_another_problem"
+                    if allow_problem_retry
+                    else "choose_supported_topic"
+                )
             },
         ),
         allowed_actions=[],
@@ -2800,5 +3526,78 @@ def _greeting(
             "topic": request.topic,
             "policy": policy.metadata,
             "policy_reason": policy.reason,
+        },
+    )
+
+
+def _step_gate_nudge(
+    request: VisualTutorTurnRequest,
+    *,
+    session_id: str,
+) -> VisualTutorTurnResponse:
+    """Return a gentle nudge when the AI is waiting for a student response.
+
+    Called when there is a pending student_task on the board but the student
+    sent an empty or non-substantive message. The board is unchanged — we do
+    not generate new teaching content until the student actually engages with
+    the current question.
+    """
+    policy = decide_visual_tutor_policy(request, has_problem=True)
+    use_khmer = policy.use_khmer_explanation
+
+    if use_khmer:
+        spoken_text = (
+            "សូមព្យាយាមឆ្លើយសំណួរនោះជាមុនសិន! "
+            "ខ្ញុំនឹងជួយបន្ថែមបន្ទាប់ពីអ្នកព្យាយាម។"
+        )
+        interaction_prompt = "សូមមើលសំណួរខាងលើ ហើយព្យាយាមឆ្លើយវា។"
+    else:
+        spoken_text = (
+            "Try answering the question on the board first! "
+            "I'll help you more after you give it a try."
+        )
+        interaction_prompt = "Look at the question on the board and try to answer it."
+
+    return VisualTutorTurnResponse(
+        session_id=session_id,
+        turn_id=str(uuid.uuid4()),
+        spoken_text=spoken_text,
+        display_text=spoken_text,
+        teaching_mode=VisualTutorTeachingMode.GUIDED_QUESTION,
+        screen_state=VisualTutorScreenState.ASKING_QUESTION,
+        tutor_status="Waiting for you",
+        speech=VisualTutorSpeech(
+            text=spoken_text,
+            language="km" if use_khmer else "en",
+            tts_status="not_requested",
+        ),
+        final_answer_locked=True,
+        student_task=interaction_prompt,
+        board=VisualTutorBoard(
+            type=VisualTutorBoardType.FORMULA_CARD,
+            title="",
+            items=[],
+            metadata={"preserve_existing": True},
+        ),
+        board_actions=[],
+        canvas_actions=[],
+        interaction=VisualTutorInteraction(
+            type=VisualTutorInteractionType.TEXT_RESPONSE,
+            prompt=interaction_prompt,
+            input_enabled=True,
+        ),
+        quick_actions=[
+            VisualTutorAllowedAction.SUBMIT_ANSWER,
+            VisualTutorAllowedAction.REQUEST_HINT,
+            VisualTutorAllowedAction.STUCK,
+        ],
+        mastery_signal=VisualTutorMasterySignal.EXPLORING,
+        metadata={
+            "subject": request.subject,
+            "topic": request.topic,
+            "step_gate": True,
+            "pending_interaction_preserved": True,
+            "board_update_mode": "patch",
+            "board_actions": [],
         },
     )

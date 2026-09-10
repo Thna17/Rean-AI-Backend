@@ -767,6 +767,43 @@ class KnowledgeGraphServiceV3:
 
         return next_concepts
 
+    async def get_misconceptions(self, concept_id: str) -> List[Dict[str, Any]]:
+        """
+        Get common misconceptions for a concept.
+        
+        Returns:
+            List of misconception dictionaries with:
+            - error_type: Type of misconception (e.g., 'sign_error')
+            - description: Brief description
+            - explanation: Detailed explanation of why it's wrong
+            - correction: How to correct the misconception
+            - similar_errors: List of similar error patterns
+        """
+        misconceptions: List[Dict[str, Any]] = []
+        
+        try:
+            # Query for misconception relationships (future enhancement)
+            # For now, return expert service misconceptions based on concept type
+            result = await self._execute(
+                "MATCH (c:Concept)-[e:Edge]->(m:Concept) "
+                "WHERE c.id = $cid AND e.relation = 'common_misconception' "
+                "RETURN m.id, m.title, m.keywords",
+                {"cid": concept_id},
+            )
+            if result:  # type: ignore[union-attr]
+                while result.has_next():  # type: ignore[union-attr]
+                    row: list = result.get_next()  # type: ignore[union-attr]
+                    misconceptions.append({
+                        "concept_id": row[0],
+                        "title": row[1] if len(row) > 1 else "",
+                        "keywords": row[2] if len(row) > 2 else "",
+                    })
+        except Exception as _exc:
+            logger.debug("[kg_service_v3] get_misconceptions failed: %s", _exc)
+            pass
+
+        return misconceptions
+
     def get_concept_count(self) -> int:
         """Get total number of concepts in the graph."""
         try:

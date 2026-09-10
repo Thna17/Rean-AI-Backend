@@ -30,6 +30,7 @@ from api.models.visual_tutor import (
 from api.services.visual_tutor.policy import VisualTutorPolicyDecision
 
 LIVE_STAGE_POLICY_VERSION = "visual_tutor_live_stage_policy_v1"
+MAX_VISIBLE_INSTRUCTIONAL_ACTIONS = 3
 _ANSWER_ASSIGNMENT_RE = re.compile(
     r"\b[a-zA-Z]\s*=\s*[-+]?\d+(?:\.\d+)?(?:/\d+)?"
     r"(?:\s*[-+*/]\s*[a-zA-Z0-9().]+)*\b"
@@ -151,11 +152,15 @@ def apply_live_teaching_stage_policy(
         board_actions,
         decision=decision,
     )
-    if not has_explicit_board_actions:
-        board_actions = _limit_board_action_groups(board_actions, decision=decision)
+    # Explicit planner actions are not trusted to obey the turn budget. Apply
+    # the same cap to every normal response, including solver/LLM output.
+    board_actions = _limit_board_action_groups(board_actions, decision=decision)
+    board_actions = _enforce_single_teaching_moment(board_actions)
     interaction = response.interaction or _interaction_for_response(response, decision)
+    waiting_for_student = decision.should_wait or interaction.input_enabled
+    concise_spoken_text = _concise_spoken_explanation(response.spoken_text)
     speech = VisualTutorSpeech(
-        text=response.spoken_text,
+        text=concise_spoken_text,
         language="km" if decision.use_khmer_teaching else "en",
         tts_status=VisualTutorTtsStatus.NOT_REQUESTED,
         speak_after_action_id=board_actions[0].id if board_actions else None,
@@ -172,6 +177,21 @@ def apply_live_teaching_stage_policy(
     metadata = {
         **response.metadata,
         "live_teaching_stage": decision.metadata,
+        "interactive_teaching_moment": {
+            "objective_count": 1,
+            "learning_objective_count": 1,
+            "visible_instructional_actions": _visible_instructional_action_count(
+                board_actions
+            ),
+            "student_task_count": 1 if (interaction.prompt or "").strip() else 0,
+            "waiting_for_student_input": waiting_for_student,
+            "spoken_explanation_concise": concise_spoken_text != response.spoken_text,
+            "progressive_reveal": bool(policy.reveal_final),
+            "revealed_step_count": 1 if policy.reveal_final else 0,
+        },
+        # Public, explicit state for clients that should display a waiting UI
+        # without interpreting internal stage-policy fields.
+        "waiting_for_student_input": waiting_for_student,
     }
     visual_focus = _visual_focus_for(
         response,
@@ -188,6 +208,7 @@ def apply_live_teaching_stage_policy(
             "speech": speech,
             "teaching_stage": teaching_stage,
             "board_actions": board_actions,
+            "spoken_text": concise_spoken_text,
             "interaction": interaction,
             "allowed_actions": response.allowed_actions or decision.allowed_actions,
             "visual_focus": visual_focus,
@@ -197,6 +218,84 @@ def apply_live_teaching_stage_policy(
             "metadata": metadata,
         }
     )
+
+
+def _enforce_single_teaching_moment(
+    board_actions: list[VisualTutorBoardAction],
+) -> list[VisualTutorBoardAction]:
+    """Keep one board moment: up to three teaching visuals and one task.
+
+    Markers and focus/fade modifiers are retained only when attached to an
+    accepted visual. They do not become a route for an LLM to display later
+    solution steps in the same turn.
+    """
+    markers = {
+        VisualTutorCanvasActionType.SPEAK_MARKER,
+        VisualTutorCanvasActionType.PAUSE_MARKER,
+    }
+    modifiers = {
+        VisualTutorCanvasActionType.HIGHLIGHT,
+        VisualTutorCanvasActionType.FOCUS,
+        VisualTutorCanvasActionType.FADE_PREVIOUS,
+    }
+    ordered = sorted(board_actions, key=lambda action: (action.sequence_index, action.id))
+    accepted: list[VisualTutorBoardAction] = []
+    accepted_ids: set[str] = set()
+    instructional_count = 0
+    task_seen = False
+    for action in ordered:
+        if action.type in markers:
+            # Markers control playback only and are not learner-visible.
+            accepted.append(action)
+            continue
+        if action.type == VisualTutorCanvasActionType.STUDENT_TASK:
+            if task_seen:
+                continue
+            task_seen = True
+            accepted.append(action.model_copy(update={"requires_student_response": True}))
+            accepted_ids.add(action.id)
+            continue
+        if action.type in modifiers:
+            if action.target_id is None or action.target_id in accepted_ids:
+                accepted.append(action)
+            continue
+        if instructional_count >= MAX_VISIBLE_INSTRUCTIONAL_ACTIONS:
+            continue
+        accepted.append(action)
+        accepted_ids.add(action.id)
+        instructional_count += 1
+    return [
+        action.model_copy(update={"sequence_index": index})
+        for index, action in enumerate(accepted)
+    ]
+
+
+def _visible_instructional_action_count(
+    board_actions: list[VisualTutorBoardAction],
+) -> int:
+    ignored = {
+        VisualTutorCanvasActionType.SPEAK_MARKER,
+        VisualTutorCanvasActionType.PAUSE_MARKER,
+        VisualTutorCanvasActionType.HIGHLIGHT,
+        VisualTutorCanvasActionType.FOCUS,
+        VisualTutorCanvasActionType.FADE_PREVIOUS,
+        VisualTutorCanvasActionType.STUDENT_TASK,
+    }
+    return sum(action.type not in ignored for action in board_actions)
+
+
+def _concise_spoken_explanation(text: str) -> str:
+    """Limit ordinary turn speech to one calm, short teaching explanation."""
+    normalized = " ".join((text or "").split())
+    if len(normalized) <= 280:
+        return normalized
+    # Preserve at most two natural clauses rather than returning a raw hard
+    # cutoff whenever the model gave us punctuation.
+    sentences = re.split(r"(?<=[.!?។])\s+", normalized)
+    concise = " ".join(sentences[:2]).strip()
+    if concise and len(concise) <= 280:
+        return concise
+    return normalized[:277].rstrip() + "…"
 
 
 def _ensure_active_board_actions(

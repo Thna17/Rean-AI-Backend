@@ -5,14 +5,18 @@ from typing import Any, Dict, List, Optional
 
 import sympy
 
+from api.services.visual_tutor.high_school_stem import topic_metadata
+
 from api.models.visual_tutor import (
     VisualTutorBoardType,
     VisualTutorProblemUnderstandingRequest,
     VisualTutorProblemUnderstandingResult,
 )
 from api.services.visual_tutor.solvers import (
+    LimitOfFunctionProblem,
     LineThroughPoints,
     LinearEquation,
+    parse_limit_of_function,
     parse_line_through_points,
     parse_linear_equation,
 )
@@ -47,10 +51,22 @@ def understand_visual_tutor_problem(
     requested_action = entities["requested_action"]
     subject_route = _subject_route(request.subject, message, language)
 
-    if subject_route != "mathematics":
+    if subject_route not in ("mathematics", "physics", "chemistry"):
         return _non_math_subject_result(
             request, message, language, entities, subject_route
         )
+
+    if subject_route == "physics":
+        kinematics = _parse_kinematics_problem(message)
+        if kinematics:
+            return _physics_kinematics_result(request, kinematics, language, entities)
+        return _unsupported_result(request, message, language, entities)
+
+    if subject_route == "chemistry":
+        chemistry = _parse_chemistry_balancing_problem(message)
+        if chemistry:
+            return _chemistry_balancing_result(request, chemistry, language, entities)
+        return _unsupported_result(request, message, language, entities)
 
     regression = _parse_regression_problem(message, entities)
     if regression:
@@ -79,7 +95,9 @@ def understand_visual_tutor_problem(
             request, inferred_line_problem, language, entities
         )
 
-    if len(points) >= 2 and requested_action == "find_slope":
+    if len(points) >= 2 and (
+        requested_action == "find_slope" or "slope" in message.lower() or "ជម្រាល" in message
+    ):
         return _slope_from_two_points_result(request, message, language, entities)
 
     linear_equation = parse_linear_equation(message)
@@ -89,6 +107,18 @@ def understand_visual_tutor_problem(
     quadratic = _parse_quadratic_equation(message)
     if quadratic:
         return _quadratic_equation_result(request, quadratic, language, entities)
+
+    limit_of_function = parse_limit_of_function(message)
+    if limit_of_function:
+        return _limit_of_function_result(request, limit_of_function, language, entities)
+
+    quadratic_graph = _parse_basic_quadratic_graph(message)
+    if quadratic_graph:
+        return _basic_quadratic_graph_result(request, quadratic_graph, language, entities)
+
+    straight_line_graph = _parse_straight_line_graph(message)
+    if straight_line_graph:
+        return _straight_line_graph_result(request, straight_line_graph, language, entities)
 
     percentage = _parse_simple_percentage_word_problem(message)
     if percentage:
@@ -109,6 +139,61 @@ def understand_visual_tutor_problem(
 
     return _unsupported_result(request, message, language, entities)
 
+
+def _parse_kinematics_problem(message: str) -> Optional[str]:
+    # Placeholder: detect simple kinematic equations
+    if re.search(r"\b(v\s*=\s*u\s*\+\s*at|s\s*=\s*ut|v\^?2\s*=\s*u\^?2)\b", message, re.IGNORECASE):
+        return message
+    # Or just if it has typical kinematics variables/words and numbers
+    if re.search(r"\b(velocity|acceleration|time|distance|speed)\b", message, re.IGNORECASE):
+        return message
+    return None
+
+def _parse_chemistry_balancing_problem(message: str) -> Optional[str]:
+    # Placeholder: look for something that resembles a chemical reaction A + B -> C
+    if re.search(r"([A-Z][a-z]?\d*.*?\+.*?->|=>|=)", message):
+        return message
+    if re.search(r"\b(balance|chemical equation|reaction)\b", message, re.IGNORECASE):
+        return message
+    return None
+
+def _physics_kinematics_result(
+    request: VisualTutorProblemUnderstandingRequest,
+    problem: str,
+    language: str,
+    entities: Dict[str, Any],
+) -> VisualTutorProblemUnderstandingResult:
+    return _result(
+        request,
+        subject="physics",
+        topic="physics_kinematics",
+        problem_type="physics_kinematics",
+        confidence=0.90,
+        extracted_problem=problem,
+        extracted_entities={**entities, "normalized_problem": problem},
+        language=language,
+        known_solver_available=True,
+        recommended_board_type=VisualTutorBoardType.EQUATION_STEPS,
+    )
+
+def _chemistry_balancing_result(
+    request: VisualTutorProblemUnderstandingRequest,
+    problem: str,
+    language: str,
+    entities: Dict[str, Any],
+) -> VisualTutorProblemUnderstandingResult:
+    return _result(
+        request,
+        subject="chemistry",
+        topic="chemistry_balancing_equations",
+        problem_type="chemistry_balancing_equations",
+        confidence=0.90,
+        extracted_problem=problem,
+        extracted_entities={**entities, "normalized_problem": problem},
+        language=language,
+        known_solver_available=True,
+        recommended_board_type=VisualTutorBoardType.EQUATION_STEPS,
+    )
 
 def _linear_equation_result(
     request: VisualTutorProblemUnderstandingRequest,
@@ -215,6 +300,70 @@ def _quadratic_equation_result(
     )
 
 
+def _basic_quadratic_graph_result(
+    request: VisualTutorProblemUnderstandingRequest,
+    graph: Dict[str, Any],
+    language: str,
+    entities: Dict[str, Any],
+) -> VisualTutorProblemUnderstandingResult:
+    return _result(
+        request,
+        topic=request.topic or "Basic Quadratic Graphs",
+        problem_type="basic_quadratic_graph",
+        confidence=0.9,
+        extracted_problem=graph["equation"],
+        extracted_entities={**entities, **graph},
+        language=language,
+        known_solver_available=True,
+        recommended_board_type=VisualTutorBoardType.GRAPH_HINT,
+    )
+
+
+def _limit_of_function_result(
+    request: VisualTutorProblemUnderstandingRequest,
+    problem: LimitOfFunctionProblem,
+    language: str,
+    entities: Dict[str, Any],
+) -> VisualTutorProblemUnderstandingResult:
+    return _result(
+        request,
+        topic=request.topic or "Limits of Functions",
+        problem_type="limit_of_function",
+        confidence=0.9,
+        extracted_problem=problem.normalized_problem,
+        extracted_entities={
+            **entities,
+            "function_expression": problem.function_expression,
+            "target_point_display": problem.target_point_display,
+            "requested_direction": problem.requested_direction,
+            "variable": problem.variable,
+            "normalized_problem": problem.normalized_problem,
+        },
+        language=language,
+        known_solver_available=True,
+        recommended_board_type=VisualTutorBoardType.TABLE,
+    )
+
+
+def _straight_line_graph_result(
+    request: VisualTutorProblemUnderstandingRequest,
+    graph: Dict[str, Any],
+    language: str,
+    entities: Dict[str, Any],
+) -> VisualTutorProblemUnderstandingResult:
+    return _result(
+        request,
+        topic=request.topic or "Straight-Line Graphs",
+        problem_type="straight_line_graph",
+        confidence=0.9,
+        extracted_problem=graph["equation"],
+        extracted_entities={**entities, **graph},
+        language=language,
+        known_solver_available=True,
+        recommended_board_type=VisualTutorBoardType.GRAPH_HINT,
+    )
+
+
 def _regression_result(
     request: VisualTutorProblemUnderstandingRequest,
     regression: Dict[str, Any],
@@ -300,10 +449,20 @@ def _arithmetic_expression_result(
     return _result(
         request,
         topic=request.topic or "Arithmetic",
-        problem_type="arithmetic_expression",
+        problem_type=(
+            "fraction_decimal_arithmetic"
+            if "/" in expression or "." in expression
+            else "integer_arithmetic"
+        ),
         confidence=0.82,
         extracted_problem=expression,
-        extracted_entities={**entities, "expression": expression},
+        extracted_entities={
+            **entities,
+            "expression": expression,
+            "arithmetic_kind": (
+                "fraction_decimal" if "/" in expression or "." in expression else "integer"
+            ),
+        },
         language=language,
         known_solver_available=True,
         recommended_board_type=VisualTutorBoardType.FORMULA_CARD,
@@ -477,6 +636,12 @@ def _result(
     needs_clarification: bool = False,
     clarification_question: Optional[str] = None,
 ) -> VisualTutorProblemUnderstandingResult:
+    mvp_metadata = topic_metadata(problem_type)
+    if (
+        problem_type in {"arithmetic_expression", "fraction_decimal_arithmetic"}
+        and extracted_entities.get("arithmetic_kind") == "fraction_decimal"
+    ):
+        mvp_metadata = topic_metadata("fraction_decimal_arithmetic")
     return VisualTutorProblemUnderstandingResult(
         subject=subject or request.subject,
         topic=topic,
@@ -490,7 +655,7 @@ def _result(
         recommended_board_type=recommended_board_type,
         needs_clarification=needs_clarification,
         clarification_question=clarification_question,
-        metadata=_metadata(request),
+        metadata={**_metadata(request), **mvp_metadata},
     )
 
 
@@ -838,6 +1003,71 @@ def _parse_quadratic_equation(message: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _parse_basic_quadratic_graph(message: str) -> Optional[Dict[str, Any]]:
+    """Accept only numeric y = ax² + bx + c graph forms for the MVP."""
+    lowered = message.lower()
+    if not (re.search(r"\b(graph|draw|sketch|plot)\b", lowered) or "ក្រាប" in message or "គូរ" in message):
+        return None
+    equation_match = re.search(r"\by\s*=\s*([^,;?]+)", message, re.IGNORECASE)
+    if not equation_match:
+        return None
+    expression_text = _normalize_math_text(equation_match.group(1))
+    try:
+        x = sympy.Symbol("x")
+        expression = sympy.expand(sympy.sympify(expression_text))
+        if expression.free_symbols - {x}:
+            return None
+        polynomial = sympy.Poly(expression, x)
+        if polynomial.degree() != 2:
+            return None
+        a, b, c = (sympy.simplify(value) for value in polynomial.all_coeffs())
+        if a == 0:
+            return None
+        vertex_x = sympy.simplify(-b / (2 * a))
+        vertex_y = sympy.simplify(expression.subs(x, vertex_x))
+        roots = [sympy.simplify(value) for value in sympy.solve(expression, x) if value.is_real is not False]
+    except Exception:
+        return None
+    return {
+        "equation": f"y = {equation_match.group(1).strip()}",
+        "normalized_problem": f"y = {expression}",
+        "function_expression": str(expression).replace("**", "^"),
+        "a": _format_sympy(a), "b": _format_sympy(b), "c": _format_sympy(c),
+        "vertex": {"x": _format_sympy(vertex_x), "y": _format_sympy(vertex_y)},
+        "roots": [_format_sympy(root) for root in roots],
+    }
+
+
+def _parse_straight_line_graph(message: str) -> Optional[Dict[str, Any]]:
+    """Accept only a numeric slope-intercept line for deterministic graphing."""
+    lowered = message.lower()
+    if not (re.search(r"\b(graph|draw|sketch|plot)\b", lowered) or "ក្រាប" in message or "គូរ" in message):
+        return None
+    equation_match = re.search(r"\by\s*=\s*([^,;?]+)", message, re.IGNORECASE)
+    if not equation_match:
+        return None
+    expression_text = _normalize_math_text(equation_match.group(1))
+    try:
+        x = sympy.Symbol("x")
+        expression = sympy.expand(sympy.sympify(expression_text))
+        if expression.free_symbols - {x}:
+            return None
+        polynomial = sympy.Poly(expression, x)
+        if polynomial.degree() != 1:
+            return None
+        slope = sympy.simplify(polynomial.coeff_monomial(x))
+        intercept = sympy.simplify(polynomial.coeff_monomial(1))
+    except Exception:
+        return None
+    return {
+        "equation": f"y = {equation_match.group(1).strip()}",
+        "normalized_problem": f"y = {expression}",
+        "function_expression": str(expression).replace("**", "^"),
+        "slope": _format_sympy(slope),
+        "intercept": _format_sympy(intercept),
+    }
+
+
 def _quadratic_problem_type(lowered: str) -> str:
     if re.search(r"\b(factor|factorise|factorize|factoring|factorization)\b", lowered):
         return "quadratic_factorization"
@@ -1066,9 +1296,22 @@ def _normalize_number(value: str) -> str:
 
 
 def _normalize_math_text(text: str) -> str:
-    normalized = text.strip()
+    # Gracefully strip out Khmer text or Unicode characters mixed into math
+    normalized = _strip_khmer(text).strip()
+    
     normalized = normalized.replace("^", "**")
     normalized = normalized.replace("−", "-")
+    
+    # Handle ambiguous fractions: 1/2x -> (1/2)*x
+    normalized = re.sub(r"(\d+)/(\d+)\s*([a-zA-Z])", r"(\1/\2)*\3", normalized)
+    
+    # Handle implicit multiplication: 2(x+3) -> 2*(x+3)
+    normalized = re.sub(r"(\d)\s*\(", r"\1*(", normalized)
+    normalized = re.sub(r"\)\s*(\d)", r")*\1", normalized)
+    # x(y+1) -> x*(y+1)
+    normalized = re.sub(r"([a-zA-Z])\s*\(", r"\1*(", normalized)
+    normalized = re.sub(r"\)\s*([a-zA-Z])", r")*\1", normalized)
+    
     normalized = re.sub(r"(\d)\s*([a-zA-Z])", r"\1*\2", normalized)
     normalized = re.sub(r"([a-zA-Z])\s*(\d)", r"\1*\2", normalized)
     return normalized

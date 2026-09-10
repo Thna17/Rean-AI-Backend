@@ -11,7 +11,15 @@ from api.models.visual_tutor import (
     VisualTutorSessionSummary,
     VisualTutorTurnResponse,
 )
-from api.routes.visual_tutor import get_visual_tutor_store, router
+from api.routes.visual_tutor import (
+    get_learner_memory_store,
+    get_visual_tutor_store,
+    router,
+)
+from api.services.visual_tutor.learner_memory import (
+    LearnerMemoryProfile,
+    build_learner_memory_update,
+)
 from api.services.visual_tutor.session_store import (
     _canvas_snapshot_from_response,
     _live_stage_snapshot_from_response,
@@ -83,6 +91,7 @@ class FakeVisualTutorStore:
         }
         self.sessions[sid] = doc
         return VisualTutorSession(**doc)
+
 
     async def get_session(self, session_id: str) -> VisualTutorSession | None:
         doc = self.sessions.get(session_id)
@@ -329,6 +338,30 @@ class FakeVisualTutorStore:
         return VisualTutorSession(**doc)
 
 
+class FakeLearnerMemoryStore:
+    """Durable-store test double; route tests must not open a real Mongo client."""
+
+    def __init__(self) -> None:
+        self.profiles: dict[tuple[str, str, str], dict] = {}
+
+    @staticmethod
+    def _key(*, user_id: str, subject: str, topic: str | None) -> tuple[str, str, str]:
+        return (user_id, subject.strip().lower(), (topic or "general").strip().lower())
+
+    async def get_for_authenticated_user(self, *, user_id: str, subject: str, topic: str | None):
+        value = self.profiles.get(self._key(user_id=user_id, subject=subject, topic=topic))
+        return LearnerMemoryProfile.model_validate(value) if value else None
+
+    async def record_turn(self, *, request, response, topic, session_summary):
+        key = self._key(user_id=request.user_id, subject=request.subject, topic=topic)
+        profile = build_learner_memory_update(
+            previous=self.profiles.get(key), request=request, response=response,
+            topic=topic, session_summary=session_summary,
+        )
+        self.profiles[key] = profile.model_dump(mode="json")
+        return profile
+
+
 def _make_app(store: FakeVisualTutorStore | None = None) -> FastAPI:
     app = FastAPI()
 
@@ -343,12 +376,18 @@ def _make_app(store: FakeVisualTutorStore | None = None) -> FastAPI:
             headers.append((b"x-visual-tutor-internal-token", b"test-visual-tutor-token"))
         if b"x-visual-tutor-user-id" not in header_names:
             headers.append((b"x-visual-tutor-user-id", b"student-1"))
+        # This file asserts server-side replay/persistence internals. It uses
+        # the explicit development-only compatibility header instead of
+        # treating the production Flutter response as legacy.
+        if b"x-visual-tutor-api-compatibility-version" not in header_names:
+            headers.append((b"x-visual-tutor-api-compatibility-version", b"0"))
         request.scope["headers"] = headers
         return await call_next(request)
 
     app.include_router(router)
     if store is not None:
         app.dependency_overrides[get_visual_tutor_store] = lambda: store
+    app.dependency_overrides[get_learner_memory_store] = FakeLearnerMemoryStore
     return app
 
 
@@ -479,7 +518,8 @@ async def test_visual_tutor_turn_replays_idempotent_retry_without_new_board_vers
     assert retry["turn_id"] == first["turn_id"]
     assert retry["board_version"] == first["board_version"] == 1
     assert retry["base_board_version"] == first["base_board_version"] == 0
-    assert len(session["turns"]) == 1
+    # PublicVisualTutorSession is a minimal resume DTO and does not expose
+    # raw turn history; board_version is the student-safe idempotency signal.
     assert session["board_version"] == 1
 
 
@@ -714,7 +754,12 @@ async def test_visual_tutor_unsupported_topic_curriculum_empty_without_crash() -
     assert data["metadata"]["curriculum_confidence"] == 0
     _assert_target_screen_contract(data, "unsupported_problem")
     assert data["metadata"]["problem_understanding"]["problem_type"] == "unsupported"
-    assert data["metadata"]["generation_path"] == "template_fallback"
+    # "Unknown Topic" has no reviewed curriculum lesson at all, so the
+    # curriculum-grounding gate (not the generic unsupported-problem-type
+    # gate) is what actually blocks it -- same student-facing screen via
+    # _friendly_unsupported_turn either way, but a more precise reason.
+    assert data["metadata"]["generation_path"] == "curriculum_recovery"
+    assert data["metadata"]["fallback_reason"] == "reviewed_curriculum_required"
     assert data["board"]["metadata"]["problem_type"] == "unsupported"
     assert data["board"]["metadata"]["known_solver_available"] is False
     assert data["board_actions"]
@@ -1233,7 +1278,8 @@ async def test_visual_tutor_session_create_and_restore() -> None:
     assert restore_response.status_code == 200
     restored = restore_response.json()
     assert restored["session_id"] == session_id
-    assert restored["user_id"] == "student-1"
+    # PublicVisualTutorSession deliberately omits user_id -- the endpoint is
+    # already scoped by the user_id query param plus gateway auth.
     assert restored["subject"] == "Mathematics"
     assert list_response.status_code == 200
     assert list_response.json()["total"] == 1
@@ -1323,15 +1369,21 @@ async def test_visual_tutor_turn_persists_session_state() -> None:
     assert session_response.status_code == 200
     session = session_response.json()
     assert session["problem_text"] == "2x + 5 = 15"
-    assert session["normalized_problem"] == "2*x + 5 = 15"
-    assert session["problem_type"] == "linear_equation_one_variable"
-    assert session["expected_step"]
-    assert session["solved_variables"] == {}
     assert session["wrong_attempts"] == 0
-    assert session["stuck_count"] == 0
-    assert session["mastery_signal"] == "exploring"
-    assert len(session["turns"]) == 1
-    assert len(session["messages"]) == 2
+    # normalized_problem/problem_type/expected_step/solved_variables/
+    # stuck_count/mastery_signal/turns/messages are server-only replay and
+    # solver state -- PublicVisualTutorSession deliberately does not expose
+    # them (see public_response.py). Verify them against the durable store
+    # directly instead of the public resume endpoint.
+    internal_session = await store.get_session(session_id)
+    assert internal_session.normalized_problem == "2*x + 5 = 15"
+    assert internal_session.problem_type == "linear_equation_one_variable"
+    assert internal_session.expected_step
+    assert internal_session.solved_variables == {}
+    assert internal_session.stuck_count == 0
+    assert internal_session.mastery_signal == "exploring"
+    assert len(internal_session.turns) == 1
+    assert len(internal_session.messages) == 2
 
 
 @pytest.mark.asyncio
@@ -1379,7 +1431,10 @@ async def test_visual_tutor_persists_current_step_index_after_valid_step() -> No
     assert step_data["board"]["metadata"]["current_step_index"] == 1
     assert session["current_step_index"] == 1
     assert session["problem_text"] == "2x + 5 = 15"
-    assert session["turns"][-1]["response"]["metadata"]["orchestrator_flow"][-1] == (
+    # Raw turn replay history is server-only; check it against the durable
+    # store rather than the public resume endpoint (see public_response.py).
+    internal_session = await store.get_session(session_id)
+    assert internal_session.turns[-1]["response"]["metadata"]["orchestrator_flow"][-1] == (
         "return_response"
     )
 
@@ -1399,32 +1454,38 @@ async def test_visual_tutor_create_session_with_canvas_defaults() -> None:
             params={"user_id": "student-1"},
         )
 
-    session = session_response.json()
-    assert session["canvas_state"] is None
-    assert session["canvas_actions"] == []
-    assert session["canvas_states"] == []
-    assert session["problem_type"] is None
-    assert session["expected_step"] is None
-    assert session["solved_variables"] == {}
-    assert session["wrong_attempts"] == 0
-    assert session["stuck_count"] == 0
-    assert session["locked_canvas_element_ids"] == []
-    assert session["revealed_canvas_element_ids"] == []
-    assert session["current_focus_element_id"] is None
-    assert session["teaching_stage"] is None
-    assert session["stage_state"] is None
-    assert session["lesson_state"] is None
-    assert session["teaching_board_state"] is None
-    assert session["teaching_board_states"] == []
-    assert session["visible_board_elements"] == []
-    assert session["hidden_element_ids"] == []
-    assert session["locked_element_ids"] == []
-    assert session["played_action_ids"] == []
-    assert session["pending_interaction"] is None
-    assert session["allowed_actions"] == []
-    assert session["student_responses"] == []
-    assert session["voice_tts_metadata"] == {}
-    assert session["curriculum_chunk_ids"] == []
+    # These are server-only replay/canvas defaults -- PublicVisualTutorSession
+    # does not expose them (see public_response.py) -- so assert against the
+    # durable store's full record, not the public resume endpoint.
+    session = await store.get_session(session_id)
+    assert session.canvas_state is None
+    assert session.canvas_actions == []
+    assert session.canvas_states == []
+    assert session.problem_type is None
+    assert session.expected_step is None
+    assert session.solved_variables == {}
+    assert session.wrong_attempts == 0
+    assert session.stuck_count == 0
+    assert session.locked_canvas_element_ids == []
+    assert session.revealed_canvas_element_ids == []
+    assert session.current_focus_element_id is None
+    assert session.teaching_stage is None
+    assert session.stage_state is None
+    assert session.lesson_state is None
+    assert session.teaching_board_state is None
+    assert session.teaching_board_states == []
+    assert session.visible_board_elements == []
+    assert session.hidden_element_ids == []
+    assert session.locked_element_ids == []
+    assert session.played_action_ids == []
+    assert session.pending_interaction is None
+    assert session.allowed_actions == []
+    assert session.student_responses == []
+    assert session.voice_tts_metadata == {}
+    assert session.curriculum_chunk_ids == []
+    # The public resume DTO exposes only the minimal student-safe subset.
+    public = session_response.json()
+    assert public["curriculum_chunk_ids"] == []
 
 
 @pytest.mark.asyncio
@@ -1446,21 +1507,19 @@ async def test_visual_tutor_restore_returns_canvas_state() -> None:
                 "action": "submit_problem",
             },
         )
-        restored_response = await client.get(
-            f"/api/v1/visual_tutor/sessions/{session_id}",
-            params={"user_id": "student-1"},
-        )
-
-    restored = restored_response.json()
-    assert restored["canvas_state"]["canvas_actions"]
-    assert restored["canvas_states"][0]["canvas_actions"]
+    # canvas_state/canvas_states are server-only replay state --
+    # PublicVisualTutorSession does not expose them (see public_response.py)
+    # -- so assert against the durable store's full record.
+    restored = await store.get_session(session_id)
+    assert restored.canvas_state["canvas_actions"]
+    assert restored.canvas_states[0]["canvas_actions"]
     assert any(
         action["type"] == "write_equation"
-        for action in restored["canvas_state"]["canvas_actions"]
+        for action in restored.canvas_state["canvas_actions"]
     )
     assert any(
         action["type"] == "highlight"
-        for action in restored["canvas_state"]["canvas_actions"]
+        for action in restored.canvas_state["canvas_actions"]
     )
 
 
@@ -1491,22 +1550,25 @@ async def test_visual_tutor_persists_first_live_teaching_stage_turn() -> None:
         )
 
     assert turn_response.status_code == 200
-    restored = restored_response.json()
-    assert restored["stage_state"] == "waiting_for_student"
-    assert restored["lesson_state"] in {"ask", "teach"}
-    assert restored["teaching_stage"]["max_actions_before_wait"] >= 1
-    assert restored["teaching_board_state"]["actions"]
-    assert restored["visible_board_elements"]
-    assert restored["pending_interaction"]["type"] == "numeric_input"
-    assert restored["pending_interaction"]["prompt"]
-    assert "request_hint" in restored["allowed_actions"]
-    assert "stuck" in restored["allowed_actions"]
-    assert restored["student_responses"][0]["content"].startswith("Find the equation")
-    assert restored["voice_tts_metadata"]["speech_text"]
-    assert restored["curriculum_chunk_ids"]
+    # Live teaching-stage replay state is server-only -- PublicVisualTutorSession
+    # does not expose it (see public_response.py) -- so assert against the
+    # durable store's full record, not the public resume endpoint.
+    restored = await store.get_session(session_id)
+    assert restored.stage_state == "waiting_for_student"
+    assert restored.lesson_state in {"ask", "teach"}
+    assert restored.teaching_stage["max_actions_before_wait"] >= 1
+    assert restored.teaching_board_state["actions"]
+    assert restored.visible_board_elements
+    assert restored.pending_interaction["type"] == "numeric_input"
+    assert restored.pending_interaction["prompt"]
+    assert "request_hint" in restored.allowed_actions
+    assert "stuck" in restored.allowed_actions
+    assert restored.student_responses[0]["content"].startswith("Find the equation")
+    assert restored.voice_tts_metadata["speech_text"]
+    assert restored.curriculum_chunk_ids
     assert all(
-        action["id"] in restored["played_action_ids"]
-        for action in restored["teaching_board_state"]["actions"]
+        action["id"] in restored.played_action_ids
+        for action in restored.teaching_board_state["actions"]
         if action.get("id")
     )
 
@@ -1535,21 +1597,25 @@ async def test_visual_tutor_restore_live_board_does_not_require_action_replay() 
             params={"user_id": "student-1"},
         )
 
-    restored = restored_response.json()
+    assert restored_response.status_code == 200
+    # Board replay state is server-only -- PublicVisualTutorSession does not
+    # expose it (see public_response.py) -- so assert against the durable
+    # store's full record, not the public resume endpoint.
+    restored = await store.get_session(session_id)
     action_ids = [
         action["id"]
-        for action in restored["teaching_board_state"]["actions"]
+        for action in restored.teaching_board_state["actions"]
         if action.get("id")
     ]
     visible_ids = [
         element["id"]
-        for element in restored["visible_board_elements"]
+        for element in restored.visible_board_elements
         if element.get("id")
     ]
     assert action_ids
-    assert set(action_ids).issubset(set(restored["played_action_ids"]))
+    assert set(action_ids).issubset(set(restored.played_action_ids))
     assert visible_ids
-    assert set(visible_ids).isdisjoint(set(restored["hidden_element_ids"]))
+    assert set(visible_ids).isdisjoint(set(restored.hidden_element_ids))
 
 
 @pytest.mark.asyncio
@@ -1579,18 +1645,23 @@ async def test_visual_tutor_requested_final_answer_remains_revealed_after_restor
             params={"user_id": "student-1"},
         )
 
-    restored = restored_response.json()
-    assert restored["final_answer_revealed"] is True
+    public = restored_response.json()
+    # final_answer_revealed is part of the minimal public resume DTO.
+    assert public["final_answer_revealed"] is True
+    # canvas/board replay state is server-only -- PublicVisualTutorSession
+    # does not expose it (see public_response.py) -- so assert against the
+    # durable store's full record for the rest.
+    restored = await store.get_session(session_id)
     visible_final_actions = [
         action
-        for action in restored["canvas_state"]["canvas_actions"]
+        for action in restored.canvas_state["canvas_actions"]
         if "x = 5" in str(action.get("text") or action.get("latex") or "")
     ]
     assert visible_final_actions
-    assert not restored["locked_canvas_element_ids"]
+    assert not restored.locked_canvas_element_ids
     assert all(
-        element["id"] not in restored["hidden_element_ids"]
-        for element in restored["visible_board_elements"]
+        element["id"] not in restored.hidden_element_ids
+        for element in restored.visible_board_elements
     )
 
 
@@ -1618,6 +1689,9 @@ async def test_visual_tutor_live_session_continues_after_restore() -> None:
             params={"user_id": "student-1"},
         )
         restored = restored_response.json()
+        # normalized_problem is server-only and not in PublicVisualTutorSession
+        # (see public_response.py); fetch it from the durable store instead.
+        restored_internal = await store.get_session(session_id)
         step_response = await client.post(
             "/api/v1/visual_tutor/turn",
             json={
@@ -1628,7 +1702,7 @@ async def test_visual_tutor_live_session_continues_after_restore() -> None:
                 "student_submitted_step": True,
                 "current_state": {
                     "problem_text": restored["problem_text"],
-                    "normalized_problem": restored["normalized_problem"],
+                    "normalized_problem": restored_internal.normalized_problem,
                     "current_step_index": restored["current_step_index"],
                     "hint_count": restored["hint_count"],
                     "wrong_attempts": restored["wrong_attempts"],
@@ -1644,12 +1718,15 @@ async def test_visual_tutor_live_session_continues_after_restore() -> None:
     assert step_response.status_code == 200
     continued = continued_response.json()
     assert continued["current_step_index"] == 1
-    assert continued["pending_interaction"]["prompt"]
+    # pending_interaction/visible_board_elements/student_responses are
+    # server-only replay state -- assert against the durable store.
+    continued_internal = await store.get_session(session_id)
+    assert continued_internal.pending_interaction["prompt"]
     assert any(
         element.get("text") == "Δy = 2" or element.get("latex") == "\\Delta y = 2"
-        for element in continued["visible_board_elements"]
+        for element in continued_internal.visible_board_elements
     )
-    assert "2" == continued["student_responses"][-1]["content"]
+    assert "2" == continued_internal.student_responses[-1]["content"]
 
 
 @pytest.mark.asyncio
@@ -1772,6 +1849,10 @@ async def test_visual_tutor_restore_after_first_step_continues_to_final_answer()
             f"/api/v1/visual_tutor/sessions/{session_id}",
             params={"user_id": "student-1"},
         )
+        # Snapshot server-only state at this checkpoint now -- reading it
+        # after the `async with` block would see state as of the *final*
+        # step below, not this intermediate restore point.
+        restored_internal = await store.get_session(session_id)
         final_response = await client.post(
             "/api/v1/visual_tutor/turn",
             json={
@@ -1795,33 +1876,38 @@ async def test_visual_tutor_restore_after_first_step_continues_to_final_answer()
 
     restored = restored_response.json()
     assert restored["problem_text"] == "2x + 5 = 15"
-    assert restored["problem_type"] == "linear_equation_one_variable"
     assert restored["current_step_index"] == 1
-    assert restored["expected_step"]
-    assert restored["solved_variables"] == {}
     assert restored["wrong_attempts"] == 0
-    assert restored["stuck_count"] == 0
     assert restored["final_answer_revealed"] is False
-    assert restored["teaching_board_state"]["elements"]
-    assert restored["visible_board_elements"]
-    assert restored["pending_interaction"]
-    assert restored["played_action_ids"]
-    assert restored["solver_facts"]["solver_name"] == "LinearEquationSolver"
-    assert restored["validation_history"]
-    assert restored["validation_history"][-1]["validation_result"] in {
+    # Everything below is server-only replay/solver state -- not part of
+    # PublicVisualTutorSession (see public_response.py) -- so assert
+    # against the durable store's snapshot at this checkpoint instead.
+    assert restored_internal.problem_type == "linear_equation_one_variable"
+    assert restored_internal.expected_step
+    # Not yet the final step at this checkpoint, so nothing is solved yet.
+    assert restored_internal.solved_variables == {}
+    assert restored_internal.stuck_count == 0
+    assert restored_internal.teaching_board_state["elements"]
+    assert restored_internal.visible_board_elements
+    assert restored_internal.pending_interaction
+    assert restored_internal.played_action_ids
+    assert restored_internal.solver_facts["solver_name"] == "LinearEquationSolver"
+    assert restored_internal.validation_history
+    assert restored_internal.validation_history[-1]["validation_result"] in {
         "correct_step",
         "correct_first_step",
         "correct_equivalent_step",
     }
-    assert restored["response_source_history"]
+    assert restored_internal.response_source_history
     assert (
-        restored["response_source_history"][-1]["solver_name"] == "LinearEquationSolver"
+        restored_internal.response_source_history[-1]["solver_name"]
+        == "LinearEquationSolver"
     )
-    assert restored["previous_board_action_ids"]
-    assert restored["board_action_history"]
+    assert restored_internal.previous_board_action_ids
+    assert restored_internal.board_action_history
     scoped_before_restore = [
         scoped_id
-        for entry in restored["board_action_history"]
+        for entry in restored_internal.board_action_history
         for scoped_id in entry["scoped_action_ids"]
     ]
     assert len(scoped_before_restore) == len(set(scoped_before_restore))
@@ -1840,15 +1926,18 @@ async def test_visual_tutor_restore_after_first_step_continues_to_final_answer()
 
     final_session = final_session_response.json()
     assert final_session["final_answer_revealed"] is True
-    assert final_session["solved_variables"] == {"x": "5"}
     assert final_session["current_step_index"] == 2
-    assert final_session["played_action_ids"]
-    assert final_session["validation_history"][-1]["validation_result"] == (
+    # solved_variables/played_action_ids/validation_history/board_action_history
+    # are server-only -- assert against the durable store's full record.
+    final_session_internal = await store.get_session(session_id)
+    assert final_session_internal.solved_variables == {"x": "5"}
+    assert final_session_internal.played_action_ids
+    assert final_session_internal.validation_history[-1]["validation_result"] == (
         "correct_final_step"
     )
     scoped_after_final = [
         scoped_id
-        for entry in final_session["board_action_history"]
+        for entry in final_session_internal.board_action_history
         for scoped_id in entry["scoped_action_ids"]
     ]
     assert len(scoped_after_final) == len(set(scoped_after_final))
@@ -1902,9 +1991,99 @@ async def test_visual_tutor_new_problem_clears_stale_board_state() -> None:
     restored = restored_response.json()
     assert restored["problem_text"] == "5a - 8 = 2a + 7"
     assert restored["current_step_index"] == 0
-    assert restored["solved_variables"] == {}
     assert restored["final_answer_revealed"] is False
-    visible_board_json = json.dumps(restored["visible_board_elements"])
+    # solved_variables/visible_board_elements are server-only -- assert
+    # against the durable store's full record.
+    restored_internal = await store.get_session(session_id)
+    assert restored_internal.solved_variables == {}
+    visible_board_json = json.dumps(restored_internal.visible_board_elements)
     assert "2x + 5 = 15" not in visible_board_json
     assert "2x = 10" not in visible_board_json
     assert "5a - 8 = 2a + 7" in visible_board_json
+
+
+@pytest.mark.asyncio
+async def test_public_turn_contract_exposes_only_current_student_safe_plan() -> None:
+    app = _make_app(FakeVisualTutorStore())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        session_id = await _create_session(client)
+        response = await client.post(
+            "/api/v1/visual_tutor/turn",
+            json={
+                "user_id": "student-1",
+                "session_id": session_id,
+                "message": "2x - 5 = 20",
+                "action": "submit_problem",
+                "metadata": {"public_contract_version": 1},
+            },
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert set(data) == {
+        "schema_version", "session_id", "turn_id", "board_version",
+        "base_board_version", "board_update_mode", "lesson_state",
+        "tutor_status", "teaching_plan", "verification", "recovery",
+    }
+    assert set(data["verification"]) == {
+        "status", "verified", "concise_evidence", "student_facing_feedback"
+    }
+    assert "canvas_actions" not in data
+    assert "metadata" not in data
+    plan = data["teaching_plan"]
+    assert "board_actions" not in plan
+    assert plan["active_student_task"]["task_type"] in {
+        "conceptual_operation", "equation_transformation"
+    }
+
+
+@pytest.mark.asyncio
+async def test_staging_ignores_legacy_compatibility_header_and_returns_compact_turn(monkeypatch) -> None:
+    from api.routes.visual_tutor import settings as tutor_settings
+
+    monkeypatch.setattr(tutor_settings, "ENVIRONMENT", "staging")
+    app = _make_app(FakeVisualTutorStore())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        session_id = await _create_session(client)
+        response = await client.post(
+            "/api/v1/visual_tutor/turn",
+            json={
+                "user_id": "student-1",
+                "session_id": session_id,
+                "message": "2x - 5 = 20",
+                "action": "submit_problem",
+            },
+        )
+
+    assert response.status_code == 200
+    assert set(response.json()) == {
+        "schema_version", "session_id", "turn_id", "board_version",
+        "base_board_version", "board_update_mode", "lesson_state",
+        "tutor_status", "teaching_plan", "verification", "recovery",
+    }
+
+
+@pytest.mark.asyncio
+async def test_conceptual_operation_answer_is_verified_without_equation_notation() -> None:
+    app = _make_app(FakeVisualTutorStore())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        session_id = await _create_session(client)
+        await client.post(
+            "/api/v1/visual_tutor/turn",
+            json={
+                "user_id": "student-1", "session_id": session_id,
+                "message": "2x - 5 = 20", "action": "submit_problem",
+            },
+        )
+        response = await client.post(
+            "/api/v1/visual_tutor/turn",
+            json={
+                "user_id": "student-1", "session_id": session_id,
+                "message": "add 5", "action": "submit_step",
+                "client_board_version": 1,
+                "metadata": {"public_contract_version": 1},
+            },
+        )
+    assert response.status_code == 200
+    verification = response.json()["verification"]
+    assert verification["status"] == "correct"
+    assert verification["verified"] is True

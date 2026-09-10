@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "description": "Executable Visual Tutor board-runtime release matrix; values are labels only and never student content.",
+  "subjects": ["Mathematics", "Physics", "Chemistry"],
+  "grades": [10, 11, 12],
+  "languages": ["khmer", "english", "bilingual"],
+  "device_profiles": [
+    {"id": "mobile-360-portrait", "width": 360, "height": 760, "class": "mobile"},
+    {"id": "mobile-390-portrait", "width": 390, "height": 844, "class": "mobile"},
+    {"id": "mobile-412-portrait", "width": 412, "height": 915, "class": "mobile"},
+    {"id": "tablet-portrait", "width": 900, "height": 1200, "class": "tablet"},
+    {"id": "desktop", "width": 1440, "height": 900, "class": "desktop"},
+    {"id": "tablet-landscape", "width": 1180, "height": 760, "class": "landscape"}
+  ],
+  "required_gates": [
+    "no_active_action_off_screen",
+    "no_malformed_action_crashes",
+    "stable_board_restoration",
+    "correct_answer_lock",
+    "grounded_curriculum_retrieval",
+    "one_teaching_moment",
+    "active_action_visible",
+    "phone_no_horizontal_overflow",
+    "khmer_text_wraps",
+    "stale_events_rejected",
+    "timeline_controls",
+    "student_task_interactive"
+  ]
+}

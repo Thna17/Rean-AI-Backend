@@ -44,6 +44,7 @@ class VisualTutorCanvasActionType(str, Enum):
     WRITE_TEXT = "write_text"
     WRITE_EQUATION = "write_equation"
     DRAW_LINE = "draw_line"
+    DRAW_RECTANGLE = "draw_rectangle"
     DRAW_ARROW = "draw_arrow"
     DRAW_POINT = "draw_point"
     DRAW_AXES = "draw_axes"
@@ -70,7 +71,31 @@ class VisualTutorCanvasActionType(str, Enum):
     GRAPH_ANNOTATION = "graph_annotation"
     SHOW_HINT = "show_hint"
     SHOW_FEEDBACK = "show_feedback"
+    FINAL_ANSWER_REVEAL = "final_answer_reveal"
     STUDENT_TASK = "student_task"
+    DRAW_FREE_BODY_DIAGRAM = "draw_free_body_diagram"
+    DRAW_MOLECULE = "draw_molecule"
+    DRAW_WAVE = "draw_wave"
+    DRAW_ATOM_MODEL = "draw_atom_model"
+    DRAW_PARTICLE_DIAGRAM = "draw_particle_diagram"
+    DRAW_CIRCUIT_DIAGRAM = "draw_circuit_diagram"
+    SHOW_REACTION_LAYOUT = "show_reaction_layout"
+
+
+class VisualTutorLayoutZone(str, Enum):
+    PROBLEM = "problem"
+    WORKING = "working"
+    VISUAL = "visual"
+    STUDENT_TASK = "student_task"
+    REFERENCE = "reference"
+    FEEDBACK = "feedback"
+
+
+class VisualTutorLayoutFlow(str, Enum):
+    VERTICAL = "vertical"
+    HORIZONTAL = "horizontal"
+    OVERLAY = "overlay"
+    DIAGRAM = "diagram"
 
 
 class TeachingBoardElementType(str, Enum):
@@ -295,6 +320,9 @@ class VisualTutorTurnState(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     problem_instance_id: Optional[str] = None
+    lesson_id: Optional[str] = None
+    active_step_id: Optional[str] = None
+    expected_student_action_id: Optional[str] = None
     problem_text: Optional[str] = None
     normalized_problem: Optional[str] = None
     current_step_index: int = Field(default=0, ge=0)
@@ -632,7 +660,9 @@ class VisualTutorGraphSpec(BaseModel):
     function_expression: Optional[str] = Field(default=None, max_length=240)
     domain: Optional[List[float]] = None
     points: List[VisualTutorGraphPoint] = Field(default_factory=list, max_length=80)
-    annotations: List[VisualTutorGraphAnnotation] = Field(default_factory=list, max_length=24)
+    annotations: List[VisualTutorGraphAnnotation] = Field(
+        default_factory=list, max_length=24
+    )
 
     @model_validator(mode="after")
     def validate_graph(self) -> "VisualTutorGraphSpec":
@@ -642,7 +672,9 @@ class VisualTutorGraphSpec(BaseModel):
         if self.x_min >= self.x_max or self.y_min >= self.y_max:
             raise ValueError("graph axes must have increasing ranges")
         if self.domain is not None:
-            if len(self.domain) != 2 or not all(math.isfinite(value) for value in self.domain):
+            if len(self.domain) != 2 or not all(
+                math.isfinite(value) for value in self.domain
+            ):
                 raise ValueError("graph domain must contain two finite values")
             if self.domain[0] >= self.domain[1]:
                 raise ValueError("graph domain must have an increasing range")
@@ -651,7 +683,67 @@ class VisualTutorGraphSpec(BaseModel):
         return self
 
 
+class VisualTutorBoardPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    x: float
+    y: float
+    label: Optional[str] = Field(default=None, max_length=120)
+    open: bool = False
+
+    @model_validator(mode="after")
+    def validate_point(self) -> "VisualTutorBoardPoint":
+        if not all(
+            math.isfinite(value) and abs(value) <= 10000 for value in (self.x, self.y)
+        ):
+            raise ValueError("point coordinates are out of range")
+        return self
+
+
+class VisualTutorNumberLineSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    min: float = Field(ge=-10000, le=10000)
+    max: float = Field(ge=-10000, le=10000)
+    step: float = Field(gt=0, le=10000)
+    labels: list[str] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "VisualTutorNumberLineSpec":
+        if (
+            not math.isfinite(self.min)
+            or not math.isfinite(self.max)
+            or self.min >= self.max
+        ):
+            raise ValueError("number line range is invalid")
+        if any(not label.strip() or len(label) > 120 for label in self.labels):
+            raise ValueError("number line labels are invalid")
+        return self
+
+
+class VisualTutorTableSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    columns: list[str] = Field(min_length=1, max_length=6)
+    rows: list[list[str]] = Field(min_length=1, max_length=10)
+
+    @model_validator(mode="after")
+    def validate_table(self) -> "VisualTutorTableSpec":
+        if any(not cell.strip() or len(cell) > 160 for cell in self.columns):
+            raise ValueError("table columns are invalid")
+        if any(
+            len(row) != len(self.columns)
+            or any(not cell.strip() or len(cell) > 160 for cell in row)
+            for row in self.rows
+        ):
+            raise ValueError("table rows are invalid")
+        return self
+
+
 class VisualTutorBoardAction(BaseModel):
+    # This remains a compatibility model for persisted/replay actions. It is
+    # never the public renderer contract: teaching_plan_contract.py validates
+    # every student-visible primitive with exact typed fields.
     model_config = ConfigDict(extra="allow")
 
     id: str = Field(..., min_length=1)
@@ -662,14 +754,19 @@ class VisualTutorBoardAction(BaseModel):
     requires_student_response: bool = False
     group_id: Optional[str] = None
     section_id: Optional[str] = None
+    layout_zone: Optional[VisualTutorLayoutZone] = None
+    layout_flow: Optional[VisualTutorLayoutFlow] = None
     x: Optional[float] = None
     y: Optional[float] = None
     width: Optional[float] = Field(default=None, ge=0)
     height: Optional[float] = Field(default=None, ge=0)
     text: Optional[str] = None
     latex: Optional[str] = None
-    points: List[Dict[str, Any]] = Field(default_factory=list)
+    points: List[Dict[str, Any]] = Field(default_factory=list, max_length=100)
     graph: Optional[VisualTutorGraphSpec] = None
+    label: Optional[str] = Field(default=None, max_length=120)
+    number_line: Optional[VisualTutorNumberLineSpec] = None
+    table: Optional[VisualTutorTableSpec] = None
     target_id: Optional[str] = None
     style: CanvasElementStyle = Field(default_factory=CanvasElementStyle)
     locked: bool = False
@@ -690,13 +787,44 @@ class VisualTutorBoardAction(BaseModel):
         } and (self.width is None or self.height is None):
             raise ValueError("width and height are required for bounded board actions")
         if self.type in {
-            VisualTutorCanvasActionType.SHOW_GRAPH,
-            VisualTutorCanvasActionType.PLOT_FUNCTION,
-        } and self.graph is None:
+            VisualTutorCanvasActionType.DRAW_RECTANGLE,
+            VisualTutorCanvasActionType.CIRCLE,
+        } and (
+            self.x is None
+            or self.y is None
+            or self.width is None
+            or self.height is None
+            or self.width <= 0
+            or self.height <= 0
+        ):
+            raise ValueError("shape actions require bounded geometry")
+        if (
+            self.type == VisualTutorCanvasActionType.DRAW_ARROW
+            and self.label is not None
+        ):
+            if not self.label.strip():
+                raise ValueError("arrow label is invalid")
+        if (
+            self.type
+            in {
+                VisualTutorCanvasActionType.SHOW_GRAPH,
+                VisualTutorCanvasActionType.PLOT_FUNCTION,
+            }
+            and self.graph is None
+        ):
             raise ValueError("a complete graph payload is required for graph actions")
         if self.type == VisualTutorCanvasActionType.STUDENT_TASK:
             if not ((self.text or "").strip() or (self.latex or "").strip()):
                 raise ValueError("student_task requires text or latex")
+        if self.type == VisualTutorCanvasActionType.DRAW_FREE_BODY_DIAGRAM:
+            if not isinstance(self.metadata.get("forces"), list):
+                raise ValueError("forces array is required for free_body_diagram")
+        if self.type == VisualTutorCanvasActionType.DRAW_MOLECULE:
+            if not isinstance(self.metadata.get("atoms"), list):
+                raise ValueError("atoms array is required for molecule_diagram")
+        if self.type == VisualTutorCanvasActionType.DRAW_WAVE:
+            if not isinstance(self.metadata.get("cycles"), (int, float)):
+                raise ValueError("cycles is required for wave_diagram")
         for value in (self.x, self.y, self.width, self.height):
             if value is not None and (not math.isfinite(value) or abs(value) > 10000):
                 raise ValueError("board action geometry is out of range")
@@ -774,6 +902,33 @@ class VisualTutorBehavior(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+class VisualTutorLanguageMode(str, Enum):
+    """Student-facing explanation language; notation always stays universal."""
+
+    KHMER = "khmer"
+    ENGLISH = "english"
+    BILINGUAL = "bilingual"
+
+
+class VisualTutorClientTelemetryEvent(BaseModel):
+    """Strictly operational client event; content and identifiers are forbidden."""
+    model_config = ConfigDict(extra="forbid")
+    kind: str = Field(pattern=r"^(action_lifecycle|latency|board_conflict|recovery)$")
+    lifecycle: Optional[str] = Field(default=None, pattern=r"^(received|validated|queued|visible|rendered|skipped|off_screen)$")
+    metric: Optional[str] = Field(default=None, pattern=r"^(stream_to_visible|student_to_visible)$")
+    count: int = Field(default=1, ge=0, le=100)
+    duration_ms: Optional[int] = Field(default=None, ge=0, le=600000)
+    outcome: Optional[str] = Field(default=None, pattern=r"^(success|failure|conflict)$")
+
+
+class VisualTutorClientTelemetryBatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    events: List[VisualTutorClientTelemetryEvent] = Field(min_length=1, max_length=50)
+    device_class: str = Field(pattern=r"^(mobile|tablet|desktop|landscape)$")
+    viewport_bucket: str = Field(pattern=r"^(xs|sm|md|lg|xl)$")
+    reduced_motion: bool
+
+
 class VisualTutorTurnRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -784,6 +939,7 @@ class VisualTutorTurnRequest(BaseModel):
     message: str = Field(default="", description="Student text or transcript")
     input_type: VisualTutorInputType = VisualTutorInputType.TEXT
     locale: Optional[str] = None
+    language_mode: Optional[VisualTutorLanguageMode] = None
     action: VisualTutorAction = VisualTutorAction.START
     student_intent: Optional[VisualTutorStudentIntent] = None
     current_state: VisualTutorTurnState = Field(default_factory=VisualTutorTurnState)
@@ -826,7 +982,37 @@ class VisualTutorTurnResponse(BaseModel):
     mastery_signal: VisualTutorMasterySignal
     board_version: Optional[int] = Field(default=None)
     base_board_version: Optional[int] = Field(default=None)
+    authoritative_lesson_state: Dict[str, Any] = Field(default_factory=dict)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class VisualTutorStepTurnRequest(BaseModel):
+    """Authenticated submission for one atomic expert teaching step."""
+
+    user_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    subject: Literal["math", "physics", "chemistry"]
+    step_id: Optional[str] = None
+    message: str = Field(default="", max_length=12_000)
+    action: Literal["submit", "hint", "skip"] = "submit"
+    # Retained temporarily for wire compatibility, but never trusted for
+    # progression. Expert rubrics must be authored in the persisted sequence.
+    expected_answer: Optional[str] = Field(default=None, max_length=2_000)
+    validation_strategy: Optional[str] = Field(default=None, max_length=120)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class VisualTutorStepTurnResponse(BaseModel):
+    session_id: str
+    subject: Literal["math", "physics", "chemistry"]
+    current_step_index: int = Field(ge=0)
+    total_steps: int = Field(ge=1)
+    current_step: Dict[str, Any]
+    evaluation: Optional[Dict[str, Any]] = None
+    recommended_action: str
+    teaching_sequence: List[Dict[str, Any]]
+    expert_metadata: Dict[str, Any] = Field(default_factory=dict)
+    expert_step_version: int = Field(default=0, ge=0)
 
 
 class VisualTutorSessionCreateRequest(BaseModel):
@@ -843,8 +1029,13 @@ class VisualTutorSessionCreateRequest(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def require_problem_for_confirmed_session(self) -> "VisualTutorSessionCreateRequest":
-        if self.session_mode == "confirmed_problem" and not (self.problem_text or "").strip():
+    def require_problem_for_confirmed_session(
+        self,
+    ) -> "VisualTutorSessionCreateRequest":
+        if (
+            self.session_mode == "confirmed_problem"
+            and not (self.problem_text or "").strip()
+        ):
             raise ValueError("A confirmed tutor session requires a problem_text")
         return self
 
@@ -890,6 +1081,7 @@ class VisualTutorSession(BaseModel):
     final_answer_revealed: bool = False
     board_version: int = Field(default=0)
     board_schema_version: int = Field(default=1, ge=1)
+    authoritative_lesson_state: Dict[str, Any] = Field(default_factory=dict)
     student_model: Optional[VisualTutorStudentModel] = Field(default=None)
     messages: List[Dict[str, Any]] = Field(default_factory=list)
     turns: List[Dict[str, Any]] = Field(default_factory=list)
@@ -926,6 +1118,10 @@ class VisualTutorSession(BaseModel):
     created_at: str
     updated_at: str
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    teaching_sequence: List[Dict[str, Any]] = Field(default_factory=list)
+    step_evaluations: List[Dict[str, Any]] = Field(default_factory=list)
+    expert_metadata: Dict[str, Any] = Field(default_factory=dict)
+    expert_step_version: int = Field(default=0, ge=0)
 
 
 class VisualTutorSessionSummary(BaseModel):
@@ -958,3 +1154,24 @@ class VisualTutorSessionSummary(BaseModel):
 class VisualTutorSessionListResponse(BaseModel):
     sessions: List[VisualTutorSessionSummary] = Field(default_factory=list)
     total: int = 0
+
+
+class PublicVisualTutorSession(BaseModel):
+    """Minimal student resume DTO; persisted tutor state is server-only."""
+
+    session_id: str
+    session_mode: Literal["draft", "confirmed_problem"] = "draft"
+    subject: str
+    grade_level: Optional[str] = None
+    topic: Optional[str] = None
+    problem_text: Optional[str] = None
+    current_step_index: int = 0
+    hint_count: int = 0
+    wrong_attempts: int = 0
+    final_answer_revealed: bool = False
+    board_version: int = 0
+    authoritative_lesson_state: Dict[str, Any] = Field(default_factory=dict)
+    curriculum_chunk_ids: List[str] = Field(default_factory=list)
+    status: str = "active"
+    created_at: str
+    updated_at: str

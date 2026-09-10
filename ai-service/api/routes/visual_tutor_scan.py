@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/v1/visual_tutor", tags=["Visual Tutor"])
 
 _MAX_BYTES = 8 * 1024 * 1024
 _MAX_PIXELS = 12_000_000
-_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
+_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
 _OCR_TIMEOUT_SECONDS = 25
 
 
@@ -47,9 +47,33 @@ def _verify_gateway_token(value: str | None) -> None:
 
 def _validate_image(image_bytes: bytes, content_type: str) -> Image.Image:
     if content_type not in _ALLOWED_TYPES:
-        raise HTTPException(status_code=415, detail="Use a JPG, PNG, or WEBP image")
+        raise HTTPException(status_code=415, detail="Use a JPG, PNG, WEBP, or HEIC image")
     if not image_bytes or len(image_bytes) > _MAX_BYTES:
         raise HTTPException(status_code=413, detail="Image must be smaller than 8 MB")
+    # Convert HEIC/HEIF to JPEG in memory (iOS default format)
+    if content_type in {"image/heic", "image/heif"}:
+        try:
+            import pillow_heif  # type: ignore[import-untyped]
+            heif_file = pillow_heif.read_heif(image_bytes)
+            image_bytes = io.BytesIO()
+            img = Image.frombytes(
+                heif_file.mode,
+                heif_file.size,
+                heif_file.data,
+                "raw",
+                heif_file.mode,
+                heif_file.stride,
+            )
+            img.save(image_bytes, format="JPEG", quality=90)
+            image_bytes = image_bytes.getvalue()
+            content_type = "image/jpeg"
+        except ImportError:
+            raise HTTPException(
+                status_code=415,
+                detail="HEIC images require pillow-heif. Please convert to JPG before scanning.",
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=415, detail="Could not read HEIC image") from exc
     try:
         image = Image.open(io.BytesIO(image_bytes))
         image.verify()
@@ -99,10 +123,15 @@ If unreadable, return an empty detected_text with confidence 0."""
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
     # Candidates are copied from OCR text only; they are never normalized or
     # completed by the model. The learner must still edit and confirm the text.
+    # Matches math-like tokens: equations, inequalities, expressions, polynomials.
+    _MATH_CANDIDATE_PATTERN = re.compile(
+        r"[0-9a-zA-Z\u1780-\u17FF()\[\]\s+\-*/^=<>≤≥≠.,']{3,}"
+    )
+    _HAS_MATH_CHAR = re.compile(r"[0-9+\-*/^=<>≤≥≠()\[\]]")
     candidates = [
         match.strip()
-        for match in re.findall(r"[0-9a-zA-Z()\s+\-*/^=.]{3,}", text)
-        if "=" in match and len(match.strip()) <= 240
+        for match in _MATH_CANDIDATE_PATTERN.findall(text)
+        if _HAS_MATH_CHAR.search(match) and len(match.strip()) >= 2 and len(match.strip()) <= 240
     ][:5]
     return VisualTutorScanResult(
         detected_text=text,

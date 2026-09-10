@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "record_type": "interactive_teaching_moment_draft",
+  "status": "source_transcribed_for_local_mvp",
+  "student_delivery": "disabled",
+  "grade": 12,
+  "subject": "Mathematics",
+  "lesson": {
+    "id": "math.g12.lesson1.limits-of-functions",
+    "khmer_source_label": "លីមីតនៃអនុគមន៍",
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 2
+  },
+  "teaching_moment_id": "math.g12.lesson1.limits-of-functions.one-sided-infinite.02",
+  "curriculum_version": "local-g12-math-limits-2025-10-01-v1",
+  "source": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "file_name": "Pages from 2025-10-01-00007213.pdf",
+    "provided_local_path": "/Users/macbookpro/Documents/Pages from 2025-10-01-00007213.pdf",
+    "pdf_pages": [2, 3],
+    "printed_pages": [3, 4]
+  },
+  "glossary_terms": [
+    {"term_id": "limit", "term_khmer": "លីមីត", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 1, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"},
+    {"term_id": "function", "term_khmer": "អនុគមន៍", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 1, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"},
+    {"term_id": "infinite_limit", "term_khmer": "លីមីតគ្មានទីបញ្ចប់", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 3, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"}
+  ],
+  "prerequisite_concepts": [
+    {"id": "function-values", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 1},
+    {"id": "finite-limit-at-a-point", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 1}
+  ],
+  "learning_objectives": [
+    {"text": "Use one-sided value tables to observe that f(x) = 3/(x-2) diverges to -∞ from the left of x=2 and +∞ from the right.", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 2}
+  ],
+  "source_formulas": [
+    {"expression": "f(x) = 3/(x - 2)", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 2},
+    {"expression": "f(x) = (2x + 1)/(x - 1) = 2 + 3/(x - 1)", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 4}
+  ],
+  "common_misconceptions": [
+    {"category": "assuming_a_two_sided_limit_exists_whenever_each_one_sided_limit_is_individually_infinite", "review_status": "pedagogical_review_required"}
+  ],
+  "teaching_plan": {
+    "representation": "one_sided_table",
+    "spoken_explanation": {
+      "text": "សូមសង្កេតតារាងទាំងពីរ៖ តើ f(x) ធ្វើដូចម្តេច នៅពេល x ខិតជិត 2 ពីខាងឆ្វេង ធៀបនឹងពីខាងស្តាំ?",
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 2,
+      "glossary_term_ids": ["limit", "infinite_limit"]
+    },
+    "board_actions": [
+      {"id": "one-sided-title", "type": "write_text", "sequence_index": 0, "duration_ms": 500, "layout_zone": "problem", "layout_flow": "vertical", "text": "f(x) = 3/(x - 2), x ∈ ℝ - {2}", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 2},
+      {"id": "one-sided-table", "type": "show_table", "sequence_index": 1, "duration_ms": 700, "layout_zone": "visual", "layout_flow": "vertical", "columns": ["x", "f(x)"], "rows": [["1.5", "-6"], ["1.9", "-30"], ["1.99", "-300"], ["1.999", "-3000"], ["2.001", "3000"], ["2.01", "300"], ["2.1", "30"], ["2.5", "6"]], "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 2},
+      {"id": "one-sided-student-task", "type": "student_task", "sequence_index": 2, "duration_ms": 0, "layout_zone": "student_task", "layout_flow": "vertical", "text": "តើ f(x) ធ្វើដូចម្តេច នៅពេល x ខិតជិត 2 ពីខាងឆ្វេង? ចុះពីខាងស្តាំ?", "requires_student_response": true, "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 2}
+    ],
+    "student_task": {
+      "task_type": "table_observation",
+      "requires_student_response": true,
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 2
+    },
+    "hidden_answer_policy": {"mode": "hidden", "deterministic_policy_permits_final_reveal": false},
+    "waiting_for_student_input": true,
+    "answer_revealed": false
+  },
+  "interactive_progression": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 2,
+    "steps": [
+      {"id": "observe-table", "representation": "one_sided_table", "task": "តើ f(x) ធ្វើដូចម្តេច នៅពេល x ខិតជិត 2 ពីខាងឆ្វេង? ចុះពីខាងស្តាំ?", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 2},
+      {"id": "state-one-sided-limits", "representation": "symbolic_transformation", "formula": "\\lim_{x \\to 2^-} \\frac{3}{x-2} = -\\infty, \\quad \\lim_{x \\to 2^+} \\frac{3}{x-2} = +\\infty", "task": "សូមសរសេរលីមីតម្ខាងទាំងពីរដោយប្រើសញ្ញា x → 2⁻ និង x → 2⁺។", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 3},
+      {"id": "conclude-two-sided", "representation": "symbolic_transformation", "task": "ដោយសារលីមីតម្ខាងទាំងពីរខុសគ្នា (មួយ -∞ មួយ +∞) តើអនុគមន៍នេះមានលីមីតធម្មតា (ពីរខាង) នៅ x = 2 ដែរឬទេ?", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 3}
+    ]
+  },
+  "publication_requirements": {
+    "source_transcription_qa": "required",
+    "approved_lesson_chunk": "required",
+    "reviewed_glossary_set": "required"
+  }
+}

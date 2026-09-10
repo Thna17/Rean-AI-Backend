@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "record_type": "interactive_teaching_moment_draft",
+  "status": "authoritative_source_transcription_pending_qa",
+  "student_delivery": "disabled",
+  "grade": 10,
+  "subject": "Mathematics",
+  "chapter": 1,
+  "lesson": {
+    "id": "math.g10.part1.logic.1.1.statements",
+    "english_label": "Statements",
+    "khmer_source_label": "សំណើ",
+    "source_page": 9
+  },
+  "source": {
+    "source_id": "moeys-math-g10-part1-2020-ch1-logic",
+    "file_name": "Math-Part1-1.pdf",
+    "pdf_page": 9,
+    "printed_page": 2,
+    "authority_status": "official_curriculum_source_confirmed_by_project_owner"
+  },
+  "learning_objectives": [
+    {
+      "text": "Identify whether a statement can be classified as true or false.",
+      "source_page": 9
+    }
+  ],
+  "glossary_terms": [
+    {
+      "term_id": "statement",
+      "english_label": "statement",
+      "term_khmer": "សំណើ",
+      "source_page": 9
+    },
+    {
+      "term_id": "true",
+      "english_label": "true",
+      "term_khmer": "ពិត",
+      "source_page": 9
+    },
+    {
+      "term_id": "false",
+      "english_label": "false",
+      "term_khmer": "មិនពិត",
+      "source_page": 9
+    },
+    {
+      "term_id": "prime-number",
+      "english_label": "prime number",
+      "term_khmer": "ចំនួនបឋម",
+      "source_page": 9
+    }
+  ],
+  "teaching_plan": {
+    "representation": "conceptual_explanation",
+    "board_actions": [
+      {
+        "id": "logic-title",
+        "type": "write_text",
+        "sequence_index": 0,
+        "duration_ms": 700,
+        "layout_zone": "problem",
+        "layout_flow": "vertical",
+        "text": "សំណើ",
+        "source_page": 9,
+        "glossary_term_ids": ["statement"]
+      },
+      {
+        "id": "logic-example",
+        "type": "write_text",
+        "sequence_index": 1,
+        "duration_ms": 1000,
+        "layout_zone": "working",
+        "layout_flow": "vertical",
+        "text": "៥ ជាចំនួនបឋម។",
+        "source_page": 9,
+        "glossary_term_ids": ["prime-number"]
+      },
+      {
+        "id": "logic-student-task",
+        "type": "student_task",
+        "sequence_index": 2,
+        "duration_ms": 0,
+        "layout_zone": "student_task",
+        "layout_flow": "vertical",
+        "text": "តើ «៥ ជាចំនួនបឋម» ពិត ឬ មិនពិត?",
+        "source_page": 9,
+        "requires_student_response": true,
+        "glossary_term_ids": ["prime-number", "true", "false"]
+      }
+    ],
+    "spoken_explanation": {
+      "text": "សំណើជាប្រយោគដែលអាចកំណត់បានថា ពិត ឬ មិនពិត។",
+      "source_page": 9,
+      "glossary_term_ids": ["statement", "true", "false"]
+    },
+    "student_task": {
+      "prompt": "តើ «៥ ជាចំនួនបឋម» ពិត ឬ មិនពិត?",
+      "source_page": 9,
+      "task_type": "conceptual_operation",
+      "requires_student_response": true,
+      "glossary_term_ids": ["prime-number", "true", "false"]
+    },
+    "waiting_for_student_input": true,
+    "answer_revealed": false,
+    "hidden_answer_policy": "hidden"
+  },
+  "publication_requirements": {
+    "source_transcription_qa": "required",
+    "approved_lesson_chunk": "required",
+    "distribution_rights_confirmation": "required"
+  }
+}

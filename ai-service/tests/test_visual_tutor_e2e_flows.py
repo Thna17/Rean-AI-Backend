@@ -15,7 +15,15 @@ from api.models.visual_tutor import (
     VisualTutorTurnRequest,
     VisualTutorTurnResponse,
 )
-from api.routes.visual_tutor import get_visual_tutor_store, router
+from api.routes.visual_tutor import (
+    get_learner_memory_store,
+    get_visual_tutor_store,
+    router,
+)
+from api.services.visual_tutor.learner_memory import (
+    LearnerMemoryProfile,
+    build_learner_memory_update,
+)
 from api.services.visual_tutor.session_store import (
     _canvas_snapshot_from_response,
     _live_stage_snapshot_from_response,
@@ -326,6 +334,28 @@ class FakeVisualTutorLLMClient:
         return json.dumps(self.payload_factory(request), ensure_ascii=False)
 
 
+class FakeLearnerMemoryStore:
+    def __init__(self) -> None:
+        self.profiles: dict[tuple[str, str, str], dict[str, Any]] = {}
+
+    @staticmethod
+    def _key(*, user_id: str, subject: str, topic: str | None) -> tuple[str, str, str]:
+        return (user_id, subject.strip().lower(), (topic or "general").strip().lower())
+
+    async def get_for_authenticated_user(self, *, user_id: str, subject: str, topic: str | None):
+        value = self.profiles.get(self._key(user_id=user_id, subject=subject, topic=topic))
+        return LearnerMemoryProfile.model_validate(value) if value else None
+
+    async def record_turn(self, *, request, response, topic, session_summary):
+        key = self._key(user_id=request.user_id, subject=request.subject, topic=topic)
+        profile = build_learner_memory_update(
+            previous=self.profiles.get(key), request=request, response=response,
+            topic=topic, session_summary=session_summary,
+        )
+        self.profiles[key] = profile.model_dump(mode="json")
+        return profile
+
+
 def _make_app(store: FakeVisualTutorStore) -> FastAPI:
     app = FastAPI()
 
@@ -339,11 +369,17 @@ def _make_app(store: FakeVisualTutorStore) -> FastAPI:
             headers.append((b"x-visual-tutor-internal-token", b"test-visual-tutor-token"))
         if b"x-visual-tutor-user-id" not in header_names:
             headers.append((b"x-visual-tutor-user-id", b"student-1"))
+        # These flow tests inspect private persistence and solver state. They
+        # intentionally use the authenticated development compatibility path;
+        # public-turn coverage lives in the compact-contract tests.
+        if b"x-visual-tutor-api-compatibility-version" not in header_names:
+            headers.append((b"x-visual-tutor-api-compatibility-version", b"0"))
         request.scope["headers"] = headers
         return await call_next(request)
 
     app.include_router(router)
     app.dependency_overrides[get_visual_tutor_store] = lambda: store
+    app.dependency_overrides[get_learner_memory_store] = FakeLearnerMemoryStore
     return app
 
 

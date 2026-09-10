@@ -30,17 +30,35 @@ SANITIZER_VERSION = "visual_tutor_final_answer_sanitizer_v1"
 LOCKED_ANSWER_TEXT = "Final answer is locked."
 LOCKED_TEXT_REPLACEMENT = "Final answer is locked for now."
 
+# ── Answer-leak detection patterns ──────────────────────────────────────────
+# These patterns are intentionally broad to catch LLM rephrasing. The
+# _answer_phrase_replacement guard re-allows pedagogically safe uses.
 _ANSWER_PHRASE_RE = re.compile(
-    r"(?i)\bfinal\s+answer\s*(?:is|:)\s*[^.\n។!?]+"
+    r"\bfinal\s+answer\s*(?:is|:)\s*[^.\nប!?]+"
     r"|(?<!partial\s)\b(?:answer|solution|solutions|roots?|result|value)\s*"
-    r"(?:is|are|:)\s*[^.\n។!?]+"
-    r"|(?<!partial\s)\banswer\s+[a-zA-Z]\s*=\s*[^.\n។!?]+"
+    r"(?:is|are|:)\s*[^.\nប!?]+"
+    r"|(?<!partial\s)\banswer\s+[a-zA-Z]\s*=\s*[^.\nប!?]+"
+    # 'So x = 5' / 'Therefore x = 5' / 'Thus x = 5'
+    r"|\b(?:so|therefore|thus|hence)\s+[a-zA-Z]\s*=\s*[-+]?[\d.]+"
+    # 'x equals 5' / 'x is equal to 5'
+    r"|\b[a-zA-Z]\s+(?:equals?|is\s+equal\s+to)\s+[-+]?[\d.]+"
+    # Khmer answer leaks: ចម័យមាន / ចំលើយជាប + assignment
+    r"|ចំម័យមាន[^\.\nប!?]*[a-zA-Z]\s*=\s*[-+]?[\d.]+"
+    r"|ចំលើយជាប[^\.\nប!?]*[a-zA-Z]\s*=\s*[-+]?[\d.]+"
+    # Bare numerical assignment at sentence start: 'x = 5' or 'x = -3/2'
+    r"|^\s*[a-zA-Z]\s*=\s*[-+]?[\d./]+(?:\s*[-+*/]\s*[\d./]+)*\s*$",
+    re.IGNORECASE | re.MULTILINE,
 )
-_COPY_ASSIGNMENT_RE = re.compile(r"(?i)\bcopy\b[^.\n។!?]*[a-zA-Z]\s*=\s*[^.\n។!?]+")
+_COPY_ASSIGNMENT_RE = re.compile(r"(?i)\bcopy\b[^.\nប!?]*[a-zA-Z]\s*=\s*[^.\nប!?]+")
 _ANSWER_ASSIGNMENT_RE = re.compile(
     r"\b[a-zA-Z]\s*=\s*[-+]?\d+(?:\.\d+)?(?:/\d+)?"
     r"(?:\s*[-+*/]\s*[a-zA-Z0-9().]+)*\b"
 )
+# Board action types that structurally reveal the answer — must be blocked.
+_STRUCTURAL_ANSWER_ACTION_TYPES = frozenset({
+    "final_answer_reveal",
+    "reveal_answer",
+})
 
 
 @dataclass
@@ -290,6 +308,28 @@ def _sanitize_board_actions(
 ) -> list[VisualTutorBoardAction]:
     sanitized_actions: list[VisualTutorBoardAction] = []
     for action in actions:
+        # Hard structural block: final_answer_reveal / reveal_answer actions must
+        # never reach the client when the answer is locked, regardless of text
+        # content. This is the primary defence; regex sanitization is secondary.
+        action_type = (getattr(action, "type", None) or "").lower().strip()
+        if action_type in _STRUCTURAL_ANSWER_ACTION_TYPES:
+            changes.fields.add("board_actions")
+            changes.board_action_ids.add(action.id)
+            # Replace the reveal action with a locked placeholder action that
+            # keeps the same id/position so the client can render a lock icon.
+            sanitized_actions.append(action.model_copy(
+                update={
+                    "text": LOCKED_ANSWER_TEXT,
+                    "latex": None,
+                    "hidden": True,
+                    "metadata": {
+                        **getattr(action, "metadata", {}),
+                        "final_answer_locked": True,
+                        "sanitized_by": SANITIZER_VERSION,
+                    },
+                }
+            ))
+            continue
         sanitized = _sanitize_board_action(action)
         if sanitized != action:
             changes.fields.add("board_actions")
@@ -625,11 +665,16 @@ def _sanitize_canvas_action(action: VisualTutorCanvasAction) -> VisualTutorCanva
         )
 
     updates: dict[str, object] = {}
-    if action.text:
+    # Deterministic solvers can explicitly mark a non-final, verified teaching
+    # result (for example, a line's slope) as safe to show while the final
+    # answer remains locked.  Do not let the generic answer-assignment regex
+    # erase that current-step content after the leak check above accepts it.
+    allow_verified_partial = _is_locked_safe_partial(action.metadata)
+    if action.text and not allow_verified_partial:
         sanitized_text = _sanitize_text(action.text)
         if sanitized_text != action.text:
             updates["text"] = sanitized_text
-    if action.latex:
+    if action.latex and not allow_verified_partial:
         sanitized_latex = _sanitize_text(action.latex)
         if sanitized_latex != action.latex:
             updates["latex"] = sanitized_latex
@@ -672,11 +717,14 @@ def _sanitize_board_action(action: VisualTutorBoardAction) -> VisualTutorBoardAc
         )
 
     updates: dict[str, object] = {}
-    if action.text:
+    # See the equivalent canvas-action path above.  A solver-labelled partial
+    # result is a legitimate current teaching step, not a final-answer leak.
+    allow_verified_partial = _is_locked_safe_partial(action.metadata)
+    if action.text and not allow_verified_partial:
         sanitized_text = _sanitize_text(action.text)
         if sanitized_text != action.text:
             updates["text"] = sanitized_text
-    if action.latex:
+    if action.latex and not allow_verified_partial:
         sanitized_latex = _sanitize_text(action.latex)
         if sanitized_latex != action.latex:
             updates["latex"] = sanitized_latex

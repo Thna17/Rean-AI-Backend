@@ -1,0 +1,50 @@
+# Instant Help Mermaid Sequence Diagram
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Student
+  participant Flutter as Flutter Mobile App
+  participant Backend as Node.js Backend
+  participant AI as FastAPI AI Tutor Service
+  participant SymPy as SymPy Verification
+
+  Student->>Flutter: Tap "I'm Stuck"
+  Flutter->>Student: Open Instant Help Screen
+  Student->>Flutter: Submit problem or attempted work
+  Flutter-->>Student: Immediate acknowledgement
+  Flutter->>Backend: Create Tutor Session + upload metadata
+  Backend-->>Flutter: session_id
+  Backend->>AI: Analyze problem with student context
+  AI->>AI: Detect subject, topic, intent, problem type, support level
+  alt unclear
+    AI-->>Flutter: One clarification question
+    Flutter-->>Student: Ask focused clarification
+    Student->>Flutter: Clarification response
+    Flutter->>Backend: Append tutor turn
+    Backend->>AI: Analyze again
+  else unsupported
+    AI-->>Flutter: Safe limitation + related supported topic
+    Backend->>Backend: Log unsupported case
+  else supported
+    AI-->>Flutter: First useful hint, visual, first step, or focused question
+    Flutter-->>Student: Show immediate tutor response
+    loop Interactive teaching
+      Student->>Flutter: Answer, revise, ask hint, or explain differently
+      Flutter->>Backend: Save student attempt/turn
+      Backend->>AI: Evaluate response
+      AI-->>Flutter: Feedback + next adaptive step
+    end
+    AI->>SymPy: Verify step/final expression
+    SymPy-->>AI: Verified / partial / failed
+    alt verified
+      AI-->>Flutter: Verified answer or step
+    else failed repeatedly
+      AI-->>Flutter: Safe failure message, no confident answer
+      Backend->>Backend: Log verification error
+    end
+    Flutter-->>Student: Understanding check
+    Student->>Flutter: Similar practice answer or concept explanation
+    Flutter->>Backend: Save progress, activity, streak, weak topic updates
+  end
+```

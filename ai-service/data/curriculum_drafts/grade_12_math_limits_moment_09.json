@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "record_type": "interactive_teaching_moment_draft",
+  "status": "source_transcribed_for_local_mvp",
+  "student_delivery": "disabled",
+  "grade": 12,
+  "subject": "Mathematics",
+  "lesson": {
+    "id": "math.g12.lesson1.limits-of-functions",
+    "khmer_source_label": "លីមីតនៃអនុគមន៍",
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 17
+  },
+  "teaching_moment_id": "math.g12.lesson1.limits-of-functions.exponential.09",
+  "curriculum_version": "local-g12-math-limits-2025-10-01-v1",
+  "source": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "file_name": "Pages from 2025-10-01-00007213.pdf",
+    "provided_local_path": "/Users/macbookpro/Documents/Pages from 2025-10-01-00007213.pdf",
+    "pdf_pages": [17, 18],
+    "printed_pages": [18, 19]
+  },
+  "glossary_terms": [
+    {"term_id": "limit", "term_khmer": "លីមីត", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 1, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"},
+    {"term_id": "exponential_function", "term_khmer": "អនុគមន៍និទស្សន្ត", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 17, "reviewer_status": "source_transcription_verified", "curriculum_version": "local-g12-math-limits-2025-10-01-v1"}
+  ],
+  "prerequisite_concepts": [
+    {"id": "the-number-e", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 17},
+    {"id": "limit-at-infinity", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 4}
+  ],
+  "learning_objectives": [
+    {"text": "Use a value table to observe e^x -> +infinity as x -> +infinity, and e^x -> 0 as x -> -infinity.", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 17}
+  ],
+  "source_formulas": [
+    {"expression": "e = lim (1 + 1/n)^n as n -> +infinity, approx 2.7182", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 17},
+    {"expression": "f(x) = e^x", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 17},
+    {"expression": "g(x) = e^x / x, g(x) = e^x / x^10", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 17},
+    {"expression": "lim e^x/x^n = +infinity, lim x^n/e^x = 0, as x -> +infinity, for n > 0", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 18}
+  ],
+  "common_misconceptions": [
+    {"category": "assuming_a_polynomial_always_grows_at_least_as_fast_as_an_exponential", "review_status": "pedagogical_review_required"}
+  ],
+  "teaching_plan": {
+    "representation": "value_table",
+    "spoken_explanation": {
+      "text": "សូមសង្កេតតារាងតម្លៃនៃ eˣ នៅពេល x កាន់តែធំ ហើយនៅពេល x កាន់តែតូច (អវិជ្ជមាន)។",
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 17,
+      "glossary_term_ids": ["exponential_function", "limit"]
+    },
+    "board_actions": [
+      {"id": "exponential-title", "type": "write_text", "sequence_index": 0, "duration_ms": 500, "layout_zone": "problem", "layout_flow": "vertical", "text": "f(x) = eˣ", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 17},
+      {"id": "exponential-table", "type": "show_table", "sequence_index": 1, "duration_ms": 700, "layout_zone": "visual", "layout_flow": "vertical", "columns": ["x", "f(x)"], "rows": [["-7", "0.000912"], ["-6", "0.00247"], ["-5", "0.00673"], ["-4", "0.0183"], ["-3", "0.0497"], ["-2", "0.1353"], ["1", "2.7182"], ["2", "7.3886"], ["3", "20.0837"], ["4", "54.5915"], ["5", "143.3908"], ["6", "403.3559"]], "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 17},
+      {"id": "exponential-student-task", "type": "student_task", "sequence_index": 2, "duration_ms": 0, "layout_zone": "student_task", "layout_flow": "vertical", "text": "តើ eˣ ខិតជិតលេខណា នៅពេល x កាន់តែធំ (→ +∞)? ចុះនៅពេល x កាន់តែតូច (→ -∞)?", "requires_student_response": true, "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 17}
+    ],
+    "student_task": {
+      "task_type": "table_observation",
+      "requires_student_response": true,
+      "source_id": "provided-pdf-2025-10-01-00007213",
+      "source_page": 17
+    },
+    "hidden_answer_policy": {"mode": "hidden", "deterministic_policy_permits_final_reveal": false},
+    "waiting_for_student_input": true,
+    "answer_revealed": false
+  },
+  "interactive_progression": {
+    "source_id": "provided-pdf-2025-10-01-00007213",
+    "source_page": 17,
+    "steps": [
+      {"id": "observe-table", "representation": "value_table", "task": "តើ eˣ ខិតជិតលេខណា នៅពេល x កាន់តែធំ? ចុះនៅពេល x កាន់តែតូច?", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 17},
+      {"id": "state-both-limits", "representation": "symbolic_transformation", "formula": "\\lim_{x \\to +\\infty} e^x = +\\infty, \\quad \\lim_{x \\to -\\infty} e^x = 0", "task": "សូមសរសេរលីមីតទាំងពីរដោយប្រើសញ្ញា x → +∞ និង x → -∞។", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 17},
+      {"id": "compare-growth-rate", "representation": "conceptual_operation", "task": "ចំពោះ g(x) = eˣ/x¹⁰, តើ eˣ ឬ x¹⁰ ដែលកើនលឿនជាង នៅពេល x → +∞?", "answer_policy": "server_locked", "source_id": "provided-pdf-2025-10-01-00007213", "source_page": 18}
+    ]
+  },
+  "publication_requirements": {
+    "source_transcription_qa": "required",
+    "approved_lesson_chunk": "required",
+    "reviewed_glossary_set": "required"
+  }
+}

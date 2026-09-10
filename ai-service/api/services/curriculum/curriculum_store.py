@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional
 
 from api.models.curriculum import CurriculumChunk
+from api.services.curriculum.published_curriculum_store import PublishedCurriculumStore
 
 
 def default_curriculum_data_dir() -> Path:
@@ -17,12 +18,21 @@ class CurriculumStore:
         self.data_dir = data_dir or default_curriculum_data_dir()
         self._chunks: Optional[list[CurriculumChunk]] = None
         self._indexes: dict[str, dict[str, list[CurriculumChunk]]] = {}
+        self._published_generation: int | None = None
 
     def load_chunks(self) -> list[CurriculumChunk]:
-        if self._chunks is None:
-            self._chunks = list(_load_jsonl_chunks(self.data_dir))
+        published = PublishedCurriculumStore()
+        generation = published.generation()
+        if self._chunks is None or self._published_generation != generation:
+            self._chunks = list(_load_jsonl_chunks(self.data_dir)) + published.load()
             self._indexes = _build_indexes(self._chunks)
+            self._published_generation = generation
         return list(self._chunks)
+
+    def reload(self) -> None:
+        self._chunks = None
+        self._indexes = {}
+        self._published_generation = None
 
     @property
     def indexes(self) -> dict[str, dict[str, list[CurriculumChunk]]]:
