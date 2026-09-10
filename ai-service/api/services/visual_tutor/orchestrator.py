@@ -389,7 +389,13 @@ def handle_visual_tutor_turn(
                 max_results=3,
             ),
             store=get_default_curriculum_store(),
-            kg_service=get_kg_service(),
+            # The global concept-graph search costs ~270ms average (up to
+            # 1.3s) and only adds supplementary cross-subject "concepts" hits
+            # -- prerequisites/misconceptions/formulas/visual_representations
+            # all come from the already-scoped chunks below regardless. While
+            # scope-locked to one topic, that breadth search buys nothing, so
+            # skip it; _kg_hits() already handles kg_service=None cleanly.
+            kg_service=None if _scope_lock_active() else get_kg_service(),
         )
         curriculum_meta.update(grounded_context.server_metadata())
     except Exception:

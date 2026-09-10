@@ -237,6 +237,7 @@ def mock_kg_service_global(monkeypatch):
         "api.services.subgraph_hot_cache.get_kg_service",
         "api.services.trace_cag.nodes_v2.get_kg_service",
         "api.services.orchestrator.get_kg_service",
+        "api.services.visual_tutor.orchestrator.get_kg_service",
     ]:
         try:
             monkeypatch.setattr(path, lambda: mock_kg)

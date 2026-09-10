@@ -14,6 +14,7 @@ from fastapi.responses import RedirectResponse
 from contextlib import asynccontextmanager
 import logging
 import os
+import sys
 import httpx
 import time
 import uuid
@@ -34,7 +35,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
-load_dotenv()
+
+# Importing api.main (directly or transitively, e.g. via a FastAPI test
+# client fixture) must never leak real .env secrets -- API keys included --
+# into a pytest process. Tests that need a specific value set it explicitly
+# (monkeypatch.setenv / monkeypatch.setattr(settings, ...)); anything else
+# should see only the real shell environment, not the developer's .env file.
+if "pytest" not in sys.modules:
+    load_dotenv()
 
 # Settings (loaded after dotenv so env vars are available)
 settings = get_settings()
