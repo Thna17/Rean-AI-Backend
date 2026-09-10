@@ -68,3 +68,6 @@ data/content-etl/
 
 # Crawler cache
 .crawl4ai/
+
+# Generated report from tests/test_visual_tutor_limits_live.py (RUN_LIVE_LLM_TESTS=1)
+tests/.live_llm_report.json
