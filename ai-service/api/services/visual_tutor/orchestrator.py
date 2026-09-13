@@ -1801,14 +1801,20 @@ def _finalize_response(
     )
     # A plan is data-only and is validated after all policy, solver, and
     # verification enrichment.  This makes the persisted plan describe the
-    # actual safe turn, not an earlier untrusted model draft.
-    finalized = attach_validated_teaching_plan(
-        response=final_response,
-        request=request,
-        policy=policy,
-        understanding=understanding,
-        adaptive_decision=adaptive_decision,
-    )
+    # actual safe turn, not an earlier untrusted model draft. The turn itself
+    # (final_response) is already fully built and safe at this point -- a
+    # student must get it back even if teaching_plan reconciliation fails.
+    try:
+        finalized = attach_validated_teaching_plan(
+            response=final_response,
+            request=request,
+            policy=policy,
+            understanding=understanding,
+            adaptive_decision=adaptive_decision,
+        )
+    except Exception:
+        logger.exception("visual_tutor teaching_plan attachment failed; serving turn without one")
+        finalized = final_response
     record_turn_response(
         finalized,
         curriculum_confidence=(curriculum_meta or {}).get("curriculum_confidence"),

@@ -124,17 +124,69 @@ def _select_plan(*, response, request, policy, understanding, adaptive_decision)
                 )
         except Exception:
             pass
-    return (
-        _deterministic_plan(
+    try:
+        plan = _deterministic_plan(
             response=response,
             request=request,
             policy=policy,
             understanding=understanding,
             adaptive_decision=adaptive_decision,
-        ),
+        )
+    except Exception:
+        # Reconciling the response's own board_actions/canvas_actions can
+        # still fail (e.g. a show_table-shaped legacy action that doesn't
+        # carry real table data through this stricter contract) -- a student
+        # must always get their turn back, never a 500, so fall back to the
+        # smallest plan this contract can always validate.
+        plan = _minimal_safe_plan(
+            response=response, request=request, policy=policy
+        )
+    return (
+        plan,
         "server_reconciled",
         _rationale(request, understanding, adaptive_decision, "server_reconciled"),
     )
+
+
+def _minimal_safe_plan(*, response, request, policy) -> VisualTutorTeachingPlan:
+    """The smallest teaching_plan this contract can always validate: the
+    turn's own speech and student task, no reconstructed board actions."""
+    reveal_allowed = not response.final_answer_locked
+    mode = HiddenAnswerMode.REVEAL_ALLOWED if reveal_allowed else HiddenAnswerMode.HIDDEN
+    payload = {
+        "schema_version": 1,
+        "representation": TeachingRepresentation.CONCEPTUAL_EXPLANATION.value,
+        "learning_objective": response.display_text[:500] or "Continue the current step.",
+        "teaching_message": response.display_text,
+        "board_actions": [
+            {
+                "id": "safe-fallback-text",
+                "type": TeachingPlanActionType.WRITE_TEXT.value,
+                "sequence_index": 0,
+                "layout_zone": "problem",
+                "layout_flow": "vertical",
+                "text": response.display_text,
+            },
+            {
+                "id": "safe-fallback-task",
+                "type": TeachingPlanActionType.STUDENT_TASK.value,
+                "sequence_index": 1,
+                "layout_zone": "student_task",
+                "layout_flow": "vertical",
+                "text": response.student_task,
+                "requires_student_response": True,
+                **_task_contract(response=response, request=request, policy=policy),
+            },
+        ],
+        "allowed_student_actions": [action.value for action in response.quick_actions]
+        or ["submit_answer", "request_hint"],
+        "hidden_answer_policy": {
+            "mode": mode.value,
+            "deterministic_policy_permits_final_reveal": reveal_allowed,
+        },
+        "next_state_policy": _next_state_policy(response),
+    }
+    return validate_teaching_plan(payload)
 
 
 def _with_task_contract(plan: dict[str, Any], *, response, request, policy) -> dict[str, Any]:
