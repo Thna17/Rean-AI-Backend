@@ -38,7 +38,7 @@ jobs:
         working-directory: backend-ai-tutor/backend
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -105,7 +105,7 @@ jobs:
         working-directory: admin-ai-tutor
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
