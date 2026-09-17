@@ -316,12 +316,12 @@ class _FakeDynamicPlannerClient:
         )
 
 
-def test_limits_lesson_now_uses_the_dynamic_planner_by_default(monkeypatch) -> None:
-    """This exact request shape used to match matches_local_limits_demo() and
-    return the scripted board; with the demo disabled by default it must now
-    flow through understand_visual_tutor_problem -> LimitOfFunctionSolver ->
-    the dynamic LLM planner instead (see orchestrator.py's
-    VISUAL_TUTOR_LOCAL_LIMITS_DEMO_ENABLED gate)."""
+def test_new_limit_problem_answers_with_the_full_worked_solution(monkeypatch) -> None:
+    """A new limit problem is answered in full, not one step at a time.
+
+    The solution is built from sympy, so no planner call is needed and the
+    student sees every step at once with the answer.
+    """
     from api.services.visual_tutor.orchestrator import settings as orchestrator_settings
 
     monkeypatch.setattr(
@@ -336,6 +336,36 @@ def test_limits_lesson_now_uses_the_dynamic_planner_by_default(monkeypatch) -> N
         ),
         llm_client=fake_llm,
     )
+
+    assert not fake_llm.calls, "a verified worked solution needs no planner call"
+    assert response.final_answer_locked is False
+    assert response.metadata["worked_solution"]["answer"] == "The limit is 7."
+    assert response.metadata["verification"]["verified"] is True
+    # Every step reaches the student in one turn, rather than a single visual.
+    plan_actions = response.metadata["teaching_plan"]["board_actions"]
+    assert len([action for action in plan_actions if action["type"] == "write_equation"]) >= 2
+
+
+def test_try_it_myself_keeps_the_guided_dynamic_planner(monkeypatch) -> None:
+    """Choosing "Try it myself" keeps the original step-by-step flow, which
+    flows through understand_visual_tutor_problem -> LimitOfFunctionSolver ->
+    the dynamic LLM planner (see orchestrator.py's
+    VISUAL_TUTOR_LOCAL_LIMITS_DEMO_ENABLED gate)."""
+    from api.services.visual_tutor.orchestrator import settings as orchestrator_settings
+
+    monkeypatch.setattr(
+        orchestrator_settings, "VISUAL_TUTOR_LOCAL_LIMITS_DEMO_ENABLED", False
+    )
+    fake_llm = _FakeDynamicPlannerClient()
+    request = _request(
+        action=VisualTutorAction.SUBMIT_PROBLEM,
+        message="Find the limit of f(x) = 2x + 1 as x approaches 3",
+    )
+    request = request.model_copy(
+        update={"metadata": {**request.metadata, "tutor_mode": "try_myself"}}
+    )
+
+    response = handle_visual_tutor_turn(request, llm_client=fake_llm)
 
     assert fake_llm.calls, "the dynamic planner should have been called"
     assert response.metadata["response_source"] == "llm_planner"

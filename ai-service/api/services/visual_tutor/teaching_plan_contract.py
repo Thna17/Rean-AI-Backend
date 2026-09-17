@@ -378,6 +378,17 @@ class TeachingPlanAction(BaseModel):
             raise ValueError("action duration must be an integer")
         return value
 
+    @field_validator("text", "latex", mode="before")
+    @classmethod
+    def blank_text_is_absent(cls, value: Any) -> Any:
+        # validate_action already treats a blank string as absent, but it was
+        # still serialized as "". Flutter reads `text ?? latex`, and Dart's ??
+        # only skips null -- so a write_equation with text "" and a real latex
+        # rendered as an empty, rejected action instead of the equation.
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @model_validator(mode="after")
     def validate_action(self) -> "TeachingPlanAction":
         # An empty string on a field that isn't required for this action type

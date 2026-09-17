@@ -108,6 +108,23 @@ def _learner_model_summary(*, adaptive_decision: Any, understanding: Any) -> dic
 
 def _select_plan(*, response, request, policy, understanding, adaptive_decision):
     proposed = response.metadata.get("teaching_plan")
+    if (
+        isinstance(proposed, dict)
+        and isinstance(response.metadata.get("worked_solution"), dict)
+        and not response.final_answer_locked
+    ):
+        # A server-built, sympy-verified worked solution is meant to show every
+        # step at once. _with_task_contract would run it through
+        # _to_teaching_timeline, which keeps a single visual per turn and would
+        # reduce the whole solution to one line. Keyed on server metadata, not
+        # the plan's representation, so model output can never opt out of that
+        # pacing.
+        plan = validate_teaching_plan(
+            {**proposed, "board_actions": _with_semantic_layout(proposed.get("board_actions", []))}
+        )
+        return plan, "worked_solution", _rationale(
+            request, understanding, adaptive_decision, "worked_solution"
+        )
     if isinstance(proposed, dict):
         try:
             plan = validate_teaching_plan(

@@ -118,12 +118,16 @@ def _provisional_intro_action(
         "type": "write_text",
         "sequence_index": 0,
         "duration_ms": 520,
-        "x": 40,
-        "y": 48,
-        "width": 620,
-        "height": 56,
+        # Laid out by Flutter in the normal reading flow. With fixed
+        # coordinates this preview was painted on top of the turn's real first
+        # line, so the two overlapped while the board was being written.
+        "layout_zone": "problem",
+        "layout_flow": "vertical",
+        "section_id": "stream-preview",
         "text": "Let’s identify the important information first.",
-        "locked": False,
+        # No "locked": the Flutter contract rejects any action carrying a key
+        # it does not know, so this preview showed as "One board item could
+        # not be shown" at the start of every single streamed turn.
         "hidden": False,
         "problem_instance_id": problem_instance_id,
         "active_step_id": active_step_id,

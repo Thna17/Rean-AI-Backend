@@ -2658,7 +2658,10 @@ class LimitOfFunctionProblem:
     requested_direction: Optional[str]  # "left" | "right" | None (two-sided)
 
 
-_LIMIT_TRIGGER_RE = re.compile(r"\blim(?:it)?\b", re.IGNORECASE)
+# No trailing \b: subscript notation ("lim_{x \to 3}", common in OCR'd
+# textbook problems) puts a word character straight after "lim". This is only
+# a cheap pre-filter -- the clause regexes and sympy below still decide.
+_LIMIT_TRIGGER_RE = re.compile(r"\blim(?:it)?", re.IGNORECASE)
 _LIMIT_CLAUSE_RE = re.compile(
     r"(?:limit\s+of\s+)?"
     r"(?:f\s*\(\s*x\s*\)\s*=\s*|y\s*=\s*)?"
@@ -2670,13 +2673,28 @@ _LIMIT_CLAUSE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Compact notation writes the approach before the expression -- "lim x->3
+# (x^2-9)/(x-3)", "lim_{x \to 3} 1/x" -- which _LIMIT_CLAUSE_RE cannot match
+# because it expects the expression first. Students type this far more often
+# than the prose form, so it is tried as a fallback with the same named groups.
+_LIMIT_PREFIX_CLAUSE_RE = re.compile(
+    r"\blim(?:it)?\s*_?\s*\{?\s*"
+    r"x\s*(?:->|→|\\to|approaches|approach(?:ing)?|tends?\s+to)\s*"
+    r"(?P<point>[-+]?(?:infinity|inf|∞|\d+(?:\.\d+)?))"
+    r"(?P<sign>[+-])?"
+    r"\s*\}?\s*"
+    r"(?P<expr>.+?)"
+    r"(?:\s*from\s+the\s+(?P<side>left|right))?\s*$",
+    re.IGNORECASE,
+)
+
 
 def parse_limit_of_function(message: str) -> Optional[LimitOfFunctionProblem]:
     """Parse phrasing like 'Find the limit of f(x) = 2x + 1 as x approaches 3'
     or 'limit of (x^2-1)/(x-1) as x approaches 1 from the left'."""
     if not message or not _LIMIT_TRIGGER_RE.search(message):
         return None
-    match = _LIMIT_CLAUSE_RE.search(message)
+    match = _LIMIT_CLAUSE_RE.search(message) or _LIMIT_PREFIX_CLAUSE_RE.search(message)
     if not match:
         return None
     expr_text = _limit_expression_text(match.group("expr").strip())

@@ -39,7 +39,12 @@ from api.models.visual_tutor import (
 from api.core.config import settings
 from api.services.visual_tutor.board_contract import validate_board_response
 from api.services.visual_tutor.policy import VisualTutorPolicyDecision
-from api.services.visual_tutor.teaching_plan_contract import validate_teaching_plan
+from api.services.visual_tutor.teaching_plan_contract import (
+    TeachingPlanAction,
+    TeachingPlanLayoutFlow,
+    TeachingPlanLayoutZone,
+    validate_teaching_plan,
+)
 
 LLM_PLANNER_VERSION = "visual_tutor_llm_teaching_planner_v1"
 MAX_PLANNER_BUDGET_SECONDS = 15.0
@@ -835,9 +840,44 @@ def _parse_strict_llm_json(raw_output: str) -> Dict[str, Any]:
         # Reject the entire untrusted completion when its proposed plan is not
         # renderer-safe. The caller returns a controlled structured fallback.
         sanitized["teaching_plan"] = validate_teaching_plan(
-            sanitized["teaching_plan"]
+            _drop_unknown_action_fields(sanitized["teaching_plan"])
         ).model_dump(mode="json")
     return sanitized
+
+
+def _drop_unknown_action_fields(plan: Any) -> Any:
+    """Strip planner drift from board actions before the contract sees them.
+
+    The contract forbids extra keys, so one cosmetic field the model invented
+    ("style", "reveal_policy", an empty "metadata") threw away an otherwise
+    renderer-safe plan and dropped the student to a template fallback. This
+    only ever removes data -- never invents or rewrites it -- so a plan that
+    survives is exactly as trustworthy as one that needed no cleaning. The
+    same allowlist approach already guards the payload's top-level keys above.
+    """
+    if not isinstance(plan, dict):
+        return plan
+    actions = plan.get("board_actions")
+    if not isinstance(actions, list):
+        return plan
+    allowed = set(TeachingPlanAction.model_fields)
+    zones = {zone.value for zone in TeachingPlanLayoutZone}
+    flows = {flow.value for flow in TeachingPlanLayoutFlow}
+    cleaned: list[Any] = []
+    for action in actions:
+        if not isinstance(action, dict):
+            cleaned.append(action)
+            continue
+        item = {key: value for key, value in action.items() if key in allowed}
+        # Both are optional with a None default, so discarding an unrecognised
+        # value leaves the plan's own layout rules to decide placement rather
+        # than guessing which zone the model meant.
+        if item.get("layout_zone") not in zones:
+            item.pop("layout_zone", None)
+        if item.get("layout_flow") not in flows:
+            item.pop("layout_flow", None)
+        cleaned.append(item)
+    return {**plan, "board_actions": cleaned}
 
 
 def _reject_disallowed_llm_payload(payload: Dict[str, Any]) -> None:
@@ -1619,6 +1659,10 @@ def _build_system_prompt(
         "It must contain teaching_plan: a JSON object with schema_version=1, representation, "
         "learning_objective, teaching_message, board_actions, allowed_student_actions, "
         "hidden_answer_policy, and next_state_policy. "
+        "teaching_message is read aloud and shown TO the student, so write it to them in second person "
+        "(\"What do you get when you factor x² − 9?\"); never refer to \"the student\" and never phrase it "
+        "as an instruction to the tutor (\"Ask the student to...\"). learning_objective is the internal goal "
+        "and may be phrased about the student. "
         "hidden_answer_policy and next_state_policy are JSON OBJECTS, never plain strings. "
         "hidden_answer_policy must look exactly like this shape: "
         "{\"mode\": \"hidden\", \"deterministic_policy_permits_final_reveal\": false} -- "
@@ -2056,6 +2100,21 @@ def _action_group_id(action: Any) -> str | None:
     )
 
 
+def _repair_action_style(item: dict) -> dict:
+    """Drop a `style` the model wrote as a label instead of an object.
+
+    DeepSeek reliably emits `"style": "task"` / `"timing"` / `"normal"` where
+    the board contract expects a CanvasElementStyle object. That single type
+    mismatch used to invalidate the whole action, so a usable instruction like
+    "Try substituting x = 3" was thrown away and replaced by placeholder text.
+    The field defaults to a CanvasElementStyle, so removing a malformed one
+    costs only cosmetic styling and keeps the teaching content.
+    """
+    if isinstance(item.get("style"), dict):
+        return item
+    return {key: value for key, value in item.items() if key != "style"}
+
+
 def _parse_board_actions(value: Any) -> list[VisualTutorBoardAction]:
     if not isinstance(value, list):
         return []
@@ -2064,8 +2123,16 @@ def _parse_board_actions(value: Any) -> list[VisualTutorBoardAction]:
         if not isinstance(item, dict):
             continue
         try:
-            actions.append(VisualTutorBoardAction.model_validate(item))
-        except ValidationError:
+            actions.append(VisualTutorBoardAction.model_validate(_repair_action_style(item)))
+        except ValidationError as exc:
+            # Previously silent, which is why planner drift showed up only as
+            # "Look at the current step." on a student's board with nothing in
+            # any log to explain it.
+            logger.warning(
+                "visual_tutor board action rejected index=%s errors=%s",
+                index,
+                exc.errors()[:3],
+            )
             actions.append(
                 VisualTutorBoardAction(
                     id=f"llm-invalid-board-action-{index}",

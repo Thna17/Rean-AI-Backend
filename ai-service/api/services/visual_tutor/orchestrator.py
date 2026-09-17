@@ -101,10 +101,17 @@ from api.services.visual_tutor.solver_registry import (
     DEFAULT_VISUAL_TUTOR_SOLVER_REGISTRY,
     VisualTutorSolverRegistry,
 )
+from api.services.visual_tutor.worked_solution import (
+    answer_about_solution,
+    build_worked_solution_turn,
+    match_worked_solution,
+    match_worked_solution_followup,
+)
 from api.services.visual_tutor.solvers import (
     LineThroughPoints,
     LinearEquation,
     attach_canvas_actions_to_solver_response,
+    parse_limit_of_function,
     parse_line_through_points,
     parse_linear_equation,
 )
@@ -148,19 +155,33 @@ def _scope_lock_active() -> bool:
 
 
 def _is_grade12_math_limits_request(
-    *, grade: Optional[int], subject: str, topic: str, topic_id: str
+    *,
+    grade: Optional[int],
+    subject: str,
+    topic: str,
+    topic_id: str,
+    message: str = "",
+    problem_text: str = "",
 ) -> bool:
-    if grade != 12:
-        return False
-    if (subject or "").strip().lower() not in {"mathematics", "math"}:
-        return False
-    normalized_topic_id = (topic_id or "").strip().lower()
-    if normalized_topic_id:
-        return normalized_topic_id == _SCOPE_LOCK_TOPIC_ID
-    # Callers that never set topic_id (most of the app today) are matched on
-    # the free-text topic instead -- this is the same fallback
-    # matches_local_limits_demo() already relies on for this exact topic.
-    return (topic or "").strip().lower() == "limits of functions"
+    if grade == 12 and (subject or "").strip().lower() in {"mathematics", "math"}:
+        normalized_topic_id = (topic_id or "").strip().lower()
+        if normalized_topic_id:
+            return normalized_topic_id == _SCOPE_LOCK_TOPIC_ID
+        # Callers that never set topic_id (most of the app today) are matched on
+        # the free-text topic instead -- this is the same fallback
+        # matches_local_limits_demo() already relies on for this exact topic.
+        return (topic or "").strip().lower() == "limits of functions"
+    # Free-form entries (dashboard "ask anything", Tutor "type a question",
+    # voice, scan) all carry LearningContext.askQuestion -- grade 0, subject
+    # "General", no topic_id -- so metadata alone refuses every question a
+    # student types, whatever it says. Classify the text instead:
+    # parse_limit_of_function only matches a single-variable limit that sympy
+    # can actually build, so this admits genuine limits questions without
+    # widening the lock to any other topic.
+    return (
+        parse_limit_of_function(message or "") is not None
+        or parse_limit_of_function(problem_text or "") is not None
+    )
 
 
 def _out_of_scope_turn(
@@ -257,10 +278,58 @@ def handle_visual_tutor_turn(
         subject=request.subject,
         topic=request.topic or "",
         topic_id=str(request.metadata.get("topic_id") or ""),
+        # A follow-up question ("why can we cancel?") is not itself a limits
+        # problem, so the problem under discussion decides scope too. Without
+        # this, every question about an in-scope solution was refused.
+        message=request.message or "",
+        problem_text=request.current_state.problem_text or "",
     ):
+        # A silent refusal is indistinguishable from a broken tutor: the
+        # student just sees "not available yet" with nothing anywhere saying
+        # which input was judged out of scope.
+        logger.info(
+            "visual_tutor_scope_refused grade=%r subject=%r topic=%r topic_id=%r action=%r message=%r",
+            _grade_from_request(request),
+            request.subject,
+            request.topic,
+            request.metadata.get("topic_id"),
+            getattr(request.action, "value", request.action),
+            (request.message or "")[:200],
+        )
         return _finalize_response(
             request, _out_of_scope_turn(request, session_id=session_id)
         )
+    # A new limit problem is answered with the complete, sympy-verified worked
+    # solution by default. Students who choose "Try it myself" (tutor_mode)
+    # keep the guided, one-step-at-a-time flow below.
+    worked_problem = match_worked_solution(request)
+    if worked_problem is not None:
+        try:
+            return _finalize_response(
+                request,
+                build_worked_solution_turn(request, worked_problem, session_id=session_id),
+            )
+        except Exception:
+            logger.exception("visual_tutor worked solution failed; using guided flow")
+    else:
+        # A question about a solution already on the board is answered against
+        # that solution, so the reply is about the step the student is reading.
+        followup_problem = match_worked_solution_followup(request)
+        if followup_problem is not None:
+            try:
+                return _finalize_response(
+                    request,
+                    answer_about_solution(
+                        request,
+                        followup_problem,
+                        session_id=session_id,
+                        llm_client=llm_client,
+                    ),
+                )
+            except Exception:
+                logger.exception(
+                    "visual_tutor solution follow-up failed; using guided flow"
+                )
     # This is the only provider-independent student-facing curriculum demo.
     # It is keyed by the explicit local curriculum version, not loose topic
     # text, so it cannot shadow a production Lesson 1.1 publication.
@@ -514,7 +583,7 @@ def handle_visual_tutor_turn(
     return _finalize_response(
         request,
         _enforce_requested_teaching_mode(
-            _sanitize_response(response, policy),
+            _sanitize_response(response, policy, request),
             request=request,
             policy=policy,
         ),
@@ -528,11 +597,23 @@ def handle_visual_tutor_turn(
 def _sanitize_response(
     response: VisualTutorTurnResponse,
     policy,
+    request: VisualTutorTurnRequest,
 ) -> VisualTutorTurnResponse:
     return sanitize_visual_tutor_response(
         attach_canvas_actions_to_solver_response(response),
         policy=policy,
+        given_values=_problem_given_values(request),
     )
+
+
+def _problem_given_values(request: VisualTutorTurnRequest) -> tuple[str, ...]:
+    # A follow-up turn's message is the student's step, so the saved problem
+    # text is checked first; the message covers the turn that submits it.
+    for text in (request.current_state.problem_text, request.message):
+        problem = parse_limit_of_function(text or "")
+        if problem is not None:
+            return (problem.target_point_display,)
+    return ()
 
 
 def _planner_first_turn(
@@ -2857,6 +2938,7 @@ async def handle_visual_tutor_step_turn(
         subject=request.subject,
         topic="",
         topic_id=str(request.metadata.get("topic_id") or ""),
+        message=problem_text,
     ):
         return _out_of_scope_step_turn(request, grade=grade)
     if not problem_text.strip():

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import re
+from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Iterable, Optional
 
 from api.models.visual_tutor import (
     CanvasElement,
@@ -54,6 +55,12 @@ _ANSWER_ASSIGNMENT_RE = re.compile(
     r"\b[a-zA-Z]\s*=\s*[-+]?\d+(?:\.\d+)?(?:/\d+)?"
     r"(?:\s*[-+*/]\s*[a-zA-Z0-9().]+)*\b"
 )
+# Scoped per sanitize call (the ~15 private helpers below stay pure-signature)
+# so one request's given values can never exempt text in another request.
+_GIVEN_VALUES: ContextVar[frozenset[str]] = ContextVar(
+    "visual_tutor_given_values", default=frozenset()
+)
+_ASSIGNED_NUMBER_RE = re.compile(r"\b[a-zA-Z]\s*=\s*([-+]?\d+(?:\.\d+)?)")
 # Board action types that structurally reveal the answer — must be blocked.
 _STRUCTURAL_ANSWER_ACTION_TYPES = frozenset({
     "final_answer_reveal",
@@ -88,9 +95,26 @@ def sanitize_visual_tutor_response(
     response: VisualTutorTurnResponse,
     *,
     policy: Optional[VisualTutorPolicyDecision] = None,
+    given_values: Iterable[str] = (),
 ) -> VisualTutorTurnResponse:
-    """Remove final-answer leaks from visible tutor response fields while locked."""
+    """Remove final-answer leaks from visible tutor response fields while locked.
 
+    `given_values` are numbers the student's own problem supplies (e.g. a
+    limit's approach point); restating one is not treated as a leak.
+    """
+    token = _GIVEN_VALUES.set(
+        frozenset(_normalize_number(value) for value in given_values if value)
+    )
+    try:
+        return _sanitize_locked_response(response, policy)
+    finally:
+        _GIVEN_VALUES.reset(token)
+
+
+def _sanitize_locked_response(
+    response: VisualTutorTurnResponse,
+    policy: Optional[VisualTutorPolicyDecision],
+) -> VisualTutorTurnResponse:
     if not _should_lock_final_answer(response, policy):
         return validate_board_response(response)
 
@@ -532,6 +556,7 @@ def _sanitize_visible_text(text: str) -> str:
         "?" in sanitized
         and _ANSWER_ASSIGNMENT_RE.search(sanitized)
         and not _is_formula_like_assignment(sanitized)
+        and not _assigns_only_given_values(sanitized)
     ):
         return LOCKED_TEXT_REPLACEMENT
     if _looks_like_answer_assignment(sanitized):
@@ -982,7 +1007,38 @@ def _looks_like_answer_assignment(text: str) -> bool:
 
     if _is_formula_like_assignment(text):
         return False
+    if _assigns_only_given_values(text):
+        return False
     return True
+
+
+def _normalize_number(raw: str) -> str:
+    value = raw.strip().lstrip("+")
+    try:
+        number = float(value)
+    except ValueError:
+        return value.lower()
+    return str(int(number)) if number.is_integer() else str(number)
+
+
+def _assigns_only_given_values(text: str) -> bool:
+    """True when every `var = number` in the text restates a value the
+    student's own problem supplied.
+
+    The leak rules were written for equations, where `x = 5` is the hidden
+    answer. For `lim x->3 (x^2-9)/(x-3)` the tutor must say "substitute x = 3"
+    to teach at all, and 3 is the approach point from the question -- the
+    answer is 6. Treating that as a leak replaced every useful message with
+    "Final answer is locked for now." Only values from the problem itself are
+    exempt, so an equation's answer (absent from its problem text) stays
+    locked, and conclusion phrasing ("so x = 3") is still caught upstream by
+    _ANSWER_PHRASE_RE.
+    """
+    given = _GIVEN_VALUES.get()
+    if not given:
+        return False
+    values = [_normalize_number(match) for match in _ASSIGNED_NUMBER_RE.findall(text)]
+    return bool(values) and all(value in given for value in values)
 
 
 def _is_formula_like_assignment(text: str) -> bool:
