@@ -18,7 +18,7 @@ jobs:
       run:
         working-directory: ai_tutor
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -37,7 +37,7 @@ jobs:
       run:
         working-directory: backend-ai-tutor/backend
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 20
@@ -70,7 +70,7 @@ jobs:
       OPENAI_API_KEY: ""
       GROQ_API_KEY: ""
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
@@ -104,7 +104,7 @@ jobs:
       run:
         working-directory: admin-ai-tutor
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 20
