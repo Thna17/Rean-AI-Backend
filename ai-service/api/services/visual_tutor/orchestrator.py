@@ -172,7 +172,7 @@ def _is_grade12_math_limits_request(
         # matches_local_limits_demo() already relies on for this exact topic.
         return (topic or "").strip().lower() == "limits of functions"
     # Free-form entries (dashboard "ask anything", Tutor "type a question",
-    # voice, scan) all carry LearningContext.askQuestion -- grade 0, subject
+    # and voice) all carry LearningContext.askQuestion -- grade 0, subject
     # "General", no topic_id -- so metadata alone refuses every question a
     # student types, whatever it says. Classify the text instead:
     # parse_limit_of_function only matches a single-variable limit that sympy

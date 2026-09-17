@@ -124,7 +124,7 @@ async def test_private_readiness_never_reports_healthy_without_mongo_or_ai(monke
 
 
 @pytest.mark.asyncio
-async def test_private_readiness_reports_degraded_for_optional_voice_or_scan_dependency(monkeypatch):
+async def test_private_readiness_reports_degraded_for_optional_ocr_dependency(monkeypatch):
     class HealthyAdmin:
         async def command(self, _name):
             return {"ok": 1}
