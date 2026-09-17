@@ -73,6 +73,11 @@ TOPICS_WITH_VERIFIED_SOLVER: Set[str] = {
     "motion with constant acceleration",
     "constant acceleration",
     "ចលនាត្រង់ស្ទុះស្មើ",
+    "chemistry_balancing_equations",
+    "stoichiometry",
+    "chemical equations",
+    "chemistry-g12-stoichiometry",
+    "ស្តូគ្យូមេទ្រី",
 }
 
 _KHMER_RE = re.compile(r"[\u1780-\u17ff]")
@@ -234,6 +239,17 @@ def check_scope(
             or parse_physics_kinematics_problem(problem_text) is not None
         )
         if has_kinematics_problem:
+            has_solver = True
+        elif (norm_topic in TOPICS_WITH_VERIFIED_SOLVER or norm_topic_id in TOPICS_WITH_VERIFIED_SOLVER) and not message and not problem_text:
+            has_solver = True
+    elif norm_subject == SUBJECT_CHEMISTRY:
+        from api.services.visual_tutor.chemistry_stoichiometry import parse_chemistry_stoichiometry_problem
+
+        has_stoichiometry_problem = (
+            parse_chemistry_stoichiometry_problem(message) is not None
+            or parse_chemistry_stoichiometry_problem(problem_text) is not None
+        )
+        if has_stoichiometry_problem:
             has_solver = True
         elif (norm_topic in TOPICS_WITH_VERIFIED_SOLVER or norm_topic_id in TOPICS_WITH_VERIFIED_SOLVER) and not message and not problem_text:
             has_solver = True

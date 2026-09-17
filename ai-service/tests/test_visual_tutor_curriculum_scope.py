@@ -86,13 +86,30 @@ def test_grade_12_physics_unsupported_topic_returns_solver_not_ready() -> None:
     assert "not ready yet" in response.spoken_text.lower() or "មិនទាន់រួចរាល់" in response.spoken_text
 
 
-def test_grade_12_chemistry_balancing_returns_solver_not_ready() -> None:
+def test_grade_12_chemistry_stoichiometry_proceeds_to_worked_solution() -> None:
     response = handle_visual_tutor_turn(
         VisualTutorTurnRequest(
             user_id="student-1",
             subject="Chemistry",
-            topic="Chemical Equations",
-            message="Balance the equation: H2 + O2 -> H2O",
+            topic="Stoichiometry",
+            message="Given the reaction 2H2 + O2 -> 2H2O, how many moles of H2O are produced from 4.0 moles of H2?",
+            action=VisualTutorAction.SUBMIT_PROBLEM,
+            metadata={"grade": 12},
+        )
+    )
+
+    assert response.metadata.get("generation_path") != "scope_locked"
+    assert response.metadata.get("fallback_reason") != "out_of_scope_lock"
+    assert response.metadata.get("worked_solution") is True or "ws-chem" in str(response.board_actions)
+
+
+def test_grade_12_chemistry_unsupported_topic_returns_solver_not_ready() -> None:
+    response = handle_visual_tutor_turn(
+        VisualTutorTurnRequest(
+            user_id="student-1",
+            subject="Chemistry",
+            topic="Titration",
+            message="Calculate the concentration of acid in a neutralization titration with 0.1 M NaOH.",
             action=VisualTutorAction.SUBMIT_PROBLEM,
             metadata={"grade": 12},
         )

@@ -113,6 +113,12 @@ from api.services.visual_tutor.physics_kinematics import (
     match_physics_kinematics_problem,
     match_physics_kinematics_followup,
 )
+from api.services.visual_tutor.chemistry_stoichiometry import (
+    answer_about_chemistry_solution,
+    build_chemistry_worked_solution_turn,
+    match_chemistry_stoichiometry_problem,
+    match_chemistry_stoichiometry_followup,
+)
 from api.services.visual_tutor.scope import (
     build_out_of_scope_message,
     build_solver_not_ready_message,
@@ -466,6 +472,34 @@ def handle_visual_tutor_turn(
                 )
             except Exception:
                 logger.exception("visual_tutor physics kinematics follow-up failed")
+
+    # A chemistry stoichiometry problem is answered with a complete, sympy-verified worked solution.
+    chemistry_problem = match_chemistry_stoichiometry_problem(request)
+    if chemistry_problem is not None:
+        try:
+            return _finalize_response(
+                request,
+                build_chemistry_worked_solution_turn(
+                    request, chemistry_problem, session_id=session_id
+                ),
+            )
+        except Exception:
+            logger.exception("visual_tutor chemistry stoichiometry worked solution failed")
+    else:
+        chemistry_followup = match_chemistry_stoichiometry_followup(request)
+        if chemistry_followup is not None:
+            try:
+                return _finalize_response(
+                    request,
+                    answer_about_chemistry_solution(
+                        request,
+                        chemistry_followup,
+                        session_id=session_id,
+                        llm_client=llm_client,
+                    ),
+                )
+            except Exception:
+                logger.exception("visual_tutor chemistry stoichiometry follow-up failed")
     # This is the only provider-independent student-facing curriculum demo.
     # It is keyed by the explicit local curriculum version, not loose topic
     # text, so it cannot shadow a production Lesson 1.1 publication.
