@@ -74,7 +74,7 @@ langchain-community>=0.4.2
 llama-cpp-python>=0.3.28; platform_machine == "x86_64"
 
 # Audio Processing (for HuBERT resampling)
-scipy>=1.17.1
+scipy>=1.18.1
 
 # HTTP Downloads
 requests>=2.34.2
