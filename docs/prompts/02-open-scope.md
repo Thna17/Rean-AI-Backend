@@ -70,14 +70,11 @@ chemistry — in their own language (Khmer or English), not a bare 403 message.
 - Do not widen response_sanitizer.py or the teaching-plan contract to make any
   of this work. They exist so the tutor cannot leak answers or drift.
 - Do not break the board invariants in GEMINI.md §5.
-- Run ai-service tests with the venv interpreter explicitly:
-    cd ai-service && venv/bin/python3 -m pytest -q \
-      --ignore=tests/trace_cag --ignore=tests/benchmark
-  A bare python3 can resolve to system Python 3.9 and produce fake collection
-  errors.
-- test_visual_tutor_routes.py has 3 pre-existing failures caused by the old
-  scope lock. Opening the scope may change them — decide for each whether it
-  should now pass, be rewritten, or be deleted, and say which.
+- Do not run the full ai-service suite: it runs out of memory on this 8 GB Mac.
+  Use the fast command in GEMINI.md §6 plus the tests for what you changed.
+- test_visual_tutor_routes.py has 3 pre-existing failures with an unknown
+  cause (not the scope lock — the test setup disables it). Do not investigate
+  them in this task; report whether their count changed.
 
 == Done when ==
 

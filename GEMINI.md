@@ -217,6 +217,19 @@ venv/bin/activate` can still resolve to the system Python 3.9 in a
 non-interactive shell, and every `str | None` annotation then fails to evaluate —
 78 collection errors that look alarming and mean nothing.
 
+**Do not run the full ai-service suite while you work.** On this 8 GB Mac it is
+killed for running out of memory (exit 137), and even in chunks it takes a long
+time. Iterate with the visual-tutor tests (80 tests, about 3 seconds):
+
+```bash
+cd ai-service && venv/bin/python3 -m pytest -q \
+  tests/test_visual_tutor_worked_solution.py tests/test_local_limits_demo.py \
+  tests/test_visual_tutor_teaching_plan_contract.py tests/test_visual_tutor_routes.py
+```
+
+plus the test files for whatever you changed. Run only one heavy job (a test
+suite or a Flutter build) at a time.
+
 `tests/trace_cag/` cannot run here at all (`ModuleNotFoundError: langgraph`). It
 belongs to the other codebase lineage, like the stale `CLAUDE.md`. Ignore it.
 
@@ -232,6 +245,10 @@ regression, and do not "fix" them by deleting assertions.
   and without the current changes.
 - Gateway: a missing `getFirestore` mock still causes ~26 failures across 6 test
   files. The fix pattern is already applied in one file — copy it.
+- ai-service: `test_visual_tutor_routes.py` has 3 failures that exist at HEAD
+  and at older commits. Their cause is **unknown** — they are not caused by the
+  scope lock, because the test setup disables it. Do not chase them inside an
+  unrelated task.
 - ai-service: the visual-tutor modules pass on their own (for example
   `tests/test_visual_tutor_worked_solution.py` — 12 passed). The full run takes
   several minutes and also contains failures that predate this work, so measure
