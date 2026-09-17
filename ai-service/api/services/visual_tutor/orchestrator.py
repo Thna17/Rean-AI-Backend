@@ -3025,7 +3025,15 @@ def _language_mode_for_request(request: VisualTutorTurnRequest) -> str | None:
     if request.language_mode is not None:
         return request.language_mode.value
     value = request.metadata.get("language_mode")
-    return str(value).lower() if value in {"khmer", "english", "bilingual"} else None
+    if value:
+        val_str = str(value).strip().lower()
+        if val_str in {"khmer", "km"}:
+            return "khmer"
+        if val_str in {"english", "en"}:
+            return "english"
+        if val_str == "bilingual":
+            return "bilingual"
+    return None
 
 
 def _should_understand_student_input(request: VisualTutorTurnRequest) -> bool:

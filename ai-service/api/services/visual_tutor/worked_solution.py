@@ -360,6 +360,21 @@ def build_worked_solution_turn(
     )
 
 
+def _uses_khmer(request: VisualTutorTurnRequest, problem: Optional[LimitOfFunctionProblem] = None) -> bool:
+    if getattr(problem, "is_khmer", False):
+        return True
+    lang = getattr(request, "language_mode", None)
+    if hasattr(lang, "value"):
+        lang = lang.value
+    val = str(lang or request.metadata.get("language_mode") or "").strip().lower()
+    if val in {"khmer", "km"}:
+        return True
+    locale = (request.locale or "").lower()
+    if locale.startswith("km"):
+        return True
+    return False
+
+
 def _solution_turn(
     request: VisualTutorTurnRequest,
     problem: LimitOfFunctionProblem,
@@ -377,6 +392,15 @@ def _solution_turn(
     discussed stays in front of the student instead of being replaced by a
     bare answer.
     """
+    is_khmer = _uses_khmer(request, problem)
+    effective_task = task
+    if is_khmer and task == "Ask me about any step, or ask to explain it differently.":
+        effective_task = "សួរខ្ញុំអំពីជំហានណាមួយ ឬសុំឱ្យពន្យល់តាមរបៀបផ្សេង។"
+
+    effective_message = message
+    if is_khmer and message == "Here is the worked solution. Ask me about any step, or ask to explain it differently.":
+        effective_message = "នេះជាដំណោះស្រាយលម្អិត។ អ្នកអាចសួរអំពីជំហានណាមួយ ឬសុំឱ្យពន្យល់តាមរបៀបផ្សេងបាន។"
+
     turn_id = str(uuid.uuid4())
     actions: list[VisualTutorBoardAction] = []
     plan_actions: list[dict[str, Any]] = []
@@ -432,7 +456,8 @@ def _solution_turn(
     # server contract forbids a student task alongside a reveal while the
     # Flutter contract requires exactly one task, so a reveal could never
     # coexist with the "ask me about any step" prompt below.
-    add(VisualTutorCanvasActionType.WRITE_TEXT, "answer", text=f"Answer · {solution.answer_text}")
+    answer_label = "ចម្លើយ" if is_khmer else "Answer"
+    add(VisualTutorCanvasActionType.WRITE_TEXT, "answer", text=f"{answer_label} · {solution.answer_text}")
     add(
         VisualTutorCanvasActionType.WRITE_EQUATION,
         "answer",
@@ -451,7 +476,7 @@ def _solution_turn(
         VisualTutorCanvasActionType.STUDENT_TASK,
         "next",
         layout_zone="student_task",
-        text=task,
+        text=effective_task,
         requires_student_response=True,
         task_type="conceptual_operation",
         duration_ms=0,
@@ -461,8 +486,8 @@ def _solution_turn(
         {
             "schema_version": 1,
             "representation": "worked_example",
-            "learning_objective": "Understand every step of finding this limit, and why each step is allowed.",
-            "teaching_message": message,
+            "learning_objective": "យល់គ្រប់ជំហានក្នុងការរកដែនកំណត់នេះ" if is_khmer else "Understand every step of finding this limit, and why each step is allowed.",
+            "teaching_message": effective_message,
             "board_actions": plan_actions,
             "allowed_student_actions": ["submit_answer", "explain_differently", "request_hint"],
             "hidden_answer_policy": {
@@ -485,14 +510,14 @@ def _solution_turn(
         turn_id=turn_id,
         screen_state=VisualTutorScreenState.ASKING_QUESTION,
         tutor_status="Waiting for you",
-        spoken_text=message,
-        display_text=message,
+        spoken_text=effective_message,
+        display_text=effective_message,
         teaching_mode=VisualTutorTeachingMode.FULL_SOLUTION,
         final_answer_locked=False,
-        student_task=task,
+        student_task=effective_task,
         board=VisualTutorBoard(
             type=VisualTutorBoardType.EQUATION_STEPS,
-            title="Worked solution",
+            title="ដំណោះស្រាយលម្អិត" if is_khmer else "Worked solution",
             items=[
                 VisualTutorBoardItem(label=step.heading, content=step.explanation, status="done")
                 for step in solution.steps
@@ -500,7 +525,7 @@ def _solution_turn(
             metadata={"worked_solution": True},
         ),
         board_actions=actions,
-        speech=VisualTutorSpeech(text=message, language="en"),
+        speech=VisualTutorSpeech(text=effective_message, language="km" if is_khmer else "en"),
         interaction=VisualTutorInteraction(
             type=VisualTutorInteractionType.TEXT_RESPONSE,
             prompt=task,
