@@ -336,7 +336,18 @@ Commit per repo, not from the root — `ai_tutor/` has its own history.
 
 ---
 
-## 10. Rules
+## 10. The work queue
+
+`docs/ai-work-prompts.md` holds the remaining work as eleven self-contained
+prompts, in order: remove the scan feature, open the scope to Grade 12 maths /
+physics / chemistry, build the physics and chemistry solvers, make Khmer real,
+make the layout work on phone / tablet / desktop, fix the weak UI, publish the
+curriculum, join it all up, clear the test debt, and look at cost before real
+students use it. Take one at a time.
+
+---
+
+## 11. Rules
 
 **Never enter credentials.** Passwords, API keys and account logins are not
 yours to type, including into the app's own login form, including when someone
