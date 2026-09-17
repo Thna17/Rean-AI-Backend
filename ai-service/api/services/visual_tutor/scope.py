@@ -67,6 +67,12 @@ TOPICS_WITH_VERIFIED_SOLVER: Set[str] = {
     "limits",
     "math-g12-limits-of-functions",
     "math.g12.lesson1.limits-of-functions",
+    "physics_kinematics",
+    "kinematics",
+    "physics-g12-kinematics",
+    "motion with constant acceleration",
+    "constant acceleration",
+    "ចលនាត្រង់ស្ទុះស្មើ",
 }
 
 _KHMER_RE = re.compile(r"[\u1780-\u17ff]")
@@ -219,6 +225,17 @@ def check_scope(
         if norm_topic in TOPICS_WITH_VERIFIED_SOLVER or norm_topic_id in TOPICS_WITH_VERIFIED_SOLVER:
             has_solver = True
         elif parse_limit_of_function(message) is not None or parse_limit_of_function(problem_text) is not None:
+            has_solver = True
+    elif norm_subject == SUBJECT_PHYSICS:
+        from api.services.visual_tutor.physics_kinematics import parse_physics_kinematics_problem
+
+        has_kinematics_problem = (
+            parse_physics_kinematics_problem(message) is not None
+            or parse_physics_kinematics_problem(problem_text) is not None
+        )
+        if has_kinematics_problem:
+            has_solver = True
+        elif (norm_topic in TOPICS_WITH_VERIFIED_SOLVER or norm_topic_id in TOPICS_WITH_VERIFIED_SOLVER) and not message and not problem_text:
             has_solver = True
 
     return ScopeDecision(

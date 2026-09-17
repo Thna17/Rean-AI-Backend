@@ -107,6 +107,12 @@ from api.services.visual_tutor.worked_solution import (
     match_worked_solution,
     match_worked_solution_followup,
 )
+from api.services.visual_tutor.physics_kinematics import (
+    answer_about_physics_solution,
+    build_physics_worked_solution_turn,
+    match_physics_kinematics_problem,
+    match_physics_kinematics_followup,
+)
 from api.services.visual_tutor.scope import (
     build_out_of_scope_message,
     build_solver_not_ready_message,
@@ -434,6 +440,32 @@ def handle_visual_tutor_turn(
                 logger.exception(
                     "visual_tutor solution follow-up failed; using guided flow"
                 )
+
+    # A physics kinematics problem is answered with a complete, sympy-verified worked solution.
+    physics_problem = match_physics_kinematics_problem(request)
+    if physics_problem is not None:
+        try:
+            return _finalize_response(
+                request,
+                build_physics_worked_solution_turn(request, physics_problem, session_id=session_id),
+            )
+        except Exception:
+            logger.exception("visual_tutor physics kinematics worked solution failed")
+    else:
+        physics_followup = match_physics_kinematics_followup(request)
+        if physics_followup is not None:
+            try:
+                return _finalize_response(
+                    request,
+                    answer_about_physics_solution(
+                        request,
+                        physics_followup,
+                        session_id=session_id,
+                        llm_client=llm_client,
+                    ),
+                )
+            except Exception:
+                logger.exception("visual_tutor physics kinematics follow-up failed")
     # This is the only provider-independent student-facing curriculum demo.
     # It is keyed by the explicit local curriculum version, not loose topic
     # text, so it cannot shadow a production Lesson 1.1 publication.

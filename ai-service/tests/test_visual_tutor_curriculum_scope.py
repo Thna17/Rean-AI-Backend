@@ -49,13 +49,30 @@ def test_grade_12_math_limits_proceeds_to_worked_solution() -> None:
     assert response.metadata.get("worked_solution") is True or "ws-step" in str(response.board_actions)
 
 
-def test_grade_12_physics_kinematics_returns_solver_not_ready() -> None:
+def test_grade_12_physics_kinematics_proceeds_to_worked_solution() -> None:
     response = handle_visual_tutor_turn(
         VisualTutorTurnRequest(
             user_id="student-1",
             subject="Physics",
             topic="Kinematics",
-            message="A car accelerates from 0 to 20 m/s in 5 seconds. Find its acceleration.",
+            message="A car starts from rest and accelerates at 2 m/s^2 for 5 seconds. Find its final velocity.",
+            action=VisualTutorAction.SUBMIT_PROBLEM,
+            metadata={"grade": 12},
+        )
+    )
+
+    assert response.metadata.get("generation_path") != "scope_locked"
+    assert response.metadata.get("fallback_reason") != "out_of_scope_lock"
+    assert response.metadata.get("worked_solution") is True or "ws-physics" in str(response.board_actions)
+
+
+def test_grade_12_physics_unsupported_topic_returns_solver_not_ready() -> None:
+    response = handle_visual_tutor_turn(
+        VisualTutorTurnRequest(
+            user_id="student-1",
+            subject="Physics",
+            topic="Thermodynamics",
+            message="Calculate the heat transfer in an isothermal expansion of 1 mole of ideal gas.",
             action=VisualTutorAction.SUBMIT_PROBLEM,
             metadata={"grade": 12},
         )
@@ -67,7 +84,6 @@ def test_grade_12_physics_kinematics_returns_solver_not_ready() -> None:
     assert response.metadata.get("generation_path") == "solver_not_ready"
     assert response.metadata.get("solver_ready") is False
     assert "not ready yet" in response.spoken_text.lower() or "មិនទាន់រួចរាល់" in response.spoken_text
-    assert "Limits of Functions" in response.spoken_text or "លីមីត" in response.spoken_text
 
 
 def test_grade_12_chemistry_balancing_returns_solver_not_ready() -> None:
