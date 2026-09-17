@@ -325,11 +325,9 @@ class Settings(BaseSettings):
         "VISUAL_TUTOR_DEBUG_ERRORS",
         "false" if ENVIRONMENT == "production" else "true",
     ).lower() == "true"
-    # Restricts every Visual Tutor turn to Grade 12 limits-of-functions while
-    # the rest of the pipeline is being stabilized. Set to "" (empty) to lift
-    # the lock once other scopes are ready again; physics/chemistry/other
-    # grades stay in the codebase, just gated off, not deleted.
-    VISUAL_TUTOR_SCOPE_LOCK: str = os.getenv("VISUAL_TUTOR_SCOPE_LOCK", "grade12_math_limits")
+    # Restricts Visual Tutor turns to Grade 12 Mathematics, Physics, and Chemistry.
+    # Set to "" (empty) to lift the lock entirely. Backwards-compatible with "grade12_math_limits".
+    VISUAL_TUTOR_SCOPE_LOCK: str = os.getenv("VISUAL_TUTOR_SCOPE_LOCK", "grade12_stem")
     # local_limits_demo.py's fully scripted, deterministic board for the
     # Grade 12 limits-of-functions lesson is kept only as a reference/known-
     # good comparison now that LimitOfFunctionSolver + the dynamic LLM
@@ -342,8 +340,8 @@ class Settings(BaseSettings):
     ).lower() == "true"
     # Disabled by default. A pilot cannot be opened by a client request alone.
     VISUAL_TUTOR_PILOT_ENABLED: bool = os.getenv("VISUAL_TUTOR_PILOT_ENABLED", "false").lower() == "true"
-    VISUAL_TUTOR_PILOT_GRADES: str = os.getenv("VISUAL_TUTOR_PILOT_GRADES", "10")
-    VISUAL_TUTOR_PILOT_SUBJECTS: str = os.getenv("VISUAL_TUTOR_PILOT_SUBJECTS", "")
+    VISUAL_TUTOR_PILOT_GRADES: str = os.getenv("VISUAL_TUTOR_PILOT_GRADES", "12")
+    VISUAL_TUTOR_PILOT_SUBJECTS: str = os.getenv("VISUAL_TUTOR_PILOT_SUBJECTS", "mathematics,physics,chemistry")
     VISUAL_TUTOR_PILOT_LESSONS: str = os.getenv("VISUAL_TUTOR_PILOT_LESSONS", "")
     VISUAL_TUTOR_PILOT_LANGUAGE_MODES: str = os.getenv("VISUAL_TUTOR_PILOT_LANGUAGE_MODES", "khmer,english,bilingual")
     

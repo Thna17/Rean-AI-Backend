@@ -596,6 +596,13 @@ def _non_math_subject_result(
             "board_type": VisualTutorBoardType.WORD_PROBLEM_BREAKDOWN,
             "clarification": "តើអ្នកចង់ឱ្យពន្យល់ពាក្យ ឃ្លា ឬវេយ្យាករណ៍មួយណាមុន?",
         },
+        "biology": {
+            "subject": "Biology",
+            "topic": request.topic or "Biology Concepts",
+            "problem_type": "biology_concept_question",
+            "board_type": VisualTutorBoardType.WORD_PROBLEM_BREAKDOWN,
+            "clarification": "Biology is not currently in scope for this tutor.",
+        },
     }[subject_route]
     return _result(
         request,
@@ -681,12 +688,18 @@ def _subject_route(subject: str, message: str, language: str) -> str:
         return "physics"
     if normalized in {"chemistry"}:
         return "chemistry"
+    if normalized in {"biology"}:
+        return "biology"
     if normalized in {"english", "english language"}:
         return "english"
     if normalized in {"khmer", "khmer language"}:
         return "khmer"
 
     lowered = message.lower()
+    if re.search(r"\b(cell|cells|photosynthesis|mitosis|meiosis|dna|rna|genetics|organism|ecosystem|species|biology)\b", lowered):
+        return "biology"
+    if re.search(r"(ជីវវិទ្យា|កោសិកា|រស្មីសំយោគ|ហ្សែន)", message):
+        return "biology"
     if language == "km" and re.search(r"(អក្សរ|ភាសាខ្មែរ|វេយ្យាករណ៍|ពាក្យ)", message):
         return "khmer"
     if re.search(r"\b(grammar|sentence|verb|noun|adjective|tense|essay)\b", lowered):

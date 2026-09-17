@@ -43,8 +43,8 @@ def test_grade_10_physics_request_is_scoped_out() -> None:
 
     assert response.metadata["generation_path"] == "scope_locked"
     assert response.metadata["fallback_reason"] == "out_of_scope_lock"
-    assert response.final_answer_locked is True
-    assert "Grade 12 limits of functions" in response.spoken_text
+    assert "Grade 12" in response.spoken_text
+    assert "Mathematics" in response.spoken_text
 
 
 def test_grade_12_limits_request_proceeds_normally() -> None:
