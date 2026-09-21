@@ -7,7 +7,13 @@ from fastapi.testclient import TestClient
 from jose import jwt
 
 # api.routes eagerly imports analytics routes that require optional KuzuDB.
-sys.modules.setdefault("kuzu", MagicMock())
+# Stub it only when it is not installed: a stub left in sys.modules replaces
+# the real database for every later test (the KG tests then loop forever on
+# a MagicMock result).
+try:
+    import kuzu  # noqa: F401
+except ImportError:
+    sys.modules["kuzu"] = MagicMock()
 from api.routes import stt as stt_route
 from api.services.stt.audio_ingest import HEADER
 from api.services.stt.config import STTConfig
