@@ -119,10 +119,23 @@ from api.services.visual_tutor.chemistry_stoichiometry import (
     match_chemistry_stoichiometry_problem,
     match_chemistry_stoichiometry_followup,
 )
+from api.services.visual_tutor.rag_curriculum_gate import (
+    classify_student_query,
+    ClassificationResult,
+)
+from api.services.visual_tutor.dynamic_worked_solution import (
+    build_dynamic_worked_solution_turn,
+    answer_dynamic_followup,
+)
 from api.services.visual_tutor.scope import (
     build_out_of_scope_message,
     build_solver_not_ready_message,
     check_scope,
+)
+from api.services.visual_tutor.topic_guard import (
+    TopicGuardDecision,
+    build_off_topic_message,
+    evaluate_topic_guard,
 )
 from api.services.visual_tutor.solvers import (
     LineThroughPoints,
@@ -252,6 +265,66 @@ def _out_of_scope_turn(
         interaction=VisualTutorInteraction(
             type=VisualTutorInteractionType.TEXT_RESPONSE,
             prompt=refusal["student_task"],
+            input_enabled=True,
+            expected_answer_locked=False,
+        ),
+        allowed_actions=[],
+        mastery_signal=VisualTutorMasterySignal.EXPLORING,
+        metadata=metadata,
+    )
+
+
+def _off_topic_for_lesson_turn(
+    request: VisualTutorTurnRequest,
+    *,
+    session_id: str,
+    decision: TopicGuardDecision,
+) -> VisualTutorTurnResponse:
+    """Redirect a problem that does not belong to the lesson the student opened."""
+    lang_mode = str(
+        getattr(request.language_mode, "value", request.language_mode)
+        or request.metadata.get("language_mode")
+        or "english"
+    )
+    redirect = build_off_topic_message(decision, lang_mode)
+    message = redirect["display_text"]
+    metadata = {
+        "screen_state": "unsupported_problem",
+        "generation_path": "topic_guard",
+        "fallback_reason": "off_topic_for_lesson",
+        "topic_guard": {
+            "lesson_topic": decision.lesson_topic,
+            "lesson_family": decision.lesson_family,
+            "detected_family": decision.detected_family,
+        },
+    }
+    return VisualTutorTurnResponse(
+        session_id=session_id,
+        turn_id=str(uuid.uuid4()),
+        spoken_text=message,
+        display_text=message,
+        teaching_mode=VisualTutorTeachingMode.GUIDED_QUESTION,
+        final_answer_locked=True,
+        student_task=redirect["student_task"],
+        board=VisualTutorBoard(
+            type=VisualTutorBoardType.FORMULA_CARD,
+            title=redirect["board_title"],
+            items=[
+                VisualTutorBoardItem(
+                    label="Status",
+                    content=redirect["board_content"],
+                    status="active",
+                ),
+            ],
+            metadata=metadata,
+        ),
+        speech=VisualTutorSpeech(
+            text=message,
+            language="km" if lang_mode.lower() in {"khmer", "km"} else "en",
+        ),
+        interaction=VisualTutorInteraction(
+            type=VisualTutorInteractionType.TEXT_RESPONSE,
+            prompt=redirect["student_task"],
             input_enabled=True,
             expected_answer_locked=False,
         ),
@@ -415,6 +488,21 @@ def handle_visual_tutor_turn(
                 return _finalize_response(
                     request, _out_of_scope_turn(request, session_id=session_id)
                 )
+    # A lesson opened from the curriculum only teaches its own topic.
+    topic_decision = evaluate_topic_guard(request)
+    if topic_decision is not None and not topic_decision.allowed:
+        logger.info(
+            "visual_tutor_topic_redirect lesson_topic=%r lesson_family=%r detected=%r action=%r message=%r",
+            topic_decision.lesson_topic,
+            topic_decision.lesson_family,
+            topic_decision.detected_family,
+            getattr(request.action, "value", request.action),
+            (request.message or "")[:200],
+        )
+        return _finalize_response(
+            request,
+            _off_topic_for_lesson_turn(request, session_id=session_id, decision=topic_decision),
+        )
     # A new limit problem is answered with the complete, sympy-verified worked
     # solution by default. Students who choose "Try it myself" (tutor_mode)
     # keep the guided, one-step-at-a-time flow below.
@@ -538,30 +626,121 @@ def handle_visual_tutor_turn(
     if not problem_message:
         return _finalize_response(request, _greeting(request, session_id=session_id))
 
-    # If scope lock is active, intercept in-scope topics that do not yet have
-    # a verified deterministic solver, returning an honest "not ready yet" turn.
-    # This prevents ungrounded LLM execution and unchecked DeepSeek arithmetic.
-    if _scope_lock_active() and settings.VISUAL_TUTOR_SCOPE_LOCK.strip().lower() != _SCOPE_LOCK_GRADE12_MATH_LIMITS:
-        if scope_decision is None:
-            scope_decision = check_scope(
-                grade=grade,
-                subject=request.subject,
-                topic=request.topic,
-                topic_id=str(request.metadata.get("topic_id") or "") if request.metadata.get("topic_id") else None,
-                message=problem_message,
-                problem_text=request.current_state.problem_text or "",
-                language_mode=str(lang_mode) if lang_mode else None,
+    # Check if student explicitly chose "try_myself" mode
+    metadata = request.metadata if isinstance(request.metadata, dict) else {}
+    is_try_myself = str(metadata.get("tutor_mode") or "").strip().lower() == "try_myself"
+
+    if not is_try_myself:
+        # Dynamic RAG Curriculum Pipeline:
+        # 1. Check if student message is a follow-up question on an existing whiteboard problem
+        current_problem = (request.current_state.problem_text or "").strip()
+        user_msg = (request.message or "").strip()
+        is_same_as_problem = (
+            user_msg.lower() == current_problem.lower()
+            or (len(user_msg) > 10 and user_msg.lower() in current_problem.lower())
+        )
+        is_followup_question = (
+            request.action in {
+                VisualTutorAction.SUBMIT_STEP,
+                VisualTutorAction.REQUEST_HINT,
+                VisualTutorAction.REQUEST_STUCK_HELP,
+                VisualTutorAction.EXPLAIN_DIFFERENTLY,
+            }
+            or any(
+                w in user_msg.lower()
+                for w in (
+                    "why", "how", "what", "where", "can you", "could you",
+                    "explain", "meaning", "mean", "តើ", "ហេតុអ្វី", "ដូចម្តេច",
+                    "យ៉ាងម៉េច", "ពន្យល់",
+                )
             )
-        if not scope_decision.has_verified_solver:
+            or "?" in user_msg
+            or "step" in user_msg.lower()
+            or "ជំហាន" in user_msg
+        )
+        if current_problem and user_msg and not is_same_as_problem and is_followup_question:
+            is_fresh_limit = parse_limit_of_function(user_msg) is not None
+            is_fresh_physics = match_physics_kinematics_problem(request) is not None
+            is_fresh_chemistry = match_chemistry_stoichiometry_problem(request) is not None
+            if not (is_fresh_limit or is_fresh_physics or is_fresh_chemistry):
+                classification = classify_student_query(
+                    current_problem,
+                    grade=grade,
+                    subject=request.subject,
+                    topic=request.topic,
+                )
+                if classification.tier == "out_of_scope":
+                    return _finalize_response(
+                        request,
+                        _out_of_scope_turn(request, session_id=session_id),
+                    )
+                try:
+                    return _finalize_response(
+                        request,
+                        answer_dynamic_followup(
+                            request,
+                            classification,
+                            session_id=session_id,
+                            llm_client=llm_client,
+                        ),
+                    )
+                except Exception:
+                    logger.exception("answer_dynamic_followup failed; continuing to solver")
+
+        # 2. Otherwise, it is a problem to solve (START / SUBMIT_PROBLEM / SUBMIT_STEP)
+        target_text = problem_message or user_msg
+        classification = classify_student_query(
+            target_text,
+            grade=grade,
+            subject=request.subject,
+            topic=request.topic,
+        )
+        if classification.tier == "out_of_scope":
             return _finalize_response(
                 request,
-                _solver_not_ready_turn(
+                _out_of_scope_turn(request, session_id=session_id),
+            )
+
+        # Tier 1 (Verified) or Tier 2 (Unverified AI Guidance):
+        # If client or configuration strictly requires a verified solver, degrade honestly
+        require_verified = bool(
+            metadata.get("require_verified_solver")
+            or not settings.VISUAL_TUTOR_ALLOW_UNVERIFIED_AI
+        )
+        if require_verified and classification.tier != "verified":
+            if scope_decision is None:
+                scope_decision = check_scope(
+                    grade=grade,
+                    subject=request.subject,
+                    topic=request.topic,
+                    topic_id=str(request.metadata.get("topic_id") or "") if request.metadata.get("topic_id") else None,
+                    message=problem_message,
+                    problem_text=request.current_state.problem_text or "",
+                    language_mode=str(lang_mode) if lang_mode else None,
+                )
+            if not scope_decision.has_verified_solver:
+                return _finalize_response(
                     request,
+                    _solver_not_ready_turn(
+                        request,
+                        session_id=session_id,
+                        subject=scope_decision.subject,
+                        topic=scope_decision.topic,
+                    ),
+                )
+
+        try:
+            return _finalize_response(
+                request,
+                build_dynamic_worked_solution_turn(
+                    request,
+                    classification,
                     session_id=session_id,
-                    subject=scope_decision.subject,
-                    topic=scope_decision.topic,
+                    llm_client=llm_client,
                 ),
             )
+        except Exception:
+            logger.exception("build_dynamic_worked_solution_turn failed; falling through to guided flow")
 
     # Step-gating: if a student_task is pending (pending_interaction in
     # session metadata) and the student sent a blank or non-substantive
@@ -1993,7 +2172,11 @@ def _finalize_response(
         response_metadata["verification_result"] = verification_contract["status"]
         response_metadata["verification_evidence"] = verification_contract["evidence"]
         response_metadata["verification_verified"] = is_correct_operation
-    elif request.action == VisualTutorAction.SUBMIT_STEP:
+    elif (
+        request.action == VisualTutorAction.SUBMIT_STEP
+        and response.metadata.get("board_update_mode") != "append"
+        and not response.metadata.get("is_followup")
+    ):
         problem = request.current_state.problem_text or request.metadata.get(
             "problem_text"
         )
@@ -2063,6 +2246,26 @@ def _finalize_response(
         ),
         "verification": response_metadata.get("verification_result"),
     }
+    # Ensure follow-up turns preserve board_update_mode="append" and monotonic board_version
+    is_followup_turn = bool(
+        response.metadata.get("board_update_mode") == "append"
+        or response.metadata.get("is_followup")
+    )
+    if is_followup_turn:
+        current_ver = (
+            request.client_board_version
+            or request.metadata.get("client_board_version")
+            or request.metadata.get("board_version")
+            or getattr(request.current_state, "board_version", None)
+            or response.metadata.get("base_board_version")
+            or 1
+        )
+        bumped_ver = current_ver + 1
+        response_metadata["board_version"] = bumped_ver
+        response_metadata["base_board_version"] = current_ver
+        response_metadata["board_update_mode"] = "append"
+        response_metadata["is_followup"] = True
+
     response_metadata = _public_response_metadata(response_metadata)
     final_response = enriched_response.model_copy(
         update={
@@ -2072,6 +2275,8 @@ def _finalize_response(
             "speech": speech,
             "interaction": interaction,
             "quick_actions": quick_actions,
+            "board_version": response_metadata.get("board_version", enriched_response.board_version),
+            "base_board_version": response_metadata.get("base_board_version", enriched_response.base_board_version),
             "metadata": response_metadata,
         }
     )
@@ -2302,6 +2507,7 @@ def _fallback_reason(metadata: dict[str, Any], response_source: str) -> Optional
         "structured_template_response",
         "reviewed_curriculum_required",
         "out_of_scope_lock",
+        "off_topic_for_lesson",
     }:
         return str(reason)
     if response_source == "template_fallback":
@@ -2661,9 +2867,10 @@ def _resolve_tutor_status(
 
 def _grade_from_request(request: VisualTutorTurnRequest) -> Optional[int]:
     raw = (
-        request.metadata.get("grade")
-        or request.metadata.get("grade_level")
-        or request.metadata.get("grade_level_hint")
+        getattr(request, "grade", None)
+        or (request.metadata.get("grade") if isinstance(request.metadata, dict) else None)
+        or (request.metadata.get("grade_level") if isinstance(request.metadata, dict) else None)
+        or (request.metadata.get("grade_level_hint") if isinstance(request.metadata, dict) else None)
     )
     if raw is None:
         return None
