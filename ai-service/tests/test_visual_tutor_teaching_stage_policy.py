@@ -29,6 +29,12 @@ from api.services.visual_tutor.teaching_stage_policy import (
     decide_live_teaching_stage_policy,
 )
 
+import pytest
+
+# These tests cover the guided "Try it myself" flow (answer locked, one
+# step at a time); the default full-solution flow is covered elsewhere.
+pytestmark = pytest.mark.usefixtures("guided_tutor_mode")
+
 
 def test_first_problem_gives_one_focused_visual_action_group() -> None:
     response = handle_visual_tutor_turn(

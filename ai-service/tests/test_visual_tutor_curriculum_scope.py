@@ -1,9 +1,10 @@
-"""Curriculum scope tests for Grade 12 Mathematics, Physics, and Chemistry.
+"""Curriculum scope tests for Grade 10-12 Mathematics, Physics, and Chemistry.
 
-Visual Tutor is scoped to Grade 12 Mathematics, Physics, and Chemistry in
-English and Khmer. Topics without a verified solver return an honest "not ready yet"
-turn response, preventing unchecked LLM arithmetic. Out-of-scope requests
-(e.g., Grade 10, Grade 12 Biology) receive helpful bilingual refusals.
+Visual Tutor is scoped to Grade 10-12 Mathematics, Physics, and Chemistry in
+English and Khmer. In-scope topics without a deterministic solver get a worked
+solution labelled ``curriculum_status: ai_unverified`` so it is never passed
+off as verified. Out-of-scope requests (e.g., Grade 9, Biology) receive helpful
+bilingual refusals.
 """
 
 import pytest
@@ -66,7 +67,7 @@ def test_grade_12_physics_kinematics_proceeds_to_worked_solution() -> None:
     assert response.metadata.get("worked_solution") is True or "ws-physics" in str(response.board_actions)
 
 
-def test_grade_12_physics_unsupported_topic_returns_solver_not_ready() -> None:
+def test_grade_12_physics_topic_without_solver_is_answered_as_unverified() -> None:
     response = handle_visual_tutor_turn(
         VisualTutorTurnRequest(
             user_id="student-1",
@@ -78,12 +79,11 @@ def test_grade_12_physics_unsupported_topic_returns_solver_not_ready() -> None:
         )
     )
 
-    # Must NOT be refused as out_of_scope_lock
+    # In scope, answered, and honestly labelled as not verified by a solver.
     assert response.metadata.get("fallback_reason") != "out_of_scope_lock"
-    # Must be in-scope and return honest solver_not_ready response
-    assert response.metadata.get("generation_path") == "solver_not_ready"
-    assert response.metadata.get("solver_ready") is False
-    assert "not ready yet" in response.spoken_text.lower() or "មិនទាន់រួចរាល់" in response.spoken_text
+    assert response.metadata.get("worked_solution") is True
+    assert response.metadata.get("verified") is False
+    assert response.metadata.get("curriculum_status") == "ai_unverified"
 
 
 def test_grade_12_chemistry_stoichiometry_proceeds_to_worked_solution() -> None:
@@ -103,7 +103,7 @@ def test_grade_12_chemistry_stoichiometry_proceeds_to_worked_solution() -> None:
     assert response.metadata.get("worked_solution") is True or "ws-chem" in str(response.board_actions)
 
 
-def test_grade_12_chemistry_unsupported_topic_returns_solver_not_ready() -> None:
+def test_grade_12_chemistry_topic_without_solver_is_answered_as_unverified() -> None:
     response = handle_visual_tutor_turn(
         VisualTutorTurnRequest(
             user_id="student-1",
@@ -115,15 +115,14 @@ def test_grade_12_chemistry_unsupported_topic_returns_solver_not_ready() -> None
         )
     )
 
-    # Must NOT be refused as out_of_scope_lock
+    # In scope, answered, and honestly labelled as not verified by a solver.
     assert response.metadata.get("fallback_reason") != "out_of_scope_lock"
-    # Must be in-scope and return honest solver_not_ready response
-    assert response.metadata.get("generation_path") == "solver_not_ready"
-    assert response.metadata.get("solver_ready") is False
-    assert "not ready yet" in response.spoken_text.lower() or "មិនទាន់រួចរាល់" in response.spoken_text
+    assert response.metadata.get("worked_solution") is True
+    assert response.metadata.get("verified") is False
+    assert response.metadata.get("curriculum_status") == "ai_unverified"
 
 
-def test_grade_12_math_other_topic_returns_solver_not_ready() -> None:
+def test_grade_12_math_topic_without_solver_is_answered_as_unverified() -> None:
     response = handle_visual_tutor_turn(
         VisualTutorTurnRequest(
             user_id="student-1",
@@ -136,8 +135,8 @@ def test_grade_12_math_other_topic_returns_solver_not_ready() -> None:
     )
 
     assert response.metadata.get("fallback_reason") != "out_of_scope_lock"
-    assert response.metadata.get("generation_path") == "solver_not_ready"
-    assert response.metadata.get("solver_ready") is False
+    assert response.metadata.get("worked_solution") is True
+    assert response.metadata.get("curriculum_status") == "ai_unverified"
 
 
 # ==============================================================================
@@ -145,7 +144,7 @@ def test_grade_12_math_other_topic_returns_solver_not_ready() -> None:
 # ==============================================================================
 
 
-def test_grade_10_mathematics_is_refused_with_helpful_message() -> None:
+def test_grade_10_mathematics_is_in_scope() -> None:
     response = handle_visual_tutor_turn(
         VisualTutorTurnRequest(
             user_id="student-1",
@@ -157,17 +156,11 @@ def test_grade_10_mathematics_is_refused_with_helpful_message() -> None:
         )
     )
 
-    assert response.metadata["generation_path"] == "scope_locked"
-    assert response.metadata["fallback_reason"] == "out_of_scope_lock"
-    assert response.final_answer_locked is True
-    # Refusal must explain what IS supported: Grade 12 Math, Physics, Chemistry
-    text = response.spoken_text
-    assert "Grade 12" in text or "ថ្នាក់ទី១២" in text
-    assert "Physics" in text or "រូបវិទ្យា" in text
-    assert "Chemistry" in text or "គីមីវិទ្យា" in text
+    assert response.metadata.get("generation_path") != "scope_locked"
+    assert response.metadata.get("fallback_reason") != "out_of_scope_lock"
 
 
-def test_grade_10_physics_is_refused_with_helpful_message() -> None:
+def test_grade_10_physics_is_in_scope() -> None:
     response = handle_visual_tutor_turn(
         VisualTutorTurnRequest(
             user_id="student-1",
@@ -179,14 +172,11 @@ def test_grade_10_physics_is_refused_with_helpful_message() -> None:
         )
     )
 
-    assert response.metadata["generation_path"] == "scope_locked"
-    assert response.metadata["fallback_reason"] == "out_of_scope_lock"
-    text = response.spoken_text
-    assert "Grade 12" in text or "ថ្នាក់ទី១២" in text
-    assert "Physics" in text or "រូបវិទ្យា" in text
+    assert response.metadata.get("generation_path") != "scope_locked"
+    assert response.metadata.get("fallback_reason") != "out_of_scope_lock"
 
 
-def test_grade_10_chemistry_is_refused_with_helpful_message() -> None:
+def test_grade_10_chemistry_is_in_scope() -> None:
     response = handle_visual_tutor_turn(
         VisualTutorTurnRequest(
             user_id="student-1",
@@ -198,10 +188,29 @@ def test_grade_10_chemistry_is_refused_with_helpful_message() -> None:
         )
     )
 
+    assert response.metadata.get("generation_path") != "scope_locked"
+    assert response.metadata.get("fallback_reason") != "out_of_scope_lock"
+
+
+def test_grade_9_mathematics_is_refused_with_helpful_message() -> None:
+    response = handle_visual_tutor_turn(
+        VisualTutorTurnRequest(
+            user_id="student-1",
+            subject="Mathematics",
+            topic="Linear Equations",
+            message="Solve 2x + 3 = 7",
+            action=VisualTutorAction.SUBMIT_PROBLEM,
+            metadata={"grade": 9},
+        )
+    )
+
     assert response.metadata["generation_path"] == "scope_locked"
     assert response.metadata["fallback_reason"] == "out_of_scope_lock"
+    assert response.final_answer_locked is True
+    # Refusal must explain what IS supported: Grade 10-12 Math, Physics, Chemistry
     text = response.spoken_text
-    assert "Grade 12" in text or "ថ្នាក់ទី១២" in text
+    assert "Grade 10–12" in text or "ថ្នាក់ទី១០" in text
+    assert "Physics" in text or "រូបវិទ្យា" in text
     assert "Chemistry" in text or "គីមីវិទ្យា" in text
 
 
@@ -220,7 +229,7 @@ def test_grade_12_biology_is_refused_with_helpful_message() -> None:
     assert response.metadata["generation_path"] == "scope_locked"
     assert response.metadata["fallback_reason"] == "out_of_scope_lock"
     text = response.spoken_text
-    assert "Grade 12" in text or "ថ្នាក់ទី១២" in text
+    assert "Grade 10–12" in text or "ថ្នាក់ទី១០" in text
     assert "Mathematics" in text or "គណិតវិទ្យា" in text
     assert "Physics" in text or "រូបវិទ្យា" in text
     assert "Chemistry" in text or "គីមីវិទ្យា" in text
@@ -240,7 +249,7 @@ def test_khmer_language_mode_refusal_is_bilingual_or_khmer() -> None:
     )
 
     assert response.metadata["generation_path"] == "scope_locked"
-    assert "ថ្នាក់ទី១២" in response.spoken_text
+    assert "ថ្នាក់ទី១០" in response.spoken_text
     assert ("គណិតវិទ្យា" in response.spoken_text or "រូបវិទ្យា" in response.spoken_text or "គីមីវិទ្យា" in response.spoken_text)
 
 
@@ -283,7 +292,7 @@ def test_pilot_scope_permits_grade_12_chemistry(monkeypatch) -> None:
     enforce_pilot_scope(req)
 
 
-def test_pilot_scope_refuses_grade_10_with_helpful_403(monkeypatch) -> None:
+def test_pilot_scope_permits_grade_10_physics(monkeypatch) -> None:
     from api.core.config import settings
 
     monkeypatch.setattr(settings, "VISUAL_TUTOR_PILOT_ENABLED", True)
@@ -296,10 +305,27 @@ def test_pilot_scope_refuses_grade_10_with_helpful_403(monkeypatch) -> None:
         action=VisualTutorAction.SUBMIT_PROBLEM,
         metadata={"grade": 10},
     )
+    # Must NOT raise HTTPException 403
+    enforce_pilot_scope(req)
+
+
+def test_pilot_scope_refuses_grade_9_with_helpful_403(monkeypatch) -> None:
+    from api.core.config import settings
+
+    monkeypatch.setattr(settings, "VISUAL_TUTOR_PILOT_ENABLED", True)
+
+    req = VisualTutorTurnRequest(
+        user_id="student-1",
+        subject="Physics",
+        topic="Kinematics",
+        message="Find speed.",
+        action=VisualTutorAction.SUBMIT_PROBLEM,
+        metadata={"grade": 9},
+    )
     with pytest.raises(HTTPException) as exc_info:
         enforce_pilot_scope(req)
     assert exc_info.value.status_code == 403
-    assert "Grade 12" in exc_info.value.detail or "ថ្នាក់ទី១២" in exc_info.value.detail
+    assert "Grade 10–12" in exc_info.value.detail or "ថ្នាក់ទី១០" in exc_info.value.detail
 
 
 def test_pilot_scope_refuses_biology_with_helpful_403(monkeypatch) -> None:
@@ -318,4 +344,4 @@ def test_pilot_scope_refuses_biology_with_helpful_403(monkeypatch) -> None:
     with pytest.raises(HTTPException) as exc_info:
         enforce_pilot_scope(req)
     assert exc_info.value.status_code == 403
-    assert "Grade 12" in exc_info.value.detail or "ថ្នាក់ទី១២" in exc_info.value.detail
+    assert "Grade 10–12" in exc_info.value.detail or "ថ្នាក់ទី១០" in exc_info.value.detail

@@ -7,6 +7,10 @@ from api.models.visual_tutor import VisualTutorAction, VisualTutorTurnRequest
 from api.routes.math_verifier import verify_student_work
 from api.services.visual_tutor.orchestrator import handle_visual_tutor_turn
 
+# These tests cover the guided "Try it myself" flow (answer locked, one
+# step at a time); the default full-solution flow is covered elsewhere.
+pytestmark = pytest.mark.usefixtures("guided_tutor_mode")
+
 
 @pytest.mark.parametrize(
     ("problem", "student_step", "expected_step", "status", "verified"),

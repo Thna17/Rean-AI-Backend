@@ -18,6 +18,10 @@ from api.services.visual_tutor.problem_understanding import (
 )
 from api.services.visual_tutor.solvers import parse_linear_equation
 
+# These tests cover the guided "Try it myself" flow (answer locked, one
+# step at a time); the default full-solution flow is covered elsewhere.
+pytestmark = pytest.mark.usefixtures("guided_tutor_mode")
+
 
 @pytest.mark.parametrize(
     ("problem", "variable", "first_step", "final_answer"),

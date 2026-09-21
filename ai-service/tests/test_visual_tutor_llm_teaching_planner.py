@@ -362,9 +362,8 @@ def test_llm_receives_solver_facts_and_curriculum_context_for_supported_linear_e
     assert user_prompt["solver_facts"]["sympy_verified"] is True
     assert user_prompt["curriculum_context"]["chunk_ids"]
     assert user_prompt["curriculum_context"]["formulas"]
-    assert "Use curriculum only for explanation and grounding." in (
-        user_prompt["curriculum_context"]["usage_rules"][0]
-    )
+    # Standing rules live in the cached system prompt, not in every turn.
+    assert "use it only to ground explanations" in fake_llm.calls[0]["system_prompt"]
 
 
 def test_line_through_points_uses_planner_and_solver_facts_when_llm_configured() -> None:
@@ -480,9 +479,11 @@ def test_llm_generates_visual_board_action_for_linear_regression() -> None:
     assert user_prompt["problem_understanding"]["problem_type"] == "linear_regression"
     assert user_prompt["problem_understanding"]["extracted_entities"]["slope"] == "3/2"
     assert user_prompt["problem_understanding"]["extracted_entities"]["intercept"] == "2/3"
+    # The guided first turn gives one focused visual update and waits for the
+    # student (see test_first_problem_gives_one_focused_visual_action_group),
+    # so the plot starts with its axes; points and the trend come next turns.
     assert "draw_axes" in action_types
-    assert "draw_point" in action_types
-    assert "graph_annotation" in action_types
+    assert "student_task" in action_types
     assert response.interaction is not None
 
 
@@ -597,12 +598,12 @@ def test_llm_returns_valid_live_teaching_stage_json() -> None:
         "metadata",
     ]
     assert (
-        "Do not include arbitrary code."
-        in user_prompt["live_teaching_stage_schema"]["rules"][2]
+        "Do not generate arbitrary code"
+        in fake_llm.calls[0]["system_prompt"]
     )
     assert (
         "Do not return markdown-only answers"
-        in user_prompt["live_teaching_stage_schema"]["rules"][4]
+        in fake_llm.calls[0]["system_prompt"]
     )
 
 
@@ -1529,8 +1530,8 @@ def test_llm_receives_curriculum_context_for_unsupported_topic() -> None:
     )
     assert user_prompt["curriculum_context"]["formulas"]
     assert (
-        "Do not include worked example answers"
-        in user_prompt["curriculum_context"]["usage_rules"][2]
+        "Do not copy worked example answers"
+        in fake_llm.calls[0]["system_prompt"]
     )
 
 
@@ -2079,6 +2080,10 @@ def test_codex_cli_provider_failure_uses_template_fallback(
 
 import math
 from api.services.visual_tutor.llm_teaching_planner import _compute_board_next_y
+
+# These tests cover the guided "Try it myself" flow (answer locked, one
+# step at a time); the default full-solution flow is covered elsewhere.
+pytestmark = pytest.mark.usefixtures("guided_tutor_mode")
 
 def test_compute_board_next_y_empty_list() -> None:
     assert _compute_board_next_y([]) == 40.0

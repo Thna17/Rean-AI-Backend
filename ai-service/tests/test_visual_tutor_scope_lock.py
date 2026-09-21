@@ -29,7 +29,7 @@ def _scope_lock_enabled(monkeypatch):
     monkeypatch.setattr(settings, "VISUAL_TUTOR_SCOPE_LOCK", "grade12_math_limits")
 
 
-def test_grade_10_physics_request_is_scoped_out() -> None:
+def test_grade_9_physics_request_is_scoped_out() -> None:
     response = handle_visual_tutor_turn(
         VisualTutorTurnRequest(
             user_id="student-1",
@@ -37,13 +37,13 @@ def test_grade_10_physics_request_is_scoped_out() -> None:
             topic="Kinematics",
             message="A ball is thrown upward at 20 m/s. Find its max height.",
             action=VisualTutorAction.SUBMIT_PROBLEM,
-            metadata={"grade": 10},
+            metadata={"grade": 9},
         )
     )
 
     assert response.metadata["generation_path"] == "scope_locked"
     assert response.metadata["fallback_reason"] == "out_of_scope_lock"
-    assert "Grade 12" in response.spoken_text
+    assert "Grade 10–12" in response.spoken_text
     assert "Mathematics" in response.spoken_text
 
 

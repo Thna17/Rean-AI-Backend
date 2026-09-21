@@ -35,6 +35,9 @@ class MemoryCollection:
 async def test_persisted_limits_lifecycle_retry_restore_and_stale_protection(monkeypatch):
     monkeypatch.setenv('VISUAL_TUTOR_INTERNAL_TOKEN', 'test-visual-tutor-token')
     monkeypatch.setenv('VISUAL_TUTOR_LLM_PROVIDER', 'none')
+    # The scripted Limits lesson is off by default; this test exercises it.
+    from api.core.config import settings
+    monkeypatch.setattr(settings, 'VISUAL_TUTOR_LOCAL_LIMITS_DEMO_ENABLED', True)
     store = VisualTutorSessionStore({'visual_tutor_sessions': MemoryCollection()})
     app = _make_app(store)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
