@@ -8,12 +8,22 @@ concurrency:
   group: cd-${{ github.ref }}
   cancel-in-progress: true
 
+# See ci.yml: the apps live in their own repositories.
+env:
+  STUDENT_APP_REPO: ${{ vars.STUDENT_APP_REPO || 'pasey-khemrak/ai_tutor' }}
+  GATEWAY_REPO: ${{ vars.GATEWAY_REPO || 'Rangsey10/backend-ai-tutor' }}
+  ADMIN_REPO: ${{ vars.ADMIN_REPO || 'yeansreymom25-eng/Rean-AI-Admin' }}
+
 jobs:
   deploy-flutter-web:
     name: Build and deploy Flutter web
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ env.STUDENT_APP_REPO }}
+          path: ai_tutor
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -58,16 +68,27 @@ jobs:
       matrix:
         include:
           - image: node-gateway
+            repo_var: GATEWAY_REPO
+            path: backend-ai-tutor
             context: backend-ai-tutor/backend
             dockerfile: backend-ai-tutor/backend/Dockerfile
           - image: ai-service
+            repo_var: ""
+            path: ""
             context: ai-service
             dockerfile: ai-service/Dockerfile.prod
           - image: admin
+            repo_var: ADMIN_REPO
+            path: admin-ai-tutor
             context: admin-ai-tutor
             dockerfile: admin-ai-tutor/Dockerfile
     steps:
       - uses: actions/checkout@v6
+      - if: matrix.repo_var != ''
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env[matrix.repo_var] }}
+          path: ${{ matrix.path }}
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
