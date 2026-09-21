@@ -215,9 +215,12 @@ def curriculum_metadata(result: CurriculumRetrievalResult) -> dict:
         "formulas": result.formulas,
         "common_misconceptions": result.common_misconceptions,
         "teaching_sequence": result.teaching_sequence,
-        "khmer_terms": result.metadata.get("reviewed_khmer_glossary", {}).get(
-            "approved_glossary_terms", {}
-        ),
+        "khmer_terms": {
+            **result.khmer_terms,
+            **result.metadata.get("reviewed_khmer_glossary", {}).get(
+                "approved_glossary_terms", {}
+            ),
+        },
         "reviewed_khmer_glossary": result.metadata.get(
             "reviewed_khmer_glossary", {}
         ),

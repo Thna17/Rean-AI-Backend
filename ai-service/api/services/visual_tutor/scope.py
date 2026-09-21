@@ -170,8 +170,8 @@ def check_scope(
     norm_topic_id = (topic_id or "").strip().lower()
 
     # 1. Check Grade
-    # If grade is specified and not 12, it is strictly out of scope
-    if norm_grade is not None and norm_grade != 12:
+    # If grade is specified and not 10, 11, or 12, it is strictly out of scope
+    if norm_grade is not None and norm_grade not in (10, 11, 12):
         return ScopeDecision(
             is_in_scope=False,
             grade=norm_grade,
@@ -269,22 +269,22 @@ def build_out_of_scope_message(language_mode: str = "english") -> dict[str, str]
     is_khmer = norm_lang in {"khmer", "km"}
 
     text_en = (
-        "This tutor is currently available only for Grade 12 Mathematics, "
+        "This tutor is currently available for Grade 10–12 Mathematics, "
         "Physics, and Chemistry. Other grades and subjects are not available yet."
     )
     text_km = (
-        "គ្រូបង្រៀននេះបច្ចុប្បន្នគាំទ្រតែថ្នាក់ទី១២ សម្រាប់មុខវិជ្ជា គណិតវិទ្យា "
-        "រូបវិទ្យា និងគីមីវិទ្យាប៉ុណ្ណោះ។ កម្រិតថ្នាក់ និងមុខវិជ្ជាផ្សេងទៀតមិនទាន់មាននៅឡើយទេ។"
+        "គ្រូបង្រៀននេះបច្ចុប្បន្នគាំទ្រសម្រាប់ថ្នាក់ទី១០ ដល់ ទី១២ លើមុខវិជ្ជា គណិតវិទ្យា "
+        "រូបវិទ្យា និងគីមីវិទ្យា។ កម្រិតថ្នាក់ និងមុខវិជ្ជាផ្សេងទៀតមិនទាន់មាននៅឡើយទេ។"
     )
 
     if is_khmer:
         message = f"{text_km}\n\n{text_en}"
-        student_task = "សូមសាកល្បងលំហាត់ថ្នាក់ទី១២ លើមុខវិជ្ជា គណិតវិទ្យា រូបវិទ្យា ឬគីមីវិទ្យា។"
+        student_task = "សូមសាកល្បងលំហាត់ថ្នាក់ទី១០-១២ លើមុខវិជ្ជា គណិតវិទ្យា រូបវិទ្យា ឬគីមីវិទ្យា។"
         board_title = "មិនស្ថិតក្នុងវិសាលភាព (Out of Scope)"
         board_content = text_km
     else:
         message = f"{text_en}\n\n{text_km}"
-        student_task = "Try a Grade 12 problem in Mathematics, Physics, or Chemistry."
+        student_task = "Try a Grade 10–12 problem in Mathematics, Physics, or Chemistry."
         board_title = "Not in current scope"
         board_content = text_en
 

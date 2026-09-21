@@ -105,12 +105,12 @@ class EducationalHintsParser:
     
     # Regex patterns for bracket format
     TIP_PATTERN = re.compile(
-        r'\[💡\s*(?:Tip|Mẹo)?:?\s*([^\]]+)\]',
+        r'\[💡\s*(?:Tip|គន្លឹះ)?:?\s*([^\]]+)\]',
         re.IGNORECASE | re.UNICODE
     )
     
     VOCAB_PATTERN = re.compile(
-        r"\[📘\s*['\"]?([^'\"]+)['\"]?\s*(?:means?|nghĩa là)?\s*([^\]]+)\]",
+        r"\[📘\s*['\"]?([^'\"]+)['\"]?\s*(?:means?|មានន័យថា)?\s*([^\]]+)\]",
         re.IGNORECASE | re.UNICODE
     )
     
@@ -239,8 +239,8 @@ class EducationalHintsParser:
             
             # Try to extract example from definition
             example = None
-            if "Example:" in definition_part or "Ví dụ:" in definition_part:
-                parts = re.split(r'Example:|Ví dụ:', definition_part, maxsplit=1)
+            if "Example:" in definition_part or "ឧទាហរណ៍:" in definition_part:
+                parts = re.split(r'Example:|ឧទាហរណ៍:', definition_part, maxsplit=1)
                 definition_part = parts[0].strip().rstrip('.')
                 if len(parts) > 1:
                     example = parts[1].strip().strip('"\'')
@@ -257,7 +257,7 @@ class EducationalHintsParser:
                 full_text = match.group(1).strip()
                 
                 # Try to parse "word means definition" format
-                parts = re.split(r'\s+means?\s+|\s+nghĩa là\s+', full_text, maxsplit=1)
+                parts = re.split(r'\s+means?\s+|\s+មានន័យថា\s+', full_text, maxsplit=1)
                 if len(parts) == 2:
                     hints.vocabulary_hints.append(VocabularyHint(
                         term=parts[0].strip().strip("'\""),

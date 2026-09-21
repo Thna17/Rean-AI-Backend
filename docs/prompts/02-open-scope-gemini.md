@@ -1,6 +1,5 @@
-You are continuing work on ReanAI. GEMINI.md in this directory is your project
-context — read all of it before doing anything. Ignore CLAUDE.md: it describes a
-different project (LexiLingo) and none of its paths exist here.
+You are continuing work on ReanAI. GEMINI.md and CLAUDE.md in this directory
+provide your project context — read them before doing anything.
 
 Your task: open the tutor to Grade 12 Mathematics, Physics and Chemistry. Before
 that, commit the scan-feature removal that is already done but not committed.

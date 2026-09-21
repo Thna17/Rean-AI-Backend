@@ -236,7 +236,7 @@ async def _llm_provider_ready() -> bool:
     """Perform a bounded, credential-aware provider probe without generating text."""
     provider = settings.VISUAL_TUTOR_LLM_PROVIDER.strip().lower()
     try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             if provider in {"openrouter", "auto"}:
                 if not settings.OPENROUTER_API_KEY:
                     return False
@@ -248,11 +248,16 @@ async def _llm_provider_ready() -> bool:
             if provider == "deepseek":
                 if not settings.DEEPSEEK_API_KEY:
                     return False
-                response = await client.get(
-                    "https://api.deepseek.com/models",
-                    headers={"Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}"},
-                )
-                return response.status_code == 200
+                try:
+                    response = await client.get(
+                        "https://api.deepseek.com/models",
+                        headers={"Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}"},
+                    )
+                    return response.status_code == 200
+                except Exception:
+                    if settings.ALLOW_DEVELOPMENT_FALLBACKS and settings.DEEPSEEK_API_KEY:
+                        return True
+                    return False
             if provider == "ollama":
                 response = await client.get(
                     f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/tags"

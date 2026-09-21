@@ -68,7 +68,7 @@ langgraph>=1.2.5
 langchain-core>=1.4.7
 langchain-community>=0.4.2
 
-# LLaMA.cpp for GGUF model inference (Vietnamese explanation)
+# LLaMA.cpp for GGUF model inference (Localized explanation)
 # Optional at runtime: the service already falls back when llama-cpp is absent.
 # Restrict default install to x86_64, where this stack is currently expected.
 llama-cpp-python>=0.3.28; platform_machine == "x86_64"

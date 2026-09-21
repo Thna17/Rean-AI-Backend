@@ -1,8 +1,7 @@
 """
-Ollama Service - Local LLM inference với Qwen 3.0:8B
+Ollama Service - Local LLM inference runner
 
-Sử dụng Ollama để chạy Qwen 3.0:8B model locally.
-Thay thế Gemini API với local inference.
+Runs local models using the Ollama HTTP API as a developer/offline fallback.
 """
 
 from __future__ import annotations

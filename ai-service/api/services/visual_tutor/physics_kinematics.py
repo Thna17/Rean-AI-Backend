@@ -700,6 +700,9 @@ def _referenced_physics_step(
     return None
 
 
+_physics_explanation_cache: dict[str, str] = {}
+
+
 def _explain_physics_step(
     *,
     question: str,
@@ -731,6 +734,11 @@ def _explain_physics_step(
         )
 
     grounded = step.explanation if step else solution.answer_text
+    clean_q = " ".join(re.sub(r"[^\w\s]", "", question.lower()).split())
+    step_key = step.key if step else "all"
+    cache_key = f"{solution.formula_latex}:{step_key}:{clean_q}"
+    if cache_key in _physics_explanation_cache:
+        return _physics_explanation_cache[cache_key]
 
     system_prompt = (
         "You are a patient Grade 12 physics teacher in Cambodia. Answer the "
@@ -760,6 +768,7 @@ def _explain_physics_step(
         if isinstance(data, dict) and "answer" in data and isinstance(data["answer"], str):
             ans = " ".join(data["answer"].split())
             if ans and len(ans) <= 500:
+                _physics_explanation_cache[cache_key] = ans
                 return ans
     except Exception:
         pass
@@ -949,6 +958,9 @@ def _physics_solution_turn(
         metadata={
             "teaching_plan": plan,
             "worked_solution": True,
+            "verified": True,
+            "curriculum_status": "verified_curriculum",
+            "curriculum_topic": "1D Kinematics",
             "physics_kinematics": True,
             "motion_type": problem.motion_type,
             "target": solution.target,

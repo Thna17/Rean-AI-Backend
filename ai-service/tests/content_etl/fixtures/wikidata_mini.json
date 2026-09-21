@@ -5,7 +5,7 @@
       "type": "item",
       "labels": {
         "en": { "language": "en", "value": "travel" },
-        "vi": { "language": "vi", "value": "du lịch" }
+        "km": { "language": "km", "value": "ទេសចរណ៍" }
       }
     },
     "Q3450": {
@@ -19,7 +19,7 @@
       "id": "Q9999",
       "type": "item",
       "labels": {
-        "vi": { "language": "vi", "value": "tiếng Việt" }
+        "km": { "language": "km", "value": "ភាសាខ្មែរ" }
       }
     }
   }

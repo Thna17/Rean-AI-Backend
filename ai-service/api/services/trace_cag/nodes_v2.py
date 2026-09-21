@@ -8,7 +8,7 @@ Each node uses ModelGateway for:
 4. Unified interface: Single gateway for all AI operations
 
 Pipeline Flow:
-INPUT → KG_EXPAND → DIAGNOSE → RETRIEVE → GENERATE → [VIETNAMESE] → [TTS] → END
+INPUT → KG_EXPAND → DIAGNOSE → RETRIEVE → GENERATE → [LOCALIZED] → [TTS] → END
 """
 
 import asyncio
@@ -229,7 +229,7 @@ async def kg_expand_node(state: TraceCAGState) -> Dict[str, Any]:
             r"\bmore better\b|\bmore worse\b|\bmore faster\b": "concept:grammar.comparatives",
             r"\bthe most best\b|\bthe most biggest\b|\bmore than more\b": "concept:grammar.superlatives",
 
-            # ── Article errors (Vietnamese learner patterns) ──────────
+            # ── Article errors (Learner patterns) ──────────────────────
             r"\ba apple\b|\ba elephant\b|\ba hour\b|\ba umbrella\b": "concept:grammar.articles_a_an",
             r"\bgo to school\b|\bgo to hospital\b|\bgo to market\b": "concept:error.article_omission",
 
@@ -237,7 +237,7 @@ async def kg_expand_node(state: TraceCAGState) -> Dict[str, Any]:
             r"\bgo to home\b|\barrived to\b|\bmarried with\b|\blisten\s+music\b": "concept:error.preposition_confusion",
             r"\bdepend of\b|\binterested of\b|\bat monday\b|\bin the night\b|\bon the morning\b": "concept:error.preposition_confusion",
 
-            # ── Word order errors (Vietnamese SVO influence) ──────────
+            # ── Word order errors (Word order transfer) ───────────────
             r"\bI very (like|love|enjoy|want|hate)\b": "concept:error.word_order_svo",
             r"\balways I\b|\bnever I\b|\busually I\b|\bsometimes I (go|eat|like)\b": "concept:grammar.adverbs_frequency",
 
@@ -966,32 +966,30 @@ async def retrieve_node(state: TraceCAGState) -> Dict[str, Any]:
         budget_exhausted = True
 
     # ── Stage 3: L2 External Knowledge (Selective Retrieval) ─────────
-    # Phân tích xem có nên ép buộc tìm kiếm bên ngoài không (Proactive Dynamic Retrieval)
+    # Analyze whether external search should be forced (Proactive Dynamic Retrieval)
     force_external = False
     dynamic_patterns = [
-        r"\bhôm (qua|nay|kia)\b", r"\bmới (đây|nhất)\b", r"\bvừa mới\b",
         r"\brecently\b", r"\byesterday\b", r"\btoday\b", r"\blatest\b", r"\bcurrent\b",
-        r"\bdo you know\b", r"\bnghe nói\b", r"\bbạn có biết\b", r"\bnews\b", r"\btin tức\b"
+        r"\bdo you know\b", r"\bnews\b"
     ]
     if any(re.search(p, user_input, re.IGNORECASE) for p in dynamic_patterns):
         force_external = True
         logger.info("[retrieve_node] Dynamic intent detected. Forcing L2 Search.")
 
-    # Kích hoạt L2 nếu (thiếu dữ liệu) HOẶC (phát hiện intent cần tin tức thực tế)
+    # Trigger L2 if knowledge is insufficient or external intent detected
     if (len(evidence_items) < 3 or force_external) and not benchmark_candidates:
         try:
             doc_service = get_doc_intel_service()
-            # Nếu force_external, ta có thể điều chỉnh query để search hiệu quả hơn
             search_query = user_input
             if force_external and len(user_input) < 100:
-                # Bổ sung ngữ cảnh để search Tavily tốt hơn
+                # Augment context for search
                 search_query = f"latest information about {user_input}"
                 
             external_hits = await asyncio.wait_for(
                 doc_service.query_l2(search_query), timeout=5.0
             )
             for hit in external_hits:
-                # Tránh trùng lặp nếu đã có trong evidence_items
+                # Deduplicate against existing evidence items
                 if any(e.get("chunk_id") == hit["id"] for e in evidence_items):
                     continue
                     
@@ -999,7 +997,7 @@ async def retrieve_node(state: TraceCAGState) -> Dict[str, Any]:
                     "item_id": f"ext_{hit['id']}",
                     "title": "External Knowledge",
                     "text": f"Context: {hit['content']}",
-                    "kg_depth": 3, # Tầng sâu hơn KG
+                    "kg_depth": 3,
                     "vec_sim": hit["score"],
                     "turns_ago": session_turn,
                     "is_external": True,
@@ -1209,7 +1207,7 @@ def build_generation_prompt(
         system_prompt += "\nNo errors found — praise the learner's effort!\n"
 
     if vietnamese_hint:
-        system_prompt += f"\n--- Vietnamese Hint ---\n{vietnamese_hint}\n"
+        system_prompt += f"\n--- Localized Hint ---\n{vietnamese_hint}\n"
 
     messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
     for msg in (state.get("conversation_history") or [])[-12:]:
@@ -1479,7 +1477,7 @@ async def generate_node(state: TraceCAGState) -> Dict[str, Any]:
         system_prompt += "\nNo errors found — praise the learner's effort!\n"
     
     if vietnamese_hint:
-        system_prompt += f"\n--- Vietnamese Hint (for reference) ---\n{vietnamese_hint}\n"
+        system_prompt += f"\n--- Localized Hint (for reference) ---\n{vietnamese_hint}\n"
 
     response = ""
     model_used = "llm_unavailable"
@@ -1749,7 +1747,7 @@ async def generate_node(state: TraceCAGState) -> Dict[str, Any]:
     if state.get("cache_policy", "on") == "on":
         try:
             # ── Tiered Cache Management (L0/L1 Promotion) ─────────────
-            # Nếu thông tin từ L2 được sử dụng, kiểm tra thăng hạng
+            # If L2 knowledge was used, verify promotion to L1 cache
             doc_service = get_doc_intel_service()
             trace = state.get("retrieval_trace", [])
             is_l2_used = any(t.get("item_id", "").startswith("ext_") for t in trace[:3])
@@ -1763,7 +1761,7 @@ async def generate_node(state: TraceCAGState) -> Dict[str, Any]:
                             await _write_cache_entry(state, response, strategy, errors, overall_score, context)
                             break
             else:
-                # Mặc định cache cho các luồng KG/Rules để tối ưu tốc độ
+                # Default cache for KG/Rules paths to optimize latency
                 await _write_cache_entry(state, response, strategy, errors, overall_score, context)
         except Exception as e:
             logger.debug(f"[generate_node] Cache write failed: {e}")
@@ -1799,7 +1797,7 @@ async def vietnamese_node(state: TraceCAGState) -> Dict[str, Any]:
     Strategy (in order):
     1. Qwen via ModelGateway  (local, fast)
     2. Gemini via ModelGateway (cloud fallback)
-    3. Hardcoded Vietnamese strings (last resort)
+    3. Hardcoded localized strings (last resort)
 
     The hint is a supplement — the main tutor_response remains in English.
     """
@@ -1809,7 +1807,7 @@ async def vietnamese_node(state: TraceCAGState) -> Dict[str, Any]:
     errors = state.get("diagnosis_errors", [])
     learner_profile = state.get("learner_profile", {})
     level = learner_profile.get("level", "B1")
-    native_language = learner_profile.get("native_language", "Vietnamese")
+    native_language = learner_profile.get("native_language", "Khmer")
 
     try:
         gateway = await get_gateway()
@@ -1893,20 +1891,20 @@ async def vietnamese_node(state: TraceCAGState) -> Dict[str, Any]:
 
 
 def _get_predefined_vietnamese(errors: list) -> str:
-    """Fallback predefined Vietnamese explanations"""
+    """Fallback predefined explanations"""
     if not errors:
-        return "Câu của bạn rất tốt! Tiếp tục cố gắng nhé! 🌟"
+        return "Good job! Keep going! 🌟"
     
     error_type = errors[0].get("type", "").lower()
     explanations = {
-        "subject_verb_agreement": "Trong tiếng Anh, động từ phải hòa hợp với chủ ngữ. Với 'I/you/we/they' dùng động từ nguyên mẫu, với 'he/she/it' thêm -s hoặc -es.",
-        "third_person_s": "Với chủ ngữ ngôi thứ 3 số ít (he, she, it), động từ cần thêm -s hoặc -es. Ví dụ: He goes, She works.",
-        "past_tense": "Khi nói về quá khứ (yesterday, last week...), cần dùng thì quá khứ đơn. Động từ bất quy tắc cần học thuộc!",
-        "present_perfect": "Thì hiện tại hoàn thành dùng: have/has + past participle. Ví dụ: have gone, has eaten.",
-        "article": "Dùng 'a' trước phụ âm, 'an' trước nguyên âm (a, e, i, o, u). Ví dụ: a book, an apple.",
+        "subject_verb_agreement": "The verb must agree with the subject in number and person.",
+        "third_person_s": "Third-person singular present verbs require -s or -es suffix.",
+        "past_tense": "Past actions require past simple verb forms.",
+        "present_perfect": "Present perfect requires have/has + past participle.",
+        "article": "Use 'a' before consonant sounds and 'an' before vowel sounds.",
     }
     
-    return explanations.get(error_type, "Hãy chú ý quy tắc ngữ pháp này nhé!")
+    return explanations.get(error_type, "Pay close attention to this rule!")
 
 
 # ============================================================
@@ -2017,7 +2015,7 @@ Keep it short and friendly (1-2 sentences)."""
                 "Please let me know!"
             )
         
-        vietnamese_hint = "Mình cần thêm thông tin: bạn muốn sửa câu, giải thích ngữ pháp, hay tạo bài tập?"
+        vietnamese_hint = "Could you please clarify: would you like me to check this step, explain the concept, or generate practice exercises?"
         
         return {
             "tutor_response": response,
@@ -2032,7 +2030,7 @@ Keep it short and friendly (1-2 sentences)."""
         logger.error(f"[ask_clarify_node] Error: {e}")
         return {
             "tutor_response": "Could you please clarify what you'd like help with?",
-            "vietnamese_hint": "Bạn muốn được giúp đỡ điều gì ạ?",
+            "vietnamese_hint": "Could you please clarify what you'd like help with?",
             "strategy": "ask",
             "next_action": "ask",
             "path": "fast",

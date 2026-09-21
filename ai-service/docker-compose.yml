@@ -2,7 +2,7 @@ services:
   # AI Service (FastAPI)
   ai-service:
     build: .
-    container_name: lexilingo-ai-service
+    container_name: reanai-ai-service
     init: true
     mem_limit: 2g
     memswap_limit: 2g
@@ -11,7 +11,7 @@ services:
     environment:
       - ENVIRONMENT=development
       - MONGODB_URI=mongodb://mongodb:27017
-      - MONGODB_DB_NAME=lexilingo
+      - MONGODB_DB_NAME=reanai
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
@@ -29,19 +29,19 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - lexilingo
+      - reanai
 
   # MongoDB
   mongodb:
     image: mongo:7.0
-    container_name: lexilingo-mongo
+    container_name: reanai-mongo
     restart: unless-stopped
     mem_limit: 1g
     memswap_limit: 1g
     ports:
       - "27017:27017"
     environment:
-      - MONGO_INITDB_DATABASE=lexilingo
+      - MONGO_INITDB_DATABASE=reanai
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
@@ -52,12 +52,12 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - lexilingo
+      - reanai
 
   # Mongo Express (Web UI)
   mongo-express:
     image: mongo-express:1.0.2@sha256:1b23d7976f0210dbec74045c209e52fbb26d29b2e873d6c6fa3d3f0ae32c2a64
-    container_name: lexilingo-mongo-express
+    container_name: reanai-mongo-express
     restart: unless-stopped
     mem_limit: 256m
     memswap_limit: 256m
@@ -70,12 +70,12 @@ services:
     depends_on:
       - mongodb
     networks:
-      - lexilingo
+      - reanai
 
   # Redis (optional, for caching)
   redis:
     image: redis:7-alpine
-    container_name: lexilingo-redis
+    container_name: reanai-redis
     restart: unless-stopped
     mem_limit: 256m
     memswap_limit: 256m
@@ -90,7 +90,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - lexilingo
+      - reanai
 
 volumes:
   mongodb_data:
@@ -101,5 +101,5 @@ volumes:
     driver: local
 
 networks:
-  lexilingo:
+  reanai:
     driver: bridge

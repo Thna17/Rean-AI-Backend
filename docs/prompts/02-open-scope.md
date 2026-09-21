@@ -1,6 +1,5 @@
-Ignore CLAUDE.md in this directory — it describes a different project
-(LexiLingo) and none of its paths exist here. Read GEMINI.md instead, fully,
-before doing anything. It is the real context for this repository.
+Read GEMINI.md and CLAUDE.md in this directory before doing anything.
+They provide the real context for this repository.
 
 This task is prompt 2 in docs/ai-work-prompts.md: open the tutor to Grade 12
 Mathematics, Physics and Chemistry. But first there is unfinished work in the

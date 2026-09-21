@@ -314,7 +314,26 @@ def test_orchestrator_dispatches_kinematics_to_worked_solution() -> None:
 
 
 def test_unsupported_physics_problem_degrades_honestly() -> None:
-    """2D projectile motion is unsupported: must degrade honestly to solver_not_ready."""
+    """2D projectile motion with require_verified_solver must degrade honestly to solver_not_ready."""
+    response = handle_visual_tutor_turn(
+        VisualTutorTurnRequest(
+            user_id="student-1",
+            subject="Physics",
+            topic="Projectile Motion",
+            message="A cannonball is launched at an angle of 45 degrees with velocity 50 m/s. Find its horizontal range.",
+            action=VisualTutorAction.SUBMIT_PROBLEM,
+            metadata={"grade": 12, "require_verified_solver": True},
+        )
+    )
+
+    assert response.metadata.get("fallback_reason") != "out_of_scope_lock"
+    assert response.metadata.get("generation_path") == "solver_not_ready"
+    assert response.metadata.get("solver_ready") is False
+    assert "not ready yet" in response.spoken_text.lower() or "មិនទាន់រួចរាល់" in response.spoken_text
+
+
+def test_unsupported_physics_problem_dynamic_unverified() -> None:
+    """Without require_verified_solver, 2D projectile motion is answered dynamically as unverified."""
     response = handle_visual_tutor_turn(
         VisualTutorTurnRequest(
             user_id="student-1",
@@ -325,8 +344,5 @@ def test_unsupported_physics_problem_degrades_honestly() -> None:
             metadata={"grade": 12},
         )
     )
-
-    assert response.metadata.get("fallback_reason") != "out_of_scope_lock"
-    assert response.metadata.get("generation_path") == "solver_not_ready"
-    assert response.metadata.get("solver_ready") is False
-    assert "not ready yet" in response.spoken_text.lower() or "មិនទាន់រួចរាល់" in response.spoken_text
+    assert response.metadata.get("verified") is False
+    assert response.metadata.get("curriculum_status") == "ai_unverified"

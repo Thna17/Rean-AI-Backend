@@ -19,13 +19,13 @@ class DocumentIntelligenceService:
         self.embedder = EmbeddingServiceV3()
         self.external_docs_path = "data/external_docs"
         self.knowledge_index: List[Dict[str, Any]] = []
-        # Cấu hình API Search (Ví dụ: Tavily - rất phổ biến cho AI RAG)
+        # Search API configuration (e.g. Tavily for RAG)
         self.search_api_key = os.getenv("TAVILY_API_KEY", "")
         self.search_depth = os.getenv("TAVILY_SEARCH_DEPTH", "fast").strip().lower() or "fast"
         self._load_local_docs()
 
     def _load_local_docs(self):
-        """Nạp tài liệu local làm nền tảng."""
+        """Load local baseline documents."""
         if os.path.exists(self.external_docs_path):
             for file in os.listdir(self.external_docs_path):
                 if file.endswith((".md", ".txt")):
@@ -33,14 +33,14 @@ class DocumentIntelligenceService:
                         self._process_text(f.read(), file)
 
     def _process_text(self, content: str, source: str):
-        """Chuyển đổi văn bản thô thành các cặp KV thông minh, tránh trùng lặp."""
+        """Convert raw text into indexed chunks, deduplicating."""
         chunks = content.split("\n\n")
         for chunk in chunks:
             text = chunk.strip()
             if len(text) < 40: continue
             
             chunk_id = hashlib.md5(text.encode()).hexdigest()
-            # Kiểm tra xem KV này đã có trong index chưa
+            # Check if chunk already exists in index
             if any(item["id"] == chunk_id for item in self.knowledge_index):
                 continue
 
@@ -55,7 +55,7 @@ class DocumentIntelligenceService:
             })
 
     async def _search_tavily(self, query: str) -> List[str]:
-        """Thực hiện tìm kiếm web qua API chuyên dụng (Fast & Accurate)."""
+        """Perform web search via dedicated search API."""
         if not self.search_api_key:
             logger.warning("[L2_Search] No TAVILY_API_KEY found. Auto-search disabled.")
             return []
@@ -88,13 +88,13 @@ class DocumentIntelligenceService:
         return []
 
     async def query_l2(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
-        """Truy xuất tầng L2 với cơ chế Tự động Tìm kiếm khi tri thức thiếu hụt."""
+        """Retrieve from L2 layer with automated search fallback when confidence is low."""
         
-        # 1. Tìm trong tri thức Local L2 hiện có
+        # 1. Search existing local L2 knowledge
         local_hits = self._get_top_matches(query, top_k)
         best_score = local_hits[0]["score"] if local_hits else 0
 
-        # 2. Cơ chế Tự động (Quality Gate): Nếu không có kết quả tốt (> 0.65), lên Web tìm
+        # 2. Automated Quality Gate: If confidence < 0.65, trigger web search
         if best_score < 0.65:
             logger.info(f"[L2_Auto] Low confidence ({best_score:.2f}). Triggering Web Search...")
             web_contents = await self._search_tavily(query)
@@ -102,10 +102,10 @@ class DocumentIntelligenceService:
             if web_contents:
                 for content in web_contents:
                     self._process_text(content, "Web Search")
-                # Tìm lại lần nữa sau khi đã nạp tri thức Web
+                # Search again after indexing web content
                 local_hits = self._get_top_matches(query, top_k)
                 if not local_hits:
-                    # Fallback an toàn: vẫn trả context web để không mất dữ liệu realtime
+                    # Safe fallback: return web context directly
                     local_hits = [
                         {
                             "content": content,
@@ -120,7 +120,7 @@ class DocumentIntelligenceService:
         return local_hits
 
     def _get_top_matches(self, query: str, top_k: int) -> List[Dict[str, Any]]:
-        """Tìm các KV khớp nhất trong index hiện tại."""
+        """Find top matches in current index."""
         if not self.knowledge_index: return []
         
         query_vec = self.embedder.embed_text(query)
@@ -128,7 +128,7 @@ class DocumentIntelligenceService:
 
         for item in self.knowledge_index:
             score = np.dot(query_vec, item["embedding"])
-            if score > 0.70: # Chỉ lấy KV chuẩn xác cao
+            if score > 0.70: # High precision threshold
                 scored_chunks.append({
                     "content": item["content"],
                     "score": score,
@@ -141,10 +141,10 @@ class DocumentIntelligenceService:
         return scored_chunks[:top_k]
 
     def should_promote_to_cache(self, chunk_id: str) -> bool:
-        """Cơ chế thăng hạng: Nếu thông tin được hỏi nhiều, lưu vào L1 (Redis)."""
+        """Promotion mechanism: Frequently accessed items promote to L1 (Redis)."""
         for item in self.knowledge_index:
             if item["id"] == chunk_id:
-                # Dữ liệu web/external nếu hit > 3 lần sẽ thăng hạng lên L1
+                # External items with >= 3 hits promote to L1
                 return item["hit_count"] >= 3
         return False
 

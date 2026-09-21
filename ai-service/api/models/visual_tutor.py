@@ -934,6 +934,7 @@ class VisualTutorTurnRequest(BaseModel):
 
     user_id: str = Field(..., min_length=1)
     session_id: Optional[str] = None
+    grade: Optional[int] = None
     subject: str = Field(default="Mathematics", min_length=1)
     topic: Optional[str] = None
     message: str = Field(default="", description="Student text or transcript")

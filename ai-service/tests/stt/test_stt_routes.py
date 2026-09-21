@@ -18,13 +18,17 @@ from api.services.stt.voice_session import VoiceSession
 from tests.stt.fakes import FakePrimary, FakeVerifier
 
 
+from api.core.config import get_settings
+
+
 def _access_token(secret="test-secret"):
+    settings = get_settings()
     return jwt.encode(
         {
             "sub": "u1",
             "type": "access",
-            "iss": "lexilingo-backend",
-            "aud": "lexilingo-services",
+            "iss": settings.AI_JWT_ISSUER,
+            "aud": settings.AI_JWT_AUDIENCE,
         },
         secret,
         algorithm="HS256",
@@ -95,8 +99,8 @@ def test_websocket_rejects_token_without_access_type(monkeypatch):
     token = jwt.encode(
         {
             "sub": "u1",
-            "iss": "lexilingo-backend",
-            "aud": "lexilingo-services",
+            "iss": get_settings().AI_JWT_ISSUER,
+            "aud": get_settings().AI_JWT_AUDIENCE,
         },
         "test-secret",
         algorithm="HS256",

@@ -325,9 +325,12 @@ class Settings(BaseSettings):
         "VISUAL_TUTOR_DEBUG_ERRORS",
         "false" if ENVIRONMENT == "production" else "true",
     ).lower() == "true"
-    # Restricts Visual Tutor turns to Grade 12 Mathematics, Physics, and Chemistry.
-    # Set to "" (empty) to lift the lock entirely. Backwards-compatible with "grade12_math_limits".
     VISUAL_TUTOR_SCOPE_LOCK: str = os.getenv("VISUAL_TUTOR_SCOPE_LOCK", "grade12_stem")
+    # If True, STEM topics without a verified solver or curriculum match are answered with Tier 2 (Unverified AI Guidance).
+    # If False, or if request specifies require_verified_solver=True, returns solver_not_ready.
+    VISUAL_TUTOR_ALLOW_UNVERIFIED_AI: bool = (
+        os.getenv("VISUAL_TUTOR_ALLOW_UNVERIFIED_AI", "true").lower() == "true"
+    )
     # local_limits_demo.py's fully scripted, deterministic board for the
     # Grade 12 limits-of-functions lesson is kept only as a reference/known-
     # good comparison now that LimitOfFunctionSolver + the dynamic LLM
@@ -379,8 +382,8 @@ class Settings(BaseSettings):
     # Qwen3-1.7B - English NLP (grammar, fluency, vocabulary, tutor response)
     QWEN_MODEL_NAME: str = os.getenv("QWEN_MODEL_NAME", "")
     
-    # LLaMA3-8B-VI - Vietnamese explanations (lazy load)
-    LLAMA_MODEL_NAME: str = os.getenv("LLAMA_MODEL_NAME", "vilm/vinallama-7b-chat")
+    # Localized explanations (lazy load)
+    LLAMA_MODEL_NAME: str = os.getenv("LLAMA_MODEL_NAME", "")
     
     # HuBERT - Pronunciation analysis
     HUBERT_MODEL_NAME: str = os.getenv("HUBERT_MODEL_NAME", "facebook/hubert-large-ls960-ft")

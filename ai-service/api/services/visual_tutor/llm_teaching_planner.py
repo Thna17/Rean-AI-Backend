@@ -136,18 +136,75 @@ class OpenRouterVisualTutorLLMClient:
 class DeepSeekVisualTutorLLMClient:
     """DeepSeek's OpenAI-compatible JSON teaching-plan client."""
 
+    _global_token_usage: dict[str, int] = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "call_count": 0,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 0,
+        "cache_hit_count": 0,
+    }
+
     def __init__(self, *, timeout: float | None = None, temperature: float = 0.2) -> None:
         # Keep the provider fixed server-side so a client or environment
         # typo cannot silently route student content elsewhere; the model
         # itself is still configurable since DeepSeek's own model ids move.
         self.model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip() or "deepseek-chat"
+        # Bounded timeout defaults to 5.0 seconds if not specified, avoiding long student wait times.
+        if timeout is None:
+            raw = os.getenv("DEEPSEEK_PLANNER_TIMEOUT_SECONDS", "5.0")
+            try:
+                timeout = float(raw)
+            except (ValueError, TypeError):
+                timeout = 5.0
         self.timeout = _bounded_planner_timeout(timeout)
         self.temperature = temperature
+        self.token_usage: dict[str, int] = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "call_count": 0,
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 0,
+            "cache_hit_count": 0,
+        }
+
+    @classmethod
+    def get_global_token_usage(cls) -> dict[str, int]:
+        return dict(cls._global_token_usage)
+
+    @classmethod
+    def reset_global_token_usage(cls) -> None:
+        cls._global_token_usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "call_count": 0,
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 0,
+            "cache_hit_count": 0,
+        }
+
+    def get_token_usage(self) -> dict[str, int]:
+        return dict(self.token_usage)
+
+    def reset_token_usage(self) -> None:
+        self.token_usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "call_count": 0,
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 0,
+            "cache_hit_count": 0,
+        }
 
     def complete(self, *, system_prompt: str, user_prompt: str) -> str:
         api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
         if not api_key:
             raise RuntimeError("DEEPSEEK_API_KEY is not configured")
+        start_time = time.perf_counter()
         response = httpx.post(
             "https://api.deepseek.com/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
@@ -160,7 +217,79 @@ class DeepSeekVisualTutorLLMClient:
             timeout=self.timeout,
         )
         response.raise_for_status()
+        latency_ms = int((time.perf_counter() - start_time) * 1000)
         payload = response.json()
+        usage = payload.get("usage") or {}
+        p_tokens = int(usage.get("prompt_tokens") or 0)
+        c_tokens = int(usage.get("completion_tokens") or 0)
+        t_tokens = int(usage.get("total_tokens") or (p_tokens + c_tokens))
+        cache_hit_tokens = int(
+            usage.get("prompt_cache_hit_tokens")
+            or usage.get("cache_hit_tokens")
+            or 0
+        )
+        cache_miss_tokens = int(
+            usage.get("prompt_cache_miss_tokens")
+            or usage.get("cache_miss_tokens")
+            or 0
+        )
+        cache_hit = cache_hit_tokens > 0
+        # DeepSeek pricing: hit: $0.07/M, miss: $0.27/M, output: $1.10/M
+        cost_usd = (cache_hit_tokens * 0.07 + cache_miss_tokens * 0.27 + c_tokens * 1.10) / 1_000_000.0
+
+        self.token_usage["prompt_tokens"] += p_tokens
+        self.token_usage["completion_tokens"] += c_tokens
+        self.token_usage["total_tokens"] += t_tokens
+        self.token_usage["prompt_cache_hit_tokens"] = (
+            self.token_usage.get("prompt_cache_hit_tokens", 0) + cache_hit_tokens
+        )
+        self.token_usage["prompt_cache_miss_tokens"] = (
+            self.token_usage.get("prompt_cache_miss_tokens", 0) + cache_miss_tokens
+        )
+        self.token_usage["cache_hit_count"] = (
+            self.token_usage.get("cache_hit_count", 0) + (1 if cache_hit else 0)
+        )
+        self.token_usage["last_latency_ms"] = latency_ms
+        self.token_usage["total_latency_ms"] = self.token_usage.get("total_latency_ms", 0) + latency_ms
+        self.token_usage["last_cost_usd"] = cost_usd
+        self.token_usage["total_cost_usd"] = self.token_usage.get("total_cost_usd", 0.0) + cost_usd
+        self.token_usage["call_count"] += 1
+
+        self.__class__._global_token_usage["prompt_tokens"] += p_tokens
+        self.__class__._global_token_usage["completion_tokens"] += c_tokens
+        self.__class__._global_token_usage["total_tokens"] += t_tokens
+        self.__class__._global_token_usage["prompt_cache_hit_tokens"] = (
+            self.__class__._global_token_usage.get("prompt_cache_hit_tokens", 0) + cache_hit_tokens
+        )
+        self.__class__._global_token_usage["prompt_cache_miss_tokens"] = (
+            self.__class__._global_token_usage.get("prompt_cache_miss_tokens", 0) + cache_miss_tokens
+        )
+        self.__class__._global_token_usage["cache_hit_count"] = (
+            self.__class__._global_token_usage.get("cache_hit_count", 0) + (1 if cache_hit else 0)
+        )
+        self.__class__._global_token_usage["last_latency_ms"] = latency_ms
+        self.__class__._global_token_usage["total_latency_ms"] = (
+            self.__class__._global_token_usage.get("total_latency_ms", 0) + latency_ms
+        )
+        self.__class__._global_token_usage["total_cost_usd"] = (
+            self.__class__._global_token_usage.get("total_cost_usd", 0.0) + cost_usd
+        )
+        self.__class__._global_token_usage["call_count"] += 1
+
+        logger.info(
+            "DeepSeek LLM response: prompt_tokens=%d, completion_tokens=%d, total_tokens=%d, "
+            "prompt_cache_hit_tokens=%d, prompt_cache_miss_tokens=%d, cache_hit=%s, "
+            "latency_ms=%d, cost_usd=%.6f",
+            p_tokens,
+            c_tokens,
+            t_tokens,
+            cache_hit_tokens,
+            cache_miss_tokens,
+            cache_hit,
+            latency_ms,
+            cost_usd,
+        )
+
         return payload["choices"][0]["message"]["content"]
 
 
@@ -1623,27 +1752,10 @@ def _build_system_prompt(
     current_step_index: Optional[int] = None,
     problem_type: Optional[str] = None,
 ) -> str:
-    intent = policy.metadata.get("student_intent", "unknown")
-    limits_shapes_instruction = (
-        f" {_limits_board_action_shapes_block()}"
-        if problem_type == "limit_of_function"
-        else ""
-    )
-    state_aware_instruction = ""
-    if current_step_index is not None and current_step_index > 0:
-        state_aware_instruction = (
-            f"SYSTEM: The student is currently viewing STEP {current_step_index} of the problem "
-            f"on their visual whiteboard. Do NOT repeat previous steps. Answer their question "
-            f"specifically contextualized to this step. Assess if they understand this current "
-            f"step before deciding to advance to the next step. "
-        )
-
-    return (
+    static_prefix = (
         "You are a one-to-one AI visual tutor for Cambodian high school students. "
         "You behave like a real visual teacher: speak briefly, write or draw one useful idea, "
         "ask one question or give one small task, then wait. "
-        f"{state_aware_instruction}"
-        f"{limits_shapes_instruction}"
         "BOARD LAYOUT RULE (most important): The user prompt contains board_layout.next_y — "
         "this is the Y pixel position where you MUST start your first board_action. "
         "Every board_action after the first must have y >= previous_action.y + previous_action.height + 12. "
@@ -1727,14 +1839,6 @@ def _build_system_prompt(
         "Teach Socratically: ask guiding questions, give hints, and avoid direct final answers unless policy allows. "
         "Do not generate arbitrary code, Flutter code, SVG code, HTML, JavaScript, or drawing functions. "
         "Do not return markdown-only answers, markdown code fences, prose outside JSON, or a single markdown solution. "
-        f"Policy final_answer_locked={policy.final_answer_locked}. "
-        f"Policy partial_solution_allowed={policy.partial_solution_allowed}. "
-        f"Policy full_solution_allowed={policy.full_solution_allowed}. "
-        f"Policy request_student_step={policy.request_student_step}. "
-        f"Policy give_hint={policy.give_hint}. "
-        f"Policy diagnose_misconception={policy.diagnose_misconception}. "
-        f"Policy reveal_final={policy.reveal_final}. "
-        f"Student intent={intent}. "
         "If student intent is stuck, reteach the current step with a simpler visual, "
         "ask exactly one guiding question, and do not grade the stuck message as a step. "
         "If the student input is wrong or unrelated, highlight only the first mistake or mismatch, "
@@ -1792,6 +1896,35 @@ def _build_system_prompt(
         "allows visual work. "
         "Do not expose student_model or strategy_history contents in spoken_text or display_text."
     )
+    intent = policy.metadata.get("student_intent", "unknown")
+    limits_shapes_instruction = (
+        f" {_limits_board_action_shapes_block()}"
+        if problem_type == "limit_of_function"
+        else ""
+    )
+    state_aware_instruction = ""
+    if current_step_index is not None and current_step_index > 0:
+        state_aware_instruction = (
+            f"SYSTEM: The student is currently viewing STEP {current_step_index} of the problem "
+            f"on their visual whiteboard. Do NOT repeat previous steps. Answer their question "
+            f"specifically contextualized to this step. Assess if they understand this current "
+            f"step before deciding to advance to the next step. "
+        )
+
+    dynamic_context = (
+        f"Policy final_answer_locked={policy.final_answer_locked}. "
+        f"Policy partial_solution_allowed={policy.partial_solution_allowed}. "
+        f"Policy full_solution_allowed={policy.full_solution_allowed}. "
+        f"Policy request_student_step={policy.request_student_step}. "
+        f"Policy give_hint={policy.give_hint}. "
+        f"Policy diagnose_misconception={policy.diagnose_misconception}. "
+        f"Policy reveal_final={policy.reveal_final}. "
+        f"Student intent={intent}. "
+        f"{state_aware_instruction}"
+        f"{limits_shapes_instruction}"
+    )
+
+    return f"{static_prefix}\n\n{dynamic_context}"
 
 
 def _compute_board_next_y(visible_board_elements: object) -> float:
@@ -1929,18 +2062,11 @@ def _curriculum_prompt_context(policy: VisualTutorPolicyDecision) -> dict[str, A
         safe_context.append(
             {
                 "id": chunk.get("id"),
-                "grade": chunk.get("grade"),
-                "subject": chunk.get("subject"),
                 "topic": chunk.get("topic"),
                 "subtopic": chunk.get("subtopic"),
-                "content_type": chunk.get("content_type"),
                 "text": chunk.get("text"),
                 "formulas": chunk.get("formulas") or [],
-                "prerequisites": chunk.get("prerequisites") or [],
-                "common_misconceptions": chunk.get("common_misconceptions") or [],
-                "teaching_sequence": chunk.get("teaching_sequence") or [],
                 "khmer_terms": chunk.get("khmer_terms") or {},
-                "source": chunk.get("source") or {},
             }
         )
 
@@ -1951,17 +2077,7 @@ def _curriculum_prompt_context(policy: VisualTutorPolicyDecision) -> dict[str, A
         "formulas": policy.metadata.get("formulas") or [],
         "prerequisites": policy.metadata.get("prerequisites") or [],
         "common_misconceptions": (policy.metadata.get("common_misconceptions") or []),
-        "teaching_sequence": policy.metadata.get("teaching_sequence") or [],
         "khmer_terms": policy.metadata.get("khmer_terms") or {},
-        "sources": policy.metadata.get("curriculum_sources") or [],
-        "usage_rules": [
-            "Use curriculum only for explanation and grounding.",
-            "Do not reveal final answers when policy.final_answer_locked is true.",
-            "Do not include worked example answers or exercise answers.",
-            "Prefer khmer_terms when policy.use_khmer_explanation is true.",
-            "Use a Khmer technical term only when it appears in khmer_terms; otherwise keep the English term and mark glossary_gap for curriculum review. Never invent a translation.",
-            "For bilingual mode, give Khmer first then a concise English gloss; keep equations and symbols unchanged.",
-        ],
     }
 
 
@@ -2436,19 +2552,6 @@ def _canvas_action_prompt_schema() -> dict[str, Any]:
             "speak_marker",
             "pause_marker",
         ],
-        "rules": [
-            "Use one small visual step per tutor turn.",
-            "COORDINATE RULE: Start first action at y=board_layout.next_y. Each next action: y = prev_y + prev_height + 12.",
-            "NEVER place any action at y less than board_layout.next_y. Never overlap elements.",
-            "Use x=28 for normal content, x=48 for indented sub-steps.",
-            "Standard dimensions: text h=44 w=660, equation h=52 w=500, graph h=200 w=600, table h=150 w=620, number_line h=80 w=600.",
-            "Include speak_marker before the one primary visual and pause_marker after it.",
-            "Use duration_ms: 350-500 text/equation, 450-650 shapes, 650-800 number line/table, 800-1000 graph; pause is 500-900.",
-            "Use at most one highlight and target only the current primary visual; fade old work only when it distracts.",
-            "Prefer a diagram, number line, graph, or equation transformation when it explains the idea better than text.",
-            "Never include final answer text/latex unless policy.reveal_final is true.",
-            "Future or final steps must be locked and hidden until policy allows.",
-        ],
     }
 
 
@@ -2475,30 +2578,23 @@ def _live_teaching_stage_prompt_schema() -> dict[str, Any]:
         "tutor_status": "Writing... | Explaining | Waiting for you | Checking | Verified",
         "speech": {
             "text": "short teacher speech",
-            "language": "en or km",
+            "language": "en | km",
             "tts_status": "not_requested",
             "speak_after_action_id": "optional board action id",
             "pause_after_ms": 0,
         },
         "teaching_stage": {
-            "stage_state": (
-                "listening | analyzing | speaking | drawing | "
-                "waiting_for_student | evaluating | adapting"
-            ),
-            "lesson_state": (
-                "understand_request | instant_help | check_student_knowledge | "
-                "teach | ask | evaluate | reteach_or_continue | verify | complete"
-            ),
+            "stage_state": "speaking | drawing | waiting_for_student",
+            "lesson_state": "teach | ask | evaluate | complete",
             "current_focus": "current board element id or concept",
             "turn_goal": "one concise goal for this turn",
             "max_actions_before_wait": 1,
         },
-        "board_actions": _canvas_action_prompt_schema(),
+        "board_actions": "list of board action objects following canvas_action_schema",
         "interaction": {
             "type": (
                 "text_response | voice_response | numeric_input | multiple_choice | "
-                "fill_blank | yes_no | confidence | select_board_element | "
-                "tap_incorrect_step | arrange_steps"
+                "fill_blank | yes_no"
             ),
             "prompt": "one short question for the student",
             "expected_answer_locked": True,
@@ -2520,18 +2616,7 @@ def _live_teaching_stage_prompt_schema() -> dict[str, Any]:
             "submit_answer",
             "request_hint",
             "explain_differently",
-            "show_visually",
-            "check_work",
-            "request_answer",
             "stuck",
-        ],
-        "rules": [
-            "Return only the next turn.",
-            "One speech, one visual idea, one interaction.",
-            "Do not include arbitrary code.",
-            "Final answer unlock is policy-only.",
-            "Do not return markdown-only answers or prose outside the JSON object.",
-            "Use unsupported_problem only for an intentional friendly unsupported screen.",
         ],
     }
 

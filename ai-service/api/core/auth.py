@@ -28,7 +28,7 @@ class AuthenticatedUser(BaseModel):
 def _jwt_secret() -> str:
     # The backend signs access tokens with SECRET_KEY. The AI service must
     # verify with that exact same deployment secret.
-    return get_settings().SECRET_KEY
+    return os.getenv("SECRET_KEY", "")
 
 def _jwt_algorithm() -> str:
     settings = get_settings()

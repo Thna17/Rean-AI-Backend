@@ -5,10 +5,7 @@ animated whiteboard writes the full worked solution while the tutor explains it,
 then answers follow-up questions about any step. Currently scoped to **Grade 12
 "Limits of Functions"**. The LLM is **DeepSeek**.
 
-> The `CLAUDE.md` in this same directory describes a *different* project
-> (LexiLingo — a language-learning app with `flutter-app/`, `backend-service/`,
-> `admin-service/`). None of those directories exist here. Ignore it; this file
-> describes the actual repository.
+> `CLAUDE.md` and `GEMINI.md` describe the active ReanAI codebase and multi-agent coordination.
 
 ---
 

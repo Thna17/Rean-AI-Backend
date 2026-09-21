@@ -10,8 +10,8 @@
 ## Features
 
 ### 🤖 AI Chat (Gemini)
-- Context-aware conversations với AI tutor
-- Session management với message history
+- Context-aware conversations with AI tutor
+- Session management with message history
 - Language learning focused responses
 - Multi-language support
 
@@ -136,8 +136,7 @@ Required environment variables:
 | `MONGODB_URI` | MongoDB connection string |
 | `GEMINI_API_KEY` | Google Gemini API key |
 
-Optional:
-- `MONGODB_DB_NAME` — Database name (default: lexilingo)
+- `MONGODB_DB_NAME` — Database name (default: reanai)
 - `ALLOWED_ORIGINS` — CORS origins
 - `RATE_LIMIT_PER_MINUTE` — API rate limiting
 
@@ -145,8 +144,9 @@ Optional:
 
 ## Related Services
 
-- **Backend Service** — User & course data at port 8000
-- **Flutter App** — Mobile/Web frontend
+- **Backend Gateway** (`backend-ai-tutor/backend`) — Express proxy & auth at port 4000
+- **Flutter Client** (`ai_tutor`) — Whiteboard frontend at port 53124
+- **Admin Dashboard** (`admin-ai-tutor`) — Next.js admin at port 3000
 
 ---
 

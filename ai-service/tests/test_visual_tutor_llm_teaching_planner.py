@@ -1930,6 +1930,39 @@ def test_deepseek_client_model_is_configurable_via_env(monkeypatch) -> None:
     assert captured["json"]["model"] == "deepseek-reasoner"
 
 
+def test_deepseek_client_tracks_token_usage(monkeypatch) -> None:
+    class FakeResponseWithUsage:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "choices": [{"message": {"content": '{"spoken_text":"ok"}'}}],
+                "usage": {
+                    "prompt_tokens": 120,
+                    "completion_tokens": 35,
+                    "total_tokens": 155,
+                },
+            }
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
+    monkeypatch.setattr("api.services.visual_tutor.llm_teaching_planner.httpx.post", lambda *a, **kw: FakeResponseWithUsage())
+
+    DeepSeekVisualTutorLLMClient.reset_global_token_usage()
+    client = DeepSeekVisualTutorLLMClient(timeout=1)
+    client.complete(system_prompt="s", user_prompt="u")
+
+    usage = client.get_token_usage()
+    assert usage["prompt_tokens"] == 120
+    assert usage["completion_tokens"] == 35
+    assert usage["total_tokens"] == 155
+    assert usage["call_count"] == 1
+
+    global_usage = DeepSeekVisualTutorLLMClient.get_global_token_usage()
+    assert global_usage["total_tokens"] == 155
+    assert global_usage["call_count"] == 1
+
+
 def test_default_llm_client_selects_deepseek_only_when_explicit(monkeypatch) -> None:
     monkeypatch.setenv("VISUAL_TUTOR_LLM_PROVIDER", "deepseek")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek-key")

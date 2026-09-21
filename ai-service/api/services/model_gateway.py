@@ -478,10 +478,11 @@ class ModelGateway:
             "phoneme": "hubert",
             "accent": "hubert",
             
-            # Vietnamese — routes to Qwen (llama_vi not registered)
-            "translate_vi": "qwen",
-            "explain_vi": "qwen",
-            "vietnamese": "qwen",
+            # Localized explanations — routes to Qwen
+            "explain_km": "qwen",
+            "explain_localized": "qwen",
+            "khmer": "qwen",
+            "localized": "qwen",
             
             # Embeddings
             "embed": "minilm",

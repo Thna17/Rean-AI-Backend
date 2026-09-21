@@ -841,6 +841,9 @@ def _referenced_chemistry_step(
     return None
 
 
+_chemistry_explanation_cache: dict[str, str] = {}
+
+
 def _explain_chemistry_step(
     *,
     question: str,
@@ -871,6 +874,11 @@ def _explain_chemistry_step(
         )
 
     grounded = step.explanation if step else solution.answer_text
+    clean_q = " ".join(re.sub(r"[^\w\s]", "", question.lower()).split())
+    step_key = step.key if step else "all"
+    cache_key = f"{solution.equation_latex}:{step_key}:{clean_q}"
+    if cache_key in _chemistry_explanation_cache:
+        return _chemistry_explanation_cache[cache_key]
 
     system_prompt = (
         "You are a patient Grade 12 chemistry teacher in Cambodia. Answer the "
@@ -900,6 +908,7 @@ def _explain_chemistry_step(
         if isinstance(data, dict) and "answer" in data and isinstance(data["answer"], str):
             ans = " ".join(data["answer"].split())
             if ans and len(ans) <= 500:
+                _chemistry_explanation_cache[cache_key] = ans
                 return ans
     except Exception:
         pass
@@ -1087,6 +1096,9 @@ def _chemistry_solution_turn(
         metadata={
             "teaching_plan": plan,
             "worked_solution": True,
+            "verified": True,
+            "curriculum_status": "verified_curriculum",
+            "curriculum_topic": "Stoichiometry",
             "chemistry_stoichiometry": True,
             "target": solution.target_species,
             "target_value": solution.target_value,

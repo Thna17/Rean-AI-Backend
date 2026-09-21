@@ -1,4 +1,4 @@
-# MongoDB Configuration for LexiLingo AI System
+# MongoDB Configuration for ReanAI AI System
 # Supports both local development and production deployment
 
 # =============================================================================
@@ -7,7 +7,7 @@
 development:
   mongodb:
     uri: ${MONGODB_DEV_URI}
-    database: lexilingo_dev
+    database: reanai_dev
     options:
       maxPoolSize: 10
       minPoolSize: 2
@@ -33,7 +33,7 @@ production:
     # Get from environment variable: MONGODB_ATLAS_URI
     # Format: ***REMOVED***
     uri: ${MONGODB_ATLAS_URI}
-    database: lexilingo_prod
+    database: reanai_prod
     options:
       maxPoolSize: 50
       minPoolSize: 5

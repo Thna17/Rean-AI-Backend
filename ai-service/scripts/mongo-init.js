@@ -1,8 +1,8 @@
-// MongoDB initialization script for LexiLingo Backend
+// MongoDB initialization script for ReanAI Backend
 // This script runs automatically when MongoDB container starts
 
-// Switch to lexilingo database
-db = db.getSiblingDB('lexilingo');
+// Switch to reanai database
+db = db.getSiblingDB('reanai');
 
 // Create collections with validation schema
 db.createCollection('ai_interactions', {
@@ -143,7 +143,7 @@ db.ai_interactions.insertOne({
   user_feedback: null
 });
 
-print('OK LexiLingo database initialized successfully!');
+print('OK ReanAI database initialized successfully!');
 print('Collections Collections created: ai_interactions, chat_sessions, chat_messages, learning_patterns, model_metrics, training_queue');
 print('Indexes Indexes created for optimal query performance');
 print('Sample data Sample data inserted for testing
@@ -180,4 +180,4 @@ db.chat_messages.createIndex({ message_id: 1 }, { unique: true });
 
 db.learning_patterns.createIndex({ user_id: 1, analyzed_at: -1 });
 
-print('OK LexiLingo database initialized successfully!');
+print('OK ReanAI database initialized successfully!');

@@ -272,37 +272,31 @@ Respond in JSON format with this structure:
         
         return base_prompt
     
-    def build_vietnamese_explanation_prompt(
+    def build_localized_explanation_prompt(
         self,
-        english_analysis: Dict[str, Any],
-        user_message: str
+        analysis: Dict[str, Any],
+        user_message: str,
+        language: str = "Khmer",
     ) -> str:
-        """
-        Build prompt for Vietnamese explanation (LLaMA3-VI)
-        
-        Used when:
-        - Learner level is A2
-        - Confidence < 0.8
-        - Explicit Vietnamese request
-        """
-        errors = english_analysis.get("grammar_errors", [])
+        """Build prompt for localized explanation."""
+        errors = analysis.get("grammar_errors", [])
         error_str = "\n".join([
-            f"- {e['error']} → {e['correction']}: {e['explanation']}"
+            f"- {e.get('error', '')} → {e.get('correction', '')}: {e.get('explanation', '')}"
             for e in errors
         ])
         
-        prompt = f"""Bạn là gia sư tiếng Anh, đang giải thích cho học viên người Việt.
+        return f"""You are a helpful AI STEM tutor assisting a student.
 
-Câu của học viên: "{user_message}"
+Student input: "{user_message}"
 
-Phân tích (bằng tiếng Anh):
+Analysis:
 {error_str}
 
-Hãy giải thích lỗi sai này bằng tiếng Việt một cách:
-- Dễ hiểu, đơn giản
-- Khuyến khích học viên
-- Đưa ra ví dụ cụ thể
+Please explain clearly in {language} in an encouraging and easy-to-understand manner."""
 
-Trả lời bằng tiếng Việt."""
-        
-        return prompt
+    def build_vietnamese_explanation_prompt(
+        self,
+        english_analysis: Dict[str, Any],
+        user_message: str,
+    ) -> str:
+        return self.build_localized_explanation_prompt(english_analysis, user_message, language="Khmer")

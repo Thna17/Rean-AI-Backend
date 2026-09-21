@@ -16,7 +16,11 @@ from api.models.visual_tutor import (
 )
 from api.services.visual_tutor.orchestrator import handle_visual_tutor_turn
 from api.services.visual_tutor.solvers import parse_limit_of_function
-from api.services.visual_tutor.worked_solution import solve_limit
+from api.services.visual_tutor.worked_solution import (
+    solve_limit,
+    clear_worked_solution_cache,
+    get_cache_stats,
+)
 
 
 def _request(message: str, *, problem_text: str | None = None, **metadata) -> VisualTutorTurnRequest:
@@ -124,3 +128,79 @@ def test_try_it_myself_keeps_the_guided_flow() -> None:
     )
 
     assert response.metadata.get("worked_solution") is None
+
+
+def test_worked_solution_cache_hits() -> None:
+    clear_worked_solution_cache()
+    problem = parse_limit_of_function("lim x->3 (x^2-9)/(x-3)")
+    sol1 = solve_limit(problem)
+    assert get_cache_stats()["worked_solutions_cached"] == 1
+
+    sol2 = solve_limit(problem)
+    assert sol1 is sol2
+    assert get_cache_stats()["worked_solutions_cached"] == 1
+
+
+def test_start_action_serves_worked_solution_immediately() -> None:
+    req = VisualTutorTurnRequest(
+        user_id="student-1",
+        subject="Mathematics",
+        message="lim x->3 (x^2-9)/(x-3)",
+        action=VisualTutorAction.START,
+    )
+    response = handle_visual_tutor_turn(req)
+    assert response.metadata.get("worked_solution") is not None
+    assert "The limit is 6." in _texts(response)
+
+
+def test_explanation_cache_hits_on_repeated_question() -> None:
+    clear_worked_solution_cache()
+
+    class FakeClient:
+        calls = 0
+
+        def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+            self.calls += 1
+            return '{"answer": "We factor because direct substitution gives 0/0."}'
+
+    client = FakeClient()
+    req = _request("why factor numerator?", problem_text="lim x->3 (x^2-9)/(x-3)")
+    resp1 = handle_visual_tutor_turn(req, llm_client=client)
+    assert client.calls == 1
+    assert get_cache_stats()["explanations_cached"] == 1
+
+    # Same question repeated should hit cache and NOT call LLM
+    resp2 = handle_visual_tutor_turn(req, llm_client=client)
+    assert client.calls == 1
+    assert "We factor because" in _texts(resp2)
+
+
+def test_followup_degraded_mode_on_llm_rate_limit_429() -> None:
+    class RateLimitedClient:
+        def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+            raise RuntimeError("HTTP 429: Too Many Requests (Rate limit exceeded)")
+
+    clear_worked_solution_cache()
+    req = _request("why factor numerator?", problem_text="lim x->3 (x^2-9)/(x-3)")
+    resp = handle_visual_tutor_turn(req, llm_client=RateLimitedClient())
+
+    assert resp.metadata.get("degraded_mode") is True
+    assert resp.metadata.get("degraded_reason") == "rate_limited"
+    assert "Note: AI visual tutor is experiencing high demand" in _texts(resp)
+    # The student still sees the full solution and verified step on the board
+    assert "The limit is 6." in _texts(resp)
+
+
+def test_followup_degraded_mode_on_llm_timeout() -> None:
+    class TimeoutClient:
+        def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+            raise TimeoutError("LLM call timed out after 5.0s")
+
+    clear_worked_solution_cache()
+    req = _request("what happens next?", problem_text="lim x->3 (x^2-9)/(x-3)")
+    resp = handle_visual_tutor_turn(req, llm_client=TimeoutClient())
+
+    assert resp.metadata.get("degraded_mode") is True
+    assert resp.metadata.get("degraded_reason") == "timeout"
+    assert "Note: AI visual tutor is experiencing high demand" in _texts(resp)
+
