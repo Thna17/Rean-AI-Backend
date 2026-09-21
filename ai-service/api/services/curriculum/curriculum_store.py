@@ -15,20 +15,33 @@ def default_curriculum_data_dir() -> Path:
 
 
 class CurriculumStore:
-    def __init__(self, data_dir: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        data_dir: Optional[Path] = None,
+        published_store: Optional[PublishedCurriculumStore] = None,
+    ) -> None:
         self.data_dir = data_dir or default_curriculum_data_dir()
+        self._published_override = published_store
         self._chunks: Optional[list[CurriculumChunk]] = None
         self._indexes: dict[str, dict[str, list[CurriculumChunk]]] = {}
         self._published_generation: int | None = None
 
     def load_chunks(self) -> list[CurriculumChunk]:
-        published = PublishedCurriculumStore()
+        published = self._published_store()
         generation = published.generation()
         if self._chunks is None or self._published_generation != generation:
             self._chunks = list(_load_jsonl_chunks(self.data_dir)) + published.load()
             self._indexes = _build_indexes(self._chunks)
             self._published_generation = generation
         return list(self._chunks)
+
+    def _published_store(self) -> PublishedCurriculumStore:
+        # Admin-published curriculum lives on the service-wide shared volume,
+        # independent of the seed data folder. Resolved on every load so a new
+        # generation or a changed ADMIN_PUBLISHED_CURRICULUM_PATH is picked up.
+        if self._published_override is not None:
+            return self._published_override
+        return PublishedCurriculumStore()
 
     def reload(self) -> None:
         self._chunks = None

@@ -56,17 +56,19 @@ def understand_visual_tutor_problem(
             request, message, language, entities, subject_route
         )
 
+    # Physics and chemistry problems with a deterministic solver go to it;
+    # other questions in these subjects keep their topic and question type.
     if subject_route == "physics":
         kinematics = _parse_kinematics_problem(message)
         if kinematics:
             return _physics_kinematics_result(request, kinematics, language, entities)
-        return _unsupported_result(request, message, language, entities)
+        return _non_math_subject_result(request, message, language, entities, subject_route)
 
     if subject_route == "chemistry":
         chemistry = _parse_chemistry_balancing_problem(message)
         if chemistry:
             return _chemistry_balancing_result(request, chemistry, language, entities)
-        return _unsupported_result(request, message, language, entities)
+        return _non_math_subject_result(request, message, language, entities, subject_route)
 
     regression = _parse_regression_problem(message, entities)
     if regression:
