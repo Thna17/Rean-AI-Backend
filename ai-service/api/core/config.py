@@ -314,7 +314,8 @@ class Settings(BaseSettings):
     )
     # Private shared credential used only by the TypeScript gateway.
     VISUAL_TUTOR_INTERNAL_TOKEN: str = os.getenv("VISUAL_TUTOR_INTERNAL_TOKEN", "")
-    VISUAL_TUTOR_OCR_ENABLED: bool = os.getenv("VISUAL_TUTOR_OCR_ENABLED", "true").lower() == "true"
+    # Off by default: the photo/scan feature was removed from the student app.
+    VISUAL_TUTOR_OCR_ENABLED: bool = os.getenv("VISUAL_TUTOR_OCR_ENABLED", "false").lower() == "true"
     VISUAL_TUTOR_STT_ENABLED: bool = os.getenv("VISUAL_TUTOR_STT_ENABLED", "true").lower() == "true"
     VISUAL_TUTOR_TTS_ENABLED: bool = os.getenv("VISUAL_TUTOR_TTS_ENABLED", "true").lower() == "true"
     # Logs the real LLM/DeepSeek exception (type, message, HTTP status) instead
