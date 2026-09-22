@@ -119,9 +119,13 @@ def project_public_tutor_turn(response: VisualTutorTurnResponse) -> dict[str, An
         concise_evidence = stored_verification.get("concise_evidence")
         if not isinstance(concise_evidence, str) or not concise_evidence.strip():
             concise_evidence = feedback
+    is_turn_verified = (
+        metadata.get("verified") is True
+        or stored_verification.get("verified", False) is True
+    )
     verification = {
-        "status": stored_verification.get("status", "cannot_verify"),
-        "verified": stored_verification.get("verified", False) is True,
+        "status": stored_verification.get("status", "verified" if is_turn_verified else "cannot_verify"),
+        "verified": is_turn_verified,
         "concise_evidence": concise_evidence,
         "student_facing_feedback": feedback,
     }

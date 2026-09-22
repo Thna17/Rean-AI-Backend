@@ -346,13 +346,13 @@
                 <div class="tooltip">MiniLM vector search · KG evidence fusion</div>
               </div>
             </div>
-            <!-- right arm: VIETNAMESE -->
+            <!-- right arm: LOCALIZED -->
             <div class="fork-node-wrap">
               <div class="fork-arm" id="fa-viet"></div>
               <div class="node skip tooltip-wrap" id="n-viet" style="min-width:105px">
-                <div class="n-name" style="font-size:11px">VIETNAMESE</div>
-                <div class="n-sub" id="ns-viet" style="font-size:9px">A1/A2 + errors</div>
-                <div class="tooltip">Native-language hint for A1/A2 learners</div>
+                <div class="n-name" style="font-size:11px">LOCALIZED</div>
+                <div class="n-sub" id="ns-viet" style="font-size:9px">Khmer / Native</div>
+                <div class="tooltip">Native-language hint for learners</div>
               </div>
             </div>
           </div>
@@ -589,13 +589,13 @@ function renderResponse(resp) {
 
   // Tutor response
   const r = document.createElement('div'); r.className = 'resp-block';
-  r.innerHTML = `<div class="label">🦜 Lexi</div><div class="resp-text">${esc(resp.tutor_response || '—')}</div>`;
+  r.innerHTML = `<div class="label">🎓 Rean</div><div class="resp-text">${esc(resp.tutor_response || '—')}</div>`;
   pane.appendChild(r);
 
-  // Vietnamese hint
-  if (resp.vietnamese_hint) {
+  // Localized hint
+  if (resp.vietnamese_hint || resp.localized_hint) {
     const v = document.createElement('div'); v.className = 'resp-block';
-    v.innerHTML = `<div class="label">🇻🇳 Vietnamese Hint</div><div class="resp-text">${esc(resp.vietnamese_hint)}</div>`;
+    v.innerHTML = `<div class="label">🇰🇭 Khmer / Localized Hint</div><div class="resp-text">${esc(resp.localized_hint || resp.vietnamese_hint)}</div>`;
     pane.appendChild(v);
   }
 

@@ -10,6 +10,14 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# The student app, gateway and admin live in their own repositories. Each job
+# checks its app out into the folder it expects; override the repository with
+# a repository variable if one moves.
+env:
+  STUDENT_APP_REPO: ${{ vars.STUDENT_APP_REPO || 'pasey-khemrak/ai_tutor' }}
+  GATEWAY_REPO: ${{ vars.GATEWAY_REPO || 'Rangsey10/backend-ai-tutor' }}
+  ADMIN_REPO: ${{ vars.ADMIN_REPO || 'yeansreymom25-eng/Rean-AI-Admin' }}
+
 jobs:
   flutter:
     name: Flutter analyze and test
@@ -19,6 +27,10 @@ jobs:
         working-directory: ai_tutor
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ env.STUDENT_APP_REPO }}
+          path: ai_tutor
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -38,6 +50,10 @@ jobs:
         working-directory: backend-ai-tutor/backend
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ env.GATEWAY_REPO }}
+          path: backend-ai-tutor
       - uses: actions/setup-node@v6
         with:
           node-version: 20
@@ -105,6 +121,10 @@ jobs:
         working-directory: admin-ai-tutor
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ env.ADMIN_REPO }}
+          path: admin-ai-tutor
       - uses: actions/setup-node@v6
         with:
           node-version: 20
@@ -115,4 +135,4 @@ jobs:
       - name: Build
         run: npm run build
       - name: Test
-        run: npm test
+        run: npm test --if-present

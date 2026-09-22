@@ -19,12 +19,12 @@ logger = logging.getLogger(__name__)
 
 class ExecutionMetrics:
     """
-    Track performance metrics cho AI Orchestrator.
+    Track performance metrics for AI Orchestrator.
     
     Metrics tracked:
-    - Request counts và latency
+    - Request counts and latency
     - Cache hit rates
-    - Error rates và types
+    - Error rates and types
     - Component-level performance
     """
     

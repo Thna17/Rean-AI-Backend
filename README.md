@@ -19,7 +19,7 @@ There is no deployable `flutter-app`, `backend-service`, `admin-service`, or `mc
 - [Local development](docs/LOCAL_DEVELOPMENT.md)
 - [Release runbook](docs/RELEASE_RUNBOOK.md)
 - [Known limitations](docs/KNOWN_LIMITATIONS.md)
-- [Historical phase/audit index](docs/ARCHIVED_PHASE_AUDITS.md)
+- [Work Roadmap Prompts](docs/ai-work-prompts.md)
 
 For a clean-checkout verification, run:
 

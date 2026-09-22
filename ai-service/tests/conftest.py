@@ -247,9 +247,9 @@ def mock_kg_service_global(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def visual_tutor_scope_lock_disabled_by_default(monkeypatch):
-    """VISUAL_TUTOR_SCOPE_LOCK defaults to "grade12_math_limits" in production
-    to keep the still-stabilizing dynamic pipeline focused on one topic (see
-    api/core/config.py and orchestrator.py's _scope_lock_active()). Most
+    """VISUAL_TUTOR_SCOPE_LOCK defaults to "grade12_stem" (Grade 10-12 maths,
+    physics and chemistry; see api/core/config.py and orchestrator.py's
+    _scope_lock_active()). Most
     tests exercise other subjects/topics/grades and are not testing the lock
     itself, so it is disabled here by default -- otherwise every one of them
     would need to know about a flag unrelated to what they actually test.
@@ -261,3 +261,48 @@ def visual_tutor_scope_lock_disabled_by_default(monkeypatch):
     monkeypatch.setattr(settings, "VISUAL_TUTOR_SCOPE_LOCK", "")
 
 
+
+
+@pytest.fixture
+def guided_tutor_mode(monkeypatch, request):
+    """Run a test's tutor turns in the guided "Try it myself" flow.
+
+    By default a new problem gets the complete worked solution. Students who
+    choose "Try it myself" send ``metadata.tutor_mode = "try_myself"`` and are
+    guided one step at a time with the answer locked. Modules that test that
+    guided flow opt in with::
+
+        pytestmark = pytest.mark.usefixtures("guided_tutor_mode")
+
+    Requests that already set a tutor_mode are left unchanged.
+    """
+    from api.services.visual_tutor import orchestrator
+    import api.routes.visual_tutor as visual_tutor_routes
+
+    original = orchestrator.handle_visual_tutor_turn
+
+    def guided(turn_request, *args, **kwargs):
+        metadata = dict(turn_request.metadata or {})
+        metadata.setdefault("tutor_mode", "try_myself")
+        return original(turn_request.model_copy(update={"metadata": metadata}), *args, **kwargs)
+
+    monkeypatch.setattr(orchestrator, "handle_visual_tutor_turn", guided)
+    monkeypatch.setattr(visual_tutor_routes, "handle_visual_tutor_turn", guided)
+    if hasattr(request.module, "handle_visual_tutor_turn"):
+        monkeypatch.setattr(request.module, "handle_visual_tutor_turn", guided)
+
+
+@pytest.fixture
+def development_compatibility_contract(monkeypatch):
+    """Allow the full (compatibility version 0) turn response in these tests.
+
+    The route only honours ``x-visual-tutor-api-compatibility-version: 0`` when
+    ``ENVIRONMENT == "development"``; every other environment emits the compact
+    student-safe contract. Tests that inspect the full response opt in here
+    instead of depending on the developer's .env file. Opt in with::
+
+        pytestmark = pytest.mark.usefixtures("development_compatibility_contract")
+    """
+    from api.core.config import settings
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "development")

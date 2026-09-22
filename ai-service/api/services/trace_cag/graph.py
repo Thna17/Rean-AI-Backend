@@ -58,7 +58,7 @@ class TraceCAGPipeline:
            ┌───────────┼───────────────┐
            ▼           ▼               ▼
     ┌────────────┐┌───────────┐ ┌─────────────┐
-    │ ASK_CLARIFY││VIETNAMESE │ │  RETRIEVE   │
+    │ ASK_CLARIFY││ LOCALIZED │ │  RETRIEVE   │
     └─────┬──────┘└─────┬─────┘ └──────┬──────┘
           │             └──────────────┤
           │                            ▼
@@ -122,7 +122,7 @@ class TraceCAGPipeline:
             }
         )
 
-        # Conditional: kg_diagnose → (retrieve | vietnamese | ask_clarify)
+        # Conditional: kg_diagnose → (retrieve | localized | ask_clarify)
         graph.add_conditional_edges(
             "kg_diagnose_node",
             route_after_diagnosis,
@@ -133,7 +133,7 @@ class TraceCAGPipeline:
             }
         )
 
-        # Vietnamese → retrieve (continue normal flow)
+        # Localized → retrieve (continue normal flow)
         graph.add_edge("vietnamese_node", "retrieve_node")
 
         # Retrieve → generate

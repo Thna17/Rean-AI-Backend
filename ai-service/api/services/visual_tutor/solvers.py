@@ -2656,12 +2656,13 @@ class LimitOfFunctionProblem:
     variable: str
     target_point_display: str  # "1", "-3/2", "infinity", "-infinity"
     requested_direction: Optional[str]  # "left" | "right" | None (two-sided)
+    is_khmer: bool = False
 
 
 # No trailing \b: subscript notation ("lim_{x \to 3}", common in OCR'd
 # textbook problems) puts a word character straight after "lim". This is only
 # a cheap pre-filter -- the clause regexes and sympy below still decide.
-_LIMIT_TRIGGER_RE = re.compile(r"\blim(?:it)?", re.IGNORECASE)
+_LIMIT_TRIGGER_RE = re.compile(r"(?:\blim(?:it)?|លីមីត)", re.IGNORECASE)
 _LIMIT_CLAUSE_RE = re.compile(
     r"(?:limit\s+of\s+)?"
     r"(?:f\s*\(\s*x\s*\)\s*=\s*|y\s*=\s*)?"
@@ -2673,28 +2674,45 @@ _LIMIT_CLAUSE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Khmer clause: "រកលីមីតនៃ (x^2 - 4)/(x - 2) ពេល x ខិតទៅ 2"
+_LIMIT_KHMER_CLAUSE_RE = re.compile(
+    r"(?:(?:រក|គណនា)?\s*លីមីត\s*(?:នៃ)?\s*)?"
+    r"(?:f\s*\(\s*x\s*\)\s*=\s*|y\s*=\s*)?"
+    r"(?P<expr>.+?)\s*(?:ពេល|កាលណា)?\s*x\s*"
+    r"(?:ខិតទៅ|ខិតជិត|->|→)\s*"
+    r"(?P<point>[-+]?(?:infinity|inf|∞|\d+(?:\.\d+)?))"
+    r"(?P<sign>[+-])?"
+    r"(?:\s*(?:ពី)?\s*(?P<side>ខាងឆ្វេង|ខាងស្តាំ|ខាងស្ដាំ|ឆ្វេង|ស្តាំ|ស្ដាំ))?",
+    re.IGNORECASE,
+)
+
 # Compact notation writes the approach before the expression -- "lim x->3
 # (x^2-9)/(x-3)", "lim_{x \to 3} 1/x" -- which _LIMIT_CLAUSE_RE cannot match
 # because it expects the expression first. Students type this far more often
 # than the prose form, so it is tried as a fallback with the same named groups.
 _LIMIT_PREFIX_CLAUSE_RE = re.compile(
-    r"\blim(?:it)?\s*_?\s*\{?\s*"
-    r"x\s*(?:->|→|\\to|approaches|approach(?:ing)?|tends?\s+to)\s*"
+    r"(?:\blim(?:it)?|លីមីត)\s*_?\s*\{?\s*"
+    r"x\s*(?:->|→|\\to|approaches|approach(?:ing)?|tends?\s+to|ខិតទៅ|ខិតជិត)\s*"
     r"(?P<point>[-+]?(?:infinity|inf|∞|\d+(?:\.\d+)?))"
     r"(?P<sign>[+-])?"
     r"\s*\}?\s*"
     r"(?P<expr>.+?)"
-    r"(?:\s*from\s+the\s+(?P<side>left|right))?\s*$",
+    r"(?:\s*(?:from\s+the\s+|ពី)?\s*(?P<side>left|right|ខាងឆ្វេង|ខាងស្តាំ|ខាងស្ដាំ|ឆ្វេង|ស្តាំ|ស្ដាំ))?\s*$",
     re.IGNORECASE,
 )
 
 
 def parse_limit_of_function(message: str) -> Optional[LimitOfFunctionProblem]:
     """Parse phrasing like 'Find the limit of f(x) = 2x + 1 as x approaches 3'
-    or 'limit of (x^2-1)/(x-1) as x approaches 1 from the left'."""
+    or 'limit of (x^2-1)/(x-1) as x approaches 1 from the left', or Khmer
+    phrasing like 'រកលីមីតនៃ (x^2-4)/(x-2) ពេល x ខិតទៅ 2'."""
     if not message or not _LIMIT_TRIGGER_RE.search(message):
         return None
-    match = _LIMIT_CLAUSE_RE.search(message) or _LIMIT_PREFIX_CLAUSE_RE.search(message)
+    match = (
+        _LIMIT_PREFIX_CLAUSE_RE.search(message)
+        or _LIMIT_CLAUSE_RE.search(message)
+        or _LIMIT_KHMER_CLAUSE_RE.search(message)
+    )
     if not match:
         return None
     expr_text = _limit_expression_text(match.group("expr").strip())
@@ -2713,11 +2731,12 @@ def parse_limit_of_function(message: str) -> Optional[LimitOfFunctionProblem]:
     direction: Optional[str] = None
     side = (match.group("side") or "").lower()
     sign = match.group("sign")
-    if side == "left" or sign == "-":
+    if side in {"left", "ឆ្វេង", "ខាងឆ្វេង"} or sign == "-":
         direction = "left"
-    elif side == "right" or sign == "+":
+    elif side in {"right", "ស្តាំ", "ស្ដាំ", "ខាងស្តាំ", "ខាងស្ដាំ"} or sign == "+":
         direction = "right"
     function_expression = str(expression).replace("**", "^")
+    is_khmer_problem = bool(re.search(r"[\u1780-\u17FF]", message))
     return LimitOfFunctionProblem(
         original=message.strip(),
         normalized_problem=f"lim(x -> {point_display}) {function_expression}",
@@ -2725,6 +2744,7 @@ def parse_limit_of_function(message: str) -> Optional[LimitOfFunctionProblem]:
         variable="x",
         target_point_display=point_display,
         requested_direction=direction,
+        is_khmer=is_khmer_problem,
     )
 
 
@@ -2743,7 +2763,7 @@ def _limit_expression_text(expr_text: str) -> Optional[str]:
         cleaned = prefix_match.group(1).strip()
     else:
         cleaned = re.sub(
-            r"^.*?\blimit\s+of\b\s*", "", expr_text, flags=re.IGNORECASE
+            r"^.*?(?:\blimit\s+of\b|(?:រក|គណនា)?\s*លីមីត\s*(?:នៃ)?)\s*", "", expr_text, flags=re.IGNORECASE
         ).strip()
     return cleaned or None
 

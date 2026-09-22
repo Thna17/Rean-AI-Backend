@@ -73,13 +73,11 @@ logs/
 **/GoogleService-Info.plist
 **/firebase_options.dart
 **/*firebase-adminsdk*.json
-flutter-app/lexilingo-88492-firebase-adminsdk-fbsvc-aa6640bef2.json
 
 # Keep template files
 !**/google-services.json.example
 !**/GoogleService-Info.plist.example
 !**/firebase_options.dart.example
-!flutter-app/lib/firebase_options.dart
 
 # Documentation & Model Support (not tracked)
 docs/cmd
@@ -157,3 +155,6 @@ scripts
 .claire/
 .crawl4ai/
 ai-service/.crawl4ai/
+
+# Curriculum the AI service writes at runtime when an admin publishes
+ai-service/data/curriculum/admin-published.*

@@ -61,13 +61,20 @@ def test_production_rejects_deepseek_without_a_real_key():
         ("VISUAL_TUTOR_INTERNAL_TOKEN", "short"),
         ("MONGODB_URI", "mongodb://localhost:27017"),
         ("OPENROUTER_API_KEY", ""),
-        ("GEMINI_API_KEY", ""),
+        # Removed scan feature: OCR is off by default, so the key is only
+        # required when OCR is explicitly enabled (covered below).
         ("ALLOWED_ORIGINS", ["*"]),
     ],
 )
 def test_production_visual_tutor_configuration_rejects_missing_or_unsafe_values(field, value):
     with pytest.raises(ValidationError):
         _production_settings(**{field: value})
+
+
+def test_production_requires_gemini_key_only_when_ocr_is_enabled():
+    _production_settings(GEMINI_API_KEY="", VISUAL_TUTOR_OCR_ENABLED=False)
+    with pytest.raises(ValidationError):
+        _production_settings(GEMINI_API_KEY="", VISUAL_TUTOR_OCR_ENABLED=True)
 
 
 def test_staging_uses_the_same_fail_closed_visual_tutor_rules():
@@ -124,7 +131,7 @@ async def test_private_readiness_never_reports_healthy_without_mongo_or_ai(monke
 
 
 @pytest.mark.asyncio
-async def test_private_readiness_reports_degraded_for_optional_voice_or_scan_dependency(monkeypatch):
+async def test_private_readiness_reports_degraded_for_optional_ocr_dependency(monkeypatch):
     class HealthyAdmin:
         async def command(self, _name):
             return {"ok": 1}

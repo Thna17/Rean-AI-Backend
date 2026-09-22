@@ -27,6 +27,12 @@ from api.services.visual_tutor.session_store import (
     evaluate_attempt_counters,
 )
 
+# These tests cover the guided "Try it myself" flow (answer locked, one
+# step at a time); the default full-solution flow is covered elsewhere.
+pytestmark = pytest.mark.usefixtures(
+    "guided_tutor_mode", "development_compatibility_contract"
+)
+
 
 class FakeVisualTutorStore:
     def __init__(self) -> None:

@@ -162,6 +162,12 @@ class StepSequencingService:
                     steps, target_concepts, analysis
                 )
             
+            # Link each step to the next so the plan can be walked by id;
+            # steps with their own branching rules keep them.
+            for current, following in zip(steps, steps[1:]):
+                if not current.next_step_id and not current.branching_rules:
+                    current.next_step_id = following.id
+
             # Step 3: Create adaptive rules
             adaptive_rules = self._create_adaptive_rules(steps, subject, learning_style)
             

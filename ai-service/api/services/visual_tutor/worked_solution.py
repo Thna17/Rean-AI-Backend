@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import httpx
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -101,20 +102,41 @@ class WorkedSolution:
     method: str = "table"
 
 
+_worked_solution_cache: dict[str, WorkedSolution] = {}
+_explanation_cache: dict[str, str] = {}
+
+
+def clear_worked_solution_cache() -> None:
+    """Clear in-memory worked solution and explanation caches."""
+    _worked_solution_cache.clear()
+    _explanation_cache.clear()
+
+
+def get_cache_stats() -> dict[str, int]:
+    """Return cache entry count for metrics and tests."""
+    return {
+        "worked_solutions_cached": len(_worked_solution_cache),
+        "explanations_cached": len(_explanation_cache),
+    }
+
+
 def match_worked_solution(request: VisualTutorTurnRequest) -> Optional[LimitOfFunctionProblem]:
     """The limit problem to solve in full, or None to use the guided flow.
 
     A student who typed a whole new limit mid-session gets a fresh solution
     too: the gateway sends that as submit_step once a problem exists, but a
     message that parses as a complete, different limit is a new problem.
+    Also handles START actions with problem text to avoid expensive LLM fallthrough.
     """
     metadata = request.metadata if isinstance(request.metadata, dict) else {}
     if str(metadata.get("tutor_mode") or "").strip().lower() == TRY_MYSELF_MODE:
         return None
     problem = parse_limit_of_function(request.message or "")
+    if problem is None and request.action == VisualTutorAction.START:
+        problem = parse_limit_of_function(request.current_state.problem_text or "")
     if problem is None:
         return None
-    if request.action == VisualTutorAction.SUBMIT_PROBLEM:
+    if request.action in {VisualTutorAction.SUBMIT_PROBLEM, VisualTutorAction.START}:
         return problem
     if request.action == VisualTutorAction.SUBMIT_STEP:
         current = parse_limit_of_function(request.current_state.problem_text or "")
@@ -143,6 +165,11 @@ def match_worked_solution_followup(
     return parse_limit_of_function(request.current_state.problem_text or "")
 
 
+def _normalize_question_key(question: str) -> str:
+    cleaned = re.sub(r"[^\w\s]", "", question.lower())
+    return " ".join(cleaned.split())
+
+
 def answer_about_solution(
     request: VisualTutorTurnRequest,
     problem: LimitOfFunctionProblem,
@@ -152,15 +179,22 @@ def answer_about_solution(
 ) -> VisualTutorTurnResponse:
     """Answer a student's question about one step, keeping the solution on the
     board so they can still see the step being discussed."""
+    is_khmer = _uses_khmer(request, problem)
     solution = solve_limit(problem)
     step = _referenced_step(request, solution)
-    answer = _explain_step(
+    answer, degraded_reason = _explain_step(
         question=request.message or "",
         solution=solution,
         step=step,
+        is_khmer=is_khmer,
         llm_client=llm_client,
     )
     heading = f"About {step.heading}" if step else "About this solution"
+    extra_metadata = (
+        {"degraded_mode": True, "degraded_reason": degraded_reason}
+        if degraded_reason
+        else {}
+    )
     return _solution_turn(
         request,
         problem,
@@ -172,6 +206,7 @@ def answer_about_solution(
         message=answer,
         task="Ask me anything else about this solution, or send another problem.",
         focus_section=f"step-{step.key}" if step else None,
+        extra_metadata=extra_metadata,
     )
 
 
@@ -215,14 +250,24 @@ def _explain_step(
     question: str,
     solution: WorkedSolution,
     step: Optional[SolutionStep],
-    llm_client: Any,
-) -> str:
+    is_khmer: bool = False,
+    llm_client: Any = None,
+) -> tuple[str, Optional[str]]:
     """A short answer in the tutor's voice, grounded in the verified solution.
 
-    The deterministic explanation is the floor: if the model is unavailable or
-    returns something unusable the student still gets a real answer.
+    Returns (explanation_text, degraded_reason).
+    If cached, returns the cached explanation with degraded_reason=None.
+    The deterministic explanation is the floor: if the model is unavailable,
+    times out, or is rate-limited (HTTP 429), the student receives a verified
+    grounded answer with degraded mode marked in metadata.
     """
     grounded = step.explanation if step else solution.answer_text
+    q_key = _normalize_question_key(question)
+    step_key = step.key if step else "all"
+    cache_key = f"{solution.problem_latex}:{step_key}:{q_key}:{is_khmer}"
+    if cache_key in _explanation_cache:
+        return _explanation_cache[cache_key], None
+
     prompt_steps = "\n".join(
         f"{item.heading}: {item.explanation}"
         + (f" [written on the board: {item.latex}]" if item.latex else "")
@@ -252,10 +297,29 @@ def _explain_step(
         reply = client.complete(system_prompt=system_prompt, user_prompt=user_prompt)
         cleaned = " ".join(_answer_text(reply).split())
         if cleaned and len(cleaned) <= 600 and not _looks_unsafe(cleaned):
-            return cleaned
-    except Exception:
-        logger.exception("visual_tutor step explanation failed; using the written step")
-    return grounded
+            _explanation_cache[cache_key] = cleaned
+            return cleaned, None
+    except Exception as exc:
+        exc_str = str(exc)
+        if "429" in exc_str:
+            reason = "rate_limited"
+        elif isinstance(exc, (TimeoutError, httpx.TimeoutException)) or "timeout" in exc_str.lower():
+            reason = "timeout"
+        else:
+            reason = "unavailable"
+        logger.warning(
+            "visual_tutor step explanation failed (%s: %s); entering degraded mode",
+            type(exc).__name__,
+            exc,
+        )
+        degraded_message = (
+            f"{grounded} (ចំណាំ៖ គ្រូ AI កំពុងមានសិស្សច្រើន និងផ្ដល់ការពន្យល់ផ្ទៀងផ្ទាត់។)"
+            if is_khmer
+            else f"{grounded} (Note: AI visual tutor is experiencing high demand; showing verified step guidance.)"
+        )
+        return degraded_message, reason
+
+    return grounded, None
 
 
 def _answer_text(reply: Any) -> str:
@@ -285,6 +349,10 @@ def _looks_unsafe(text: str) -> bool:
 
 
 def solve_limit(problem: LimitOfFunctionProblem) -> WorkedSolution:
+    cache_key = f"{problem.normalized_problem}:{getattr(problem, 'is_khmer', False)}"
+    if cache_key in _worked_solution_cache:
+        return _worked_solution_cache[cache_key]
+
     expression = _limit_sympy_expression(problem.function_expression)
     point = _limit_sympy_point(problem.target_point_display)
     direction = problem.requested_direction
@@ -331,13 +399,15 @@ def solve_limit(problem: LimitOfFunctionProblem) -> WorkedSolution:
                 table=table,
             )
         )
-    return WorkedSolution(
+    solution = WorkedSolution(
         problem_latex=problem_latex,
         answer_latex=answer_latex,
         answer_text=answer_text,
         steps=_numbered(steps),
         method=method,
     )
+    _worked_solution_cache[cache_key] = solution
+    return solution
 
 
 def build_worked_solution_turn(
@@ -360,6 +430,21 @@ def build_worked_solution_turn(
     )
 
 
+def _uses_khmer(request: VisualTutorTurnRequest, problem: Optional[LimitOfFunctionProblem] = None) -> bool:
+    if getattr(problem, "is_khmer", False):
+        return True
+    lang = getattr(request, "language_mode", None)
+    if hasattr(lang, "value"):
+        lang = lang.value
+    val = str(lang or request.metadata.get("language_mode") or "").strip().lower()
+    if val in {"khmer", "km"}:
+        return True
+    locale = (request.locale or "").lower()
+    if locale.startswith("km"):
+        return True
+    return False
+
+
 def _solution_turn(
     request: VisualTutorTurnRequest,
     problem: LimitOfFunctionProblem,
@@ -370,6 +455,7 @@ def _solution_turn(
     task: str,
     extra_sections: Optional[list[SolutionStep]] = None,
     focus_section: Optional[str] = None,
+    extra_metadata: Optional[dict[str, Any]] = None,
 ) -> VisualTutorTurnResponse:
     """The solution on the board, optionally with a reply written after it.
 
@@ -377,6 +463,15 @@ def _solution_turn(
     discussed stays in front of the student instead of being replaced by a
     bare answer.
     """
+    is_khmer = _uses_khmer(request, problem)
+    effective_task = task
+    if is_khmer:
+        effective_task = "សួរខ្ញុំអំពីជំហានណាមួយ ឬសុំឱ្យពន្យល់តាមរបៀបផ្សេង។"
+
+    effective_message = message
+    if is_khmer:
+        effective_message = "នេះជាដំណោះស្រាយលម្អិតមួយជំហានម្តងៗ។ អ្នកអាចសួរអំពីជំហានណាមួយដែលចង់ឱ្យពន្យល់បន្ថែមបាន។"
+
     turn_id = str(uuid.uuid4())
     actions: list[VisualTutorBoardAction] = []
     plan_actions: list[dict[str, Any]] = []
@@ -432,7 +527,8 @@ def _solution_turn(
     # server contract forbids a student task alongside a reveal while the
     # Flutter contract requires exactly one task, so a reveal could never
     # coexist with the "ask me about any step" prompt below.
-    add(VisualTutorCanvasActionType.WRITE_TEXT, "answer", text=f"Answer · {solution.answer_text}")
+    answer_label = "ចម្លើយ" if is_khmer else "Answer"
+    add(VisualTutorCanvasActionType.WRITE_TEXT, "answer", text=f"{answer_label} · {solution.answer_text}")
     add(
         VisualTutorCanvasActionType.WRITE_EQUATION,
         "answer",
@@ -451,7 +547,7 @@ def _solution_turn(
         VisualTutorCanvasActionType.STUDENT_TASK,
         "next",
         layout_zone="student_task",
-        text=task,
+        text=effective_task,
         requires_student_response=True,
         task_type="conceptual_operation",
         duration_ms=0,
@@ -461,8 +557,8 @@ def _solution_turn(
         {
             "schema_version": 1,
             "representation": "worked_example",
-            "learning_objective": "Understand every step of finding this limit, and why each step is allowed.",
-            "teaching_message": message,
+            "learning_objective": "យល់គ្រប់ជំហានក្នុងការរកដែនកំណត់នេះ" if is_khmer else "Understand every step of finding this limit, and why each step is allowed.",
+            "teaching_message": effective_message,
             "board_actions": plan_actions,
             "allowed_student_actions": ["submit_answer", "explain_differently", "request_hint"],
             "hidden_answer_policy": {
@@ -485,14 +581,14 @@ def _solution_turn(
         turn_id=turn_id,
         screen_state=VisualTutorScreenState.ASKING_QUESTION,
         tutor_status="Waiting for you",
-        spoken_text=message,
-        display_text=message,
+        spoken_text=effective_message,
+        display_text=effective_message,
         teaching_mode=VisualTutorTeachingMode.FULL_SOLUTION,
         final_answer_locked=False,
-        student_task=task,
+        student_task=effective_task,
         board=VisualTutorBoard(
             type=VisualTutorBoardType.EQUATION_STEPS,
-            title="Worked solution",
+            title="ដំណោះស្រាយលម្អិត" if is_khmer else "Worked solution",
             items=[
                 VisualTutorBoardItem(label=step.heading, content=step.explanation, status="done")
                 for step in solution.steps
@@ -500,7 +596,7 @@ def _solution_turn(
             metadata={"worked_solution": True},
         ),
         board_actions=actions,
-        speech=VisualTutorSpeech(text=message, language="en"),
+        speech=VisualTutorSpeech(text=effective_message, language="km" if is_khmer else "en"),
         interaction=VisualTutorInteraction(
             type=VisualTutorInteractionType.TEXT_RESPONSE,
             prompt=task,
@@ -534,6 +630,9 @@ def _solution_turn(
                     for step in solution.steps
                 ],
             },
+            "verified": True,
+            "curriculum_status": "verified_curriculum",
+            "curriculum_topic": "Limits of Functions",
             "verification": {
                 "status": "correct",
                 "verified": True,
@@ -545,6 +644,7 @@ def _solution_turn(
             "problem_text": problem.original,
             **({"discussing_section_id": focus_section} if focus_section else {}),
             **({"solver_facts": facts} if (facts := _solver_facts(request)) else {}),
+            **(extra_metadata or {}),
         },
     )
 

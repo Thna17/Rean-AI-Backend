@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Import LexiLingo-owned KG JSON/CSV data without external web crawling."""
+"""Import ReanAI-owned KG JSON/CSV data without external web crawling."""
 
 from __future__ import annotations
 
@@ -108,7 +108,7 @@ def run(stages: list[str], *, dry_run: bool = False) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Import LexiLingo-owned knowledge-graph data",
+        description="Import ReanAI-owned knowledge-graph data",
     )
     parser.add_argument(
         "--stages",

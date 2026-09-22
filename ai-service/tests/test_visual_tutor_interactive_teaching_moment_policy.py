@@ -28,6 +28,10 @@ from api.services.visual_tutor.problem_understanding import (
     understand_visual_tutor_problem,
 )
 
+# These tests cover the guided "Try it myself" flow (answer locked, one
+# step at a time); the default full-solution flow is covered elsewhere.
+pytestmark = pytest.mark.usefixtures("guided_tutor_mode")
+
 
 def _linear_problem():
     return understand_visual_tutor_problem(

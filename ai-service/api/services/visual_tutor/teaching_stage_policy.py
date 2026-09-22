@@ -241,6 +241,7 @@ def _enforce_single_teaching_moment(
     ordered = sorted(board_actions, key=lambda action: (action.sequence_index, action.id))
     accepted: list[VisualTutorBoardAction] = []
     accepted_ids: set[str] = set()
+    accepted_groups: set[str] = set()
     instructional_count = 0
     task_seen = False
     for action in ordered:
@@ -254,15 +255,24 @@ def _enforce_single_teaching_moment(
             task_seen = True
             accepted.append(action.model_copy(update={"requires_student_response": True}))
             accepted_ids.add(action.id)
+            if action.group_id:
+                accepted_groups.add(action.group_id)
             continue
         if action.type in modifiers:
-            if action.target_id is None or action.target_id in accepted_ids:
+            if (
+                action.target_id is None
+                or action.target_id in accepted_ids
+                or (action.group_id and action.group_id in accepted_groups)
+                or (bool(accepted_ids) and action.x is not None and action.y is not None)
+            ):
                 accepted.append(action)
             continue
         if instructional_count >= MAX_VISIBLE_INSTRUCTIONAL_ACTIONS:
             continue
         accepted.append(action)
         accepted_ids.add(action.id)
+        if action.group_id:
+            accepted_groups.add(action.group_id)
         instructional_count += 1
     return [
         action.model_copy(update={"sequence_index": index})
@@ -459,6 +469,8 @@ def _lesson_state_for_policy(
 def _max_visual_action_groups(policy: VisualTutorPolicyDecision) -> int:
     if policy.reveal_final:
         return 3
+    if policy.reveal_partial:
+        return 2
     return 1
 
 

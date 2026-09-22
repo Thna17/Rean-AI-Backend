@@ -153,7 +153,7 @@
     {
       "id": "concept:error.preposition_confusion",
       "title": "Preposition Confusion",
-      "keywords": "wrong preposition at in on for to from with about by during Vietnamese",
+      "keywords": "wrong preposition at in on for to from with about by during",
       "level": "A2"
     },
     {
@@ -165,7 +165,7 @@
     {
       "id": "concept:error.word_order_svo",
       "title": "Word Order (SVO) Error",
-      "keywords": "word order SVO Vietnamese influence adverb before verb subject position",
+      "keywords": "word order SVO adverb before verb subject position",
       "level": "A2"
     },
     {
@@ -465,7 +465,7 @@
     {
       "id": "concept:error.article_omission",
       "title": "Article Omission",
-      "keywords": "missing article the a an Vietnamese learner",
+      "keywords": "missing article the a an learner",
       "level": "A1"
     },
     {

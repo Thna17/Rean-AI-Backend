@@ -13,7 +13,14 @@ from time import perf_counter
 from api.models.visual_tutor import VisualTutorAction, VisualTutorTurnRequest
 from api.routes.math_verifier import verify_student_work
 from api.services.visual_tutor.orchestrator import handle_visual_tutor_turn
+
 from api.services.visual_tutor.teaching_plan_contract import VisualTutorTeachingPlan
+
+import pytest
+
+# These tests cover the guided "Try it myself" flow (answer locked, one
+# step at a time); the default full-solution flow is covered elsewhere.
+pytestmark = pytest.mark.usefixtures("guided_tutor_mode")
 
 
 @dataclass(frozen=True)

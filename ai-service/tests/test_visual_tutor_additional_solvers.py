@@ -27,6 +27,10 @@ from api.services.visual_tutor.solvers import (
     SlopeFromTwoPointsSolver,
 )
 
+# These tests cover the guided "Try it myself" flow (answer locked, one
+# step at a time); the default full-solution flow is covered elsewhere.
+pytestmark = pytest.mark.usefixtures("guided_tutor_mode")
+
 SOLVER_CASES = [
     (
         "linear_equation_one_variable",

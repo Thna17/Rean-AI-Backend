@@ -56,17 +56,19 @@ def understand_visual_tutor_problem(
             request, message, language, entities, subject_route
         )
 
+    # Physics and chemistry problems with a deterministic solver go to it;
+    # other questions in these subjects keep their topic and question type.
     if subject_route == "physics":
         kinematics = _parse_kinematics_problem(message)
         if kinematics:
             return _physics_kinematics_result(request, kinematics, language, entities)
-        return _unsupported_result(request, message, language, entities)
+        return _non_math_subject_result(request, message, language, entities, subject_route)
 
     if subject_route == "chemistry":
         chemistry = _parse_chemistry_balancing_problem(message)
         if chemistry:
             return _chemistry_balancing_result(request, chemistry, language, entities)
-        return _unsupported_result(request, message, language, entities)
+        return _non_math_subject_result(request, message, language, entities, subject_route)
 
     regression = _parse_regression_problem(message, entities)
     if regression:
@@ -596,6 +598,13 @@ def _non_math_subject_result(
             "board_type": VisualTutorBoardType.WORD_PROBLEM_BREAKDOWN,
             "clarification": "តើអ្នកចង់ឱ្យពន្យល់ពាក្យ ឃ្លា ឬវេយ្យាករណ៍មួយណាមុន?",
         },
+        "biology": {
+            "subject": "Biology",
+            "topic": request.topic or "Biology Concepts",
+            "problem_type": "biology_concept_question",
+            "board_type": VisualTutorBoardType.WORD_PROBLEM_BREAKDOWN,
+            "clarification": "Biology is not currently in scope for this tutor.",
+        },
     }[subject_route]
     return _result(
         request,
@@ -681,12 +690,18 @@ def _subject_route(subject: str, message: str, language: str) -> str:
         return "physics"
     if normalized in {"chemistry"}:
         return "chemistry"
+    if normalized in {"biology"}:
+        return "biology"
     if normalized in {"english", "english language"}:
         return "english"
     if normalized in {"khmer", "khmer language"}:
         return "khmer"
 
     lowered = message.lower()
+    if re.search(r"\b(cell|cells|photosynthesis|mitosis|meiosis|dna|rna|genetics|organism|ecosystem|species|biology)\b", lowered):
+        return "biology"
+    if re.search(r"(ជីវវិទ្យា|កោសិកា|រស្មីសំយោគ|ហ្សែន)", message):
+        return "biology"
     if language == "km" and re.search(r"(អក្សរ|ភាសាខ្មែរ|វេយ្យាករណ៍|ពាក្យ)", message):
         return "khmer"
     if re.search(r"\b(grammar|sentence|verb|noun|adjective|tense|essay)\b", lowered):

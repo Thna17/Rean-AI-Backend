@@ -25,24 +25,24 @@ class GroundedResponseV3:
         lines: List[str] = []
         if diagnosis.suspected_errors:
             err = diagnosis.suspected_errors[0]
-            lines.append(f"Mình thấy có thể bạn đang gặp lỗi: {err.type} ({err.span}).")
+            lines.append(f"Identified issue: {err.type} ({err.span}).")
         else:
-            lines.append("Mình đã xem nội dung của bạn.")
+            lines.append("I have analyzed your submission.")
 
         if concept_titles:
-            lines.append("Các khái niệm liên quan: " + ", ".join(concept_titles) + ".")
+            lines.append("Related concepts: " + ", ".join(concept_titles) + ".")
 
         if retrieval.examples:
             ex = retrieval.examples[0]
-            lines.append(f"Ví dụ đúng: {ex.good}")
-            lines.append(f"Ví dụ sai: {ex.bad}")
+            lines.append(f"Correct formulation: {ex.good}")
+            lines.append(f"Incorrect formulation: {ex.bad}")
             if ex.why:
-                lines.append(f"Giải thích: {ex.why}")
+                lines.append(f"Explanation: {ex.why}")
 
         if diagnosis.intent == "practice":
-            lines.append("Bạn muốn luyện thêm phần này chứ? Mình có thể tạo bài tập ngắn ngay.")
+            lines.append("Would you like to practice a similar problem? I can generate an exercise.")
         else:
-            lines.append("Bạn thử viết lại câu theo gợi ý trên nhé.")
+            lines.append("Try re-evaluating the step based on the explanation above.")
 
         return "\n".join(lines)
 

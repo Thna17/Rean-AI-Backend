@@ -8,7 +8,14 @@ from api.models.visual_tutor import (
     VisualTutorTurnState,
 )
 from api.services.visual_tutor import orchestrator
+
 from api.services.visual_tutor.orchestrator import handle_visual_tutor_turn
+
+import pytest
+
+# These tests cover the guided "Try it myself" flow (answer locked, one
+# step at a time); the default full-solution flow is covered elsewhere.
+pytestmark = pytest.mark.usefixtures("guided_tutor_mode")
 
 
 def test_solver_board_includes_retrieved_curriculum_formula() -> None:

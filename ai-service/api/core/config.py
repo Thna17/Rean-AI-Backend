@@ -314,7 +314,8 @@ class Settings(BaseSettings):
     )
     # Private shared credential used only by the TypeScript gateway.
     VISUAL_TUTOR_INTERNAL_TOKEN: str = os.getenv("VISUAL_TUTOR_INTERNAL_TOKEN", "")
-    VISUAL_TUTOR_OCR_ENABLED: bool = os.getenv("VISUAL_TUTOR_OCR_ENABLED", "true").lower() == "true"
+    # Off by default: the photo/scan feature was removed from the student app.
+    VISUAL_TUTOR_OCR_ENABLED: bool = os.getenv("VISUAL_TUTOR_OCR_ENABLED", "false").lower() == "true"
     VISUAL_TUTOR_STT_ENABLED: bool = os.getenv("VISUAL_TUTOR_STT_ENABLED", "true").lower() == "true"
     VISUAL_TUTOR_TTS_ENABLED: bool = os.getenv("VISUAL_TUTOR_TTS_ENABLED", "true").lower() == "true"
     # Logs the real LLM/DeepSeek exception (type, message, HTTP status) instead
@@ -325,11 +326,12 @@ class Settings(BaseSettings):
         "VISUAL_TUTOR_DEBUG_ERRORS",
         "false" if ENVIRONMENT == "production" else "true",
     ).lower() == "true"
-    # Restricts every Visual Tutor turn to Grade 12 limits-of-functions while
-    # the rest of the pipeline is being stabilized. Set to "" (empty) to lift
-    # the lock once other scopes are ready again; physics/chemistry/other
-    # grades stay in the codebase, just gated off, not deleted.
-    VISUAL_TUTOR_SCOPE_LOCK: str = os.getenv("VISUAL_TUTOR_SCOPE_LOCK", "grade12_math_limits")
+    VISUAL_TUTOR_SCOPE_LOCK: str = os.getenv("VISUAL_TUTOR_SCOPE_LOCK", "grade12_stem")
+    # If True, STEM topics without a verified solver or curriculum match are answered with Tier 2 (Unverified AI Guidance).
+    # If False, or if request specifies require_verified_solver=True, returns solver_not_ready.
+    VISUAL_TUTOR_ALLOW_UNVERIFIED_AI: bool = (
+        os.getenv("VISUAL_TUTOR_ALLOW_UNVERIFIED_AI", "true").lower() == "true"
+    )
     # local_limits_demo.py's fully scripted, deterministic board for the
     # Grade 12 limits-of-functions lesson is kept only as a reference/known-
     # good comparison now that LimitOfFunctionSolver + the dynamic LLM
@@ -342,8 +344,8 @@ class Settings(BaseSettings):
     ).lower() == "true"
     # Disabled by default. A pilot cannot be opened by a client request alone.
     VISUAL_TUTOR_PILOT_ENABLED: bool = os.getenv("VISUAL_TUTOR_PILOT_ENABLED", "false").lower() == "true"
-    VISUAL_TUTOR_PILOT_GRADES: str = os.getenv("VISUAL_TUTOR_PILOT_GRADES", "10")
-    VISUAL_TUTOR_PILOT_SUBJECTS: str = os.getenv("VISUAL_TUTOR_PILOT_SUBJECTS", "")
+    VISUAL_TUTOR_PILOT_GRADES: str = os.getenv("VISUAL_TUTOR_PILOT_GRADES", "12")
+    VISUAL_TUTOR_PILOT_SUBJECTS: str = os.getenv("VISUAL_TUTOR_PILOT_SUBJECTS", "mathematics,physics,chemistry")
     VISUAL_TUTOR_PILOT_LESSONS: str = os.getenv("VISUAL_TUTOR_PILOT_LESSONS", "")
     VISUAL_TUTOR_PILOT_LANGUAGE_MODES: str = os.getenv("VISUAL_TUTOR_PILOT_LANGUAGE_MODES", "khmer,english,bilingual")
     
@@ -381,8 +383,8 @@ class Settings(BaseSettings):
     # Qwen3-1.7B - English NLP (grammar, fluency, vocabulary, tutor response)
     QWEN_MODEL_NAME: str = os.getenv("QWEN_MODEL_NAME", "")
     
-    # LLaMA3-8B-VI - Vietnamese explanations (lazy load)
-    LLAMA_MODEL_NAME: str = os.getenv("LLAMA_MODEL_NAME", "vilm/vinallama-7b-chat")
+    # Localized explanations (lazy load)
+    LLAMA_MODEL_NAME: str = os.getenv("LLAMA_MODEL_NAME", "")
     
     # HuBERT - Pronunciation analysis
     HUBERT_MODEL_NAME: str = os.getenv("HUBERT_MODEL_NAME", "facebook/hubert-large-ls960-ft")

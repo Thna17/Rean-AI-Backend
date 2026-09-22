@@ -22,7 +22,7 @@ SAMPLE_STORIES = [
         "story_id": "story_airport_travel",
         "title": {
             "en": "Airport Travel Adventure",
-            "vi": "Cuộc phiêu lưu tại sân bay"
+            "km": "Airport Check-In Adventure"
         },
         "difficulty_level": "B1",
         "category": "travel",
@@ -134,7 +134,7 @@ SAMPLE_STORIES = [
         "story_id": "story_job_interview",
         "title": {
             "en": "Job Interview Success",
-            "vi": "Phỏng vấn xin việc thành công"
+            "km": "Job Interview Success"
         },
         "difficulty_level": "B2",
         "category": "business",
@@ -231,7 +231,7 @@ SAMPLE_STORIES = [
         "story_id": "story_restaurant_order",
         "title": {
             "en": "Dining Out Experience",
-            "vi": "Trải nghiệm ăn nhà hàng"
+            "km": "Dining at a Restaurant"
         },
         "difficulty_level": "A2",
         "category": "daily_life",

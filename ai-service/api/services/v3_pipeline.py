@@ -167,7 +167,7 @@ class V3Pipeline:
 
         # If low confidence -> fast clarifying question
         if diagnosis.next_best_action == "ask_clarify":
-            tutor_text = "Mình cần thêm 1 chút thông tin: bạn muốn mình sửa câu này, giải thích ngữ pháp, hay tạo bài tập luyện?"
+            tutor_text = "Could you please clarify: would you like me to check this step, explain the concept, or generate practice exercises?"
             latency_ms = int((time.time() - start) * 1000)
             response = TutorResponseV3(
                 tutor_response=tutor_text,

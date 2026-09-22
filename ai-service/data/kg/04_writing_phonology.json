@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Writing skills and pronunciation/phonology concepts. Writing covers paragraph structure, IELTS tasks, cohesion, and genre conventions. Phonology covers sounds, stress, rhythm, and features critical for Vietnamese learners.",
+  "description": "Writing skills and pronunciation/phonology concepts. Writing covers paragraph structure, IELTS tasks, cohesion, and genre conventions. Phonology covers sounds, stress, rhythm, and features critical for language learners.",
   "concepts": [
     {
       "id": "concept:skill.paragraph_structure",
@@ -72,19 +72,19 @@
       "id": "concept:phonology.consonant_clusters",
       "title": "Consonant Clusters",
       "level": "A2",
-      "keywords": "consonant cluster str- spl- spr- -ks -nts -lts -nds beginning end word groups together difficult Vietnamese simplified"
+      "keywords": "consonant cluster str- spl- spr- -ks -nts -lts -nds beginning end word groups together difficult pronunciation simplified"
     },
     {
       "id": "concept:phonology.final_consonants",
       "title": "Final Consonant Sounds",
       "level": "A2",
-      "keywords": "final consonant coda -t -d -k -p -s -z -f -v Vietnamese learner deletion dropped omission pronunciation end word stopped"
+      "keywords": "final consonant coda -t -d -k -p -s -z -f -v learner deletion dropped omission pronunciation end word stopped"
     },
     {
       "id": "concept:phonology.th_sounds",
       "title": "The /θ/ and /ð/ Sounds",
       "level": "B1",
-      "keywords": "th sounds theta this that think thought through three there these those dental fricative /θ/ /ð/ Vietnamese difficult tongue teeth"
+      "keywords": "th sounds theta this that think thought through three there these those dental fricative /θ/ /ð/ difficult tongue teeth"
     },
     {
       "id": "concept:phonology.word_stress",

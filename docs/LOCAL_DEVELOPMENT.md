@@ -27,6 +27,7 @@ python3 -m venv venv
 venv/bin/python -m pip install -c constraints-ai.txt -r requirements.txt
 ENVIRONMENT=development APP_ENV=development \
   VISUAL_TUTOR_INTERNAL_TOKEN="$VISUAL_TUTOR_INTERNAL_TOKEN" \
+  ALLOWED_ORIGINS=http://localhost:53123,http://127.0.0.1:53123,http://localhost:53124,http://127.0.0.1:53124 \
   venv/bin/python -m uvicorn api.main:app --reload --port 8001
 
 # Node gateway (new terminal)
@@ -35,7 +36,7 @@ npm ci
 NODE_ENV=development APP_ENV=development PORT=4000 \
   AI_SERVICE_BASE_URL=http://localhost:8001 \
   VISUAL_TUTOR_INTERNAL_TOKEN="$VISUAL_TUTOR_INTERNAL_TOKEN" \
-  CORS_ALLOWED_ORIGINS=http://localhost:53123,http://localhost:53124 \
+  CORS_ALLOWED_ORIGINS=http://localhost:53123,http://127.0.0.1:53123,http://localhost:53124,http://127.0.0.1:53124 \
   npm run dev
 
 # Flutter (new terminal)

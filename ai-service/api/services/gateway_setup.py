@@ -274,9 +274,11 @@ TASK_ROUTING = {
     "embed": "minilm",
     "semantic_search": "minilm",
     
-    # Vietnamese explanations use Gemini for now
-    "explain_vi": "gemini",
-    "vietnamese": "gemini",
+    # Localized explanations use Gemini for now
+    "explain_km": "gemini",
+    "explain_localized": "gemini",
+    "khmer": "gemini",
+    "localized": "gemini",
     
     # Fallback
     "default": "gemini",

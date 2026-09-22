@@ -22,7 +22,7 @@ def _mock_ollama_service(
 ) -> MagicMock:
     svc = MagicMock()
     svc.health_check = AsyncMock(return_value=health)
-    svc.list_models = AsyncMock(return_value=models or ["lexilingo-qwen3-1.7b"])
+    svc.list_models = AsyncMock(return_value=models or ["rean-qwen3-1.7b"])
     svc.generate = AsyncMock(return_value=generate_response)
     svc.analyze_text = AsyncMock(return_value=analyze_result or {"score": 0.9, "feedback": "Great grammar."})
     return svc
@@ -44,7 +44,7 @@ async def test_ollama_health_use_ollama_false_returns_503():
 @pytest.mark.asyncio
 async def test_ollama_health_use_ollama_true_healthy_returns_200():
     app = _make_app()
-    svc = _mock_ollama_service(health=True, models=["lexilingo-qwen3-1.7b", "other-model"])
+    svc = _mock_ollama_service(health=True, models=["rean-qwen3-1.7b", "other-model"])
 
     with (
         patch("api.routes.ollama_router.settings") as mock_settings,
@@ -52,7 +52,7 @@ async def test_ollama_health_use_ollama_true_healthy_returns_200():
     ):
         mock_settings.USE_OLLAMA = True
         mock_settings.OLLAMA_BASE_URL = "http://localhost:11434"
-        mock_settings.OLLAMA_MODEL = "lexilingo-qwen3-1.7b"
+        mock_settings.OLLAMA_MODEL = "rean-qwen3-1.7b"
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get("/ollama/health")
@@ -60,7 +60,7 @@ async def test_ollama_health_use_ollama_true_healthy_returns_200():
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
-    assert "lexilingo-qwen3-1.7b" in data["available_models"]
+    assert "rean-qwen3-1.7b" in data["available_models"]
     assert data["model_loaded"] is True
 
 
@@ -106,7 +106,7 @@ async def test_ollama_chat_success_returns_response_and_model():
         patch("api.routes.ollama_router.get_ollama_service", return_value=svc),
     ):
         mock_settings.USE_OLLAMA = True
-        mock_settings.OLLAMA_MODEL = "lexilingo-qwen3-1.7b"
+        mock_settings.OLLAMA_MODEL = "rean-qwen3-1.7b"
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
@@ -117,7 +117,7 @@ async def test_ollama_chat_success_returns_response_and_model():
     assert response.status_code == 200
     data = response.json()
     assert data["response"] == "Great question about grammar!"
-    assert data["model"] == "lexilingo-qwen3-1.7b"
+    assert data["model"] == "rean-qwen3-1.7b"
     assert data["message"] == "What is the past tense of 'go'?"
 
 
@@ -132,7 +132,7 @@ async def test_ollama_analyze_success_returns_task_result_model():
         patch("api.routes.ollama_router.get_ollama_service", return_value=svc),
     ):
         mock_settings.USE_OLLAMA = True
-        mock_settings.OLLAMA_MODEL = "lexilingo-qwen3-1.7b"
+        mock_settings.OLLAMA_MODEL = "rean-qwen3-1.7b"
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
@@ -144,14 +144,14 @@ async def test_ollama_analyze_success_returns_task_result_model():
     data = response.json()
     assert data["task"] == "grammar"
     assert data["result"] == analysis
-    assert data["model"] == "lexilingo-qwen3-1.7b"
+    assert data["model"] == "rean-qwen3-1.7b"
     assert data["text"] == "She go to the store."
 
 
 @pytest.mark.asyncio
 async def test_ollama_models_success_returns_models_list():
     app = _make_app()
-    model_list = ["lexilingo-qwen3-1.7b", "llama3:8b"]
+    model_list = ["rean-qwen3-1.7b", "llama3:8b"]
     svc = _mock_ollama_service(models=model_list)
 
     with (
@@ -159,7 +159,7 @@ async def test_ollama_models_success_returns_models_list():
         patch("api.routes.ollama_router.get_ollama_service", return_value=svc),
     ):
         mock_settings.USE_OLLAMA = True
-        mock_settings.OLLAMA_MODEL = "lexilingo-qwen3-1.7b"
+        mock_settings.OLLAMA_MODEL = "rean-qwen3-1.7b"
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get("/ollama/models")
@@ -168,4 +168,4 @@ async def test_ollama_models_success_returns_models_list():
     data = response.json()
     assert data["models"] == model_list
     assert data["count"] == 2
-    assert data["current"] == "lexilingo-qwen3-1.7b"
+    assert data["current"] == "rean-qwen3-1.7b"
