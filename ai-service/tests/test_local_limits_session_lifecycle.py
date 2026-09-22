@@ -8,6 +8,9 @@ from api.services.visual_tutor.session_store import VisualTutorSessionStore, Boa
 from tests.test_local_limits_demo import _request, _turn
 from tests.test_visual_tutor_routes import _make_app
 
+# Inspects the full development turn response, not the compact public one.
+pytestmark = pytest.mark.usefixtures("development_compatibility_contract")
+
 class MemoryCollection:
     def __init__(self):
         self.documents = {}

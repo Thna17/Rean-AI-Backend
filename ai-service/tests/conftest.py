@@ -290,3 +290,19 @@ def guided_tutor_mode(monkeypatch, request):
     monkeypatch.setattr(visual_tutor_routes, "handle_visual_tutor_turn", guided)
     if hasattr(request.module, "handle_visual_tutor_turn"):
         monkeypatch.setattr(request.module, "handle_visual_tutor_turn", guided)
+
+
+@pytest.fixture
+def development_compatibility_contract(monkeypatch):
+    """Allow the full (compatibility version 0) turn response in these tests.
+
+    The route only honours ``x-visual-tutor-api-compatibility-version: 0`` when
+    ``ENVIRONMENT == "development"``; every other environment emits the compact
+    student-safe contract. Tests that inspect the full response opt in here
+    instead of depending on the developer's .env file. Opt in with::
+
+        pytestmark = pytest.mark.usefixtures("development_compatibility_contract")
+    """
+    from api.core.config import settings
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "development")

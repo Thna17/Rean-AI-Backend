@@ -37,7 +37,9 @@ from api.services.visual_tutor.orchestrator import (
 
 # These tests cover the guided "Try it myself" flow (answer locked, one
 # step at a time); the default full-solution flow is covered elsewhere.
-pytestmark = pytest.mark.usefixtures("guided_tutor_mode")
+pytestmark = pytest.mark.usefixtures(
+    "guided_tutor_mode", "development_compatibility_contract"
+)
 
 
 class FakeVisualTutorStore:
