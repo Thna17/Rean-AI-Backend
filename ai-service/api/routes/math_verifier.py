@@ -232,3 +232,38 @@ def verify_student_work(
         if isinstance(exc, (KeyboardInterrupt, SystemExit)):
             raise
         return MathResponse(status="cannot_verify", verified=False, student_message="I cannot verify this notation safely. Try writing one equation step.", evidence={"reason": "malformed_or_unsupported_notation"})
+
+
+class AnswerEquivalenceQuery(BaseModel):
+    """A student's quiz answer and the answer key it is graded against."""
+
+    submitted_answer: str = Field(min_length=1, max_length=300)
+    expected_answer: str = Field(min_length=1, max_length=300)
+
+
+class AnswerEquivalenceResponse(BaseModel):
+    status: Literal["equivalent", "different", "cannot_verify"]
+    equivalent: bool
+    detail: str
+
+
+@router.post("/verify/answer", response_model=AnswerEquivalenceResponse)
+def verify_answer_equivalence_endpoint(
+    query: AnswerEquivalenceQuery,
+    x_visual_tutor_internal_token: str | None = Header(default=None),
+) -> AnswerEquivalenceResponse:
+    """Decide whether a quiz answer means the same thing as the answer key.
+
+    The gateway grades with this so a student is not marked wrong for writing
+    `1/2` where the key says `0.5`. A `cannot_verify` status means the comparison
+    could not be made, and the caller must not treat it as a wrong answer.
+    """
+    require_visual_tutor_service(x_visual_tutor_internal_token)
+    from api.services.visual_tutor.answer_equivalence import answers_equivalent
+
+    result = answers_equivalent(query.submitted_answer, query.expected_answer)
+    return AnswerEquivalenceResponse(
+        status=result.status,
+        equivalent=result.equivalent,
+        detail=result.detail,
+    )
