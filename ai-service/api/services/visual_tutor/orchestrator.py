@@ -334,6 +334,334 @@ def _off_topic_for_lesson_turn(
     )
 
 
+_INJECTION_PATTERNS = [
+    re.compile(r"(?i)\bignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions\b"),
+    re.compile(r"(?i)\b(?:print|show|reveal|display|output|tell\s+me|repeat)\s+(?:your\s+)?(?:full\s+)?(?:system\s+prompt|system\s+instructions?|developer\s+prompt|initial\s+instructions?)\b"),
+    re.compile(r"(?i)\b(?:what\s+is\s+your\s+)?system\s+prompt\b"),
+    re.compile(r"(?i)\b(?:what\s+are\s+your\s+)?instructions\s+before\s+this\b"),
+    re.compile(r"(?i)\b(?:disregard|forget|override)\s+(?:all\s+)?(?:previous|prior|above)\s+instructions\b"),
+    re.compile(r"(?i)\bjailbreak\b|\bdan\s+mode\b"),
+    re.compile(r"(?i)\byou\s+are\s+now\s+(?:in\s+)?developer\s+mode\b"),
+    re.compile(r"(?:មិនអើពើ|បំភ្លេច)(?:រាល់)?(?:ការណែនាំ|បញ្ជា)"),
+    re.compile(r"(?:បង្ហាញ|ប្រាប់)(?:ពី)?(?:system\s*prompt|ការណែនាំប្រព័ន្ធ)"),
+    re.compile(r"system\s*prompt"),
+]
+
+_GREETING_WORDS = {
+    "hello", "hi", "hey", "greetings", "good", "morning", "afternoon", "evening",
+    "howdy", "welcome", "bye", "goodbye", "thanks", "thank", "you", "please",
+}
+
+_KM_GREETINGS = (
+    "សួស្តី", "ជំរាបសួរ", "ជម្រាបសួរ", "សុខសប្បាយជាទេ", "សុខសប្បាយ",
+    "អរគុណ", "លាហើយ", "បាទ", "ចាស", "សូមស្វាគមន៍",
+)
+
+_SMALLTALK_PHRASES = {
+    "how are you", "how are you doing", "who are you", "what is your name",
+    "what can you do", "nice to meet you", "good morning", "good afternoon",
+    "good evening", "good night", "hello there", "hi there",
+}
+
+_STEM_KEYWORDS = {
+    # Math
+    "limit", "limits", "lim", "solve", "find", "calculate", "evaluate",
+    "equation", "equations", "derivative", "integral", "integrate", "differentiate",
+    "function", "functions", "slope", "intercept", "graph", "domain", "range",
+    "matrix", "matrices", "vector", "vectors", "line", "points", "point",
+    "quadratic", "linear", "polynomial", "factor", "simplify", "expand",
+    "triangle", "circle", "angle", "sin", "cos", "tan", "log", "ln", "exp",
+    "probability", "percentage", "arithmetic", "fraction", "root", "power",
+    "sum", "difference", "product", "quotient", "theorem", "proof", "value",
+    "maximum", "minimum", "vertex", "asymptote", "continuous", "discontinuous",
+    "converge", "diverge", "sequence", "series", "parallel", "perpendicular",
+    # Physics
+    "velocity", "speed", "acceleration", "force", "mass", "weight", "gravity",
+    "momentum", "impulse", "energy", "work", "power", "kinetic", "potential",
+    "friction", "tension", "motion", "kinematics", "dynamics", "projectile",
+    "wavelength", "frequency", "wave", "waves", "circuit", "current", "voltage",
+    "resistance", "resistor", "capacitor", "ohm", "ampere", "volt", "joule", "watt",
+    "newton", "kelvin", "temperature", "pressure", "heat", "gas", "optics", "focal",
+    "reflection", "refraction", "lens", "mirror", "orbit", "satellite",
+    # Chemistry
+    "mole", "moles", "molar", "mass", "reaction", "reactions", "stoichiometry",
+    "acid", "acids", "base", "bases", "ph", "titration", "neutralization",
+    "element", "compound", "molecule", "atom", "atomic", "electron", "proton",
+    "neutron", "bond", "bonds", "solution", "concentration", "equilibrium",
+    "organic", "hydrocarbon", "alkane", "alkene", "alkyne", "alcohol", "ester",
+    "precipitation", "oxidation", "reduction", "redox", "enthalpy", "entropy",
+    # General problem inquiry / followups
+    "why", "how", "what", "which", "explain", "step", "steps", "cancel",
+    "substitute", "where", "show", "check", "verify", "help", "hint", "stuck",
+    "differently", "correct", "wrong", "mistake", "answer", "reason", "understand",
+}
+
+_COMMON_ENGLISH_WORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "in", "on", "at", "to", "for", "with", "by", "from", "about", "against",
+    "between", "into", "through", "during", "before", "after", "above", "below",
+    "up", "down", "off", "over", "under", "again", "further",
+    "then", "once", "here", "there", "when", "where", "why", "how", "all",
+    "any", "both", "each", "few", "more", "most", "other", "some", "such",
+    "no", "nor", "not", "only", "own", "same", "so", "than", "too", "very",
+    "can", "will", "just", "should", "now", "i", "me", "my", "myself",
+    "we", "our", "ours", "ourselves", "you", "your", "yours", "yourself",
+    "he", "him", "his", "himself", "she", "her", "hers", "herself", "it",
+    "its", "itself", "they", "them", "their", "theirs", "themselves",
+    "do", "does", "did", "doing", "have", "has", "had", "having",
+    "car", "ball", "train", "box", "block", "water", "tank", "object", "body",
+    "starts", "moves", "travels", "thrown", "drops", "falls", "collides",
+    "time", "second", "seconds", "meter", "meters", "hour", "hours", "distance",
+}
+
+
+def _detect_empty_or_punctuation(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return True
+    return not bool(re.search(r"[a-zA-Z0-9\u1780-\u17d3\u17e0-\u17e9]", stripped))
+
+
+def _detect_system_instruction(text: str) -> bool:
+    stripped = text.strip()
+    return any(p.search(stripped) for p in _INJECTION_PATTERNS)
+
+
+def _detect_greeting_or_smalltalk(text: str) -> bool:
+    stripped = text.strip()
+    if re.search(r"[=+*/^<>≤≥∫∑√π\\]|[0-9\u17e0-\u17e9]", stripped):
+        return False
+    if any(km in stripped for km in _KM_GREETINGS):
+        return True
+    words = re.findall(r"[a-zA-Z]+", stripped.lower())
+    if words and all(w in _GREETING_WORDS for w in words):
+        return True
+    cleaned_lower = re.sub(r"[^a-z\s]", "", stripped.lower()).strip()
+    return cleaned_lower in _SMALLTALK_PHRASES
+
+
+_CONSONANT_CLUSTER_RE = re.compile(r"[bcdfghjklmnpqrstvwxyz]{5,}")
+_KEYBOARD_WALK_RE = re.compile(
+    r"asdf|sdfg|dfgh|fghj|ghjk|hjkl|qwer|wery|erty|rtyu|tyui|yuio|uiop|zxcv|xcvb|cvbn|vbnm|poiuy|lkjhg|mnbvc"
+)
+_NO_VOWELS_RE = re.compile(r"\b[bcdfghjklmnpqrstvwxz]{4,}\b")
+_COMMON_STEM_ACRONYMS = {"lcm", "gcd", "dna", "atp", "nmr", "rms", "emf", "ph", "stp", "ntp"}
+
+
+def _is_gibberish_word(w: str) -> bool:
+    w = w.lower()
+    if len(w) < 3:
+        return False
+    if w in _COMMON_STEM_ACRONYMS:
+        return False
+    if _CONSONANT_CLUSTER_RE.search(w):
+        return True
+    if _KEYBOARD_WALK_RE.search(w):
+        return True
+    if _NO_VOWELS_RE.search(w):
+        return True
+    if re.search(r"q[^u\s]", w):
+        return True
+    return False
+
+
+def _detect_unparseable_gibberish(text: str) -> bool:
+    stripped = text.strip()
+    if re.search(r"[=+*/^<>≤≥∫∑√π\\]|[0-9\u17e0-\u17e9]", stripped):
+        return False
+    words = re.findall(r"[a-zA-Z]+", stripped.lower())
+    if not words:
+        return False
+    gibberish_count = sum(1 for w in words if _is_gibberish_word(w))
+    return gibberish_count > 0 and (gibberish_count / len(words) >= 0.5)
+
+
+def _check_not_a_problem_input(request: VisualTutorTurnRequest) -> Optional[str]:
+    message = (request.message or "").strip()
+
+    # 1. Prompt injection is blocked unconditionally
+    if _detect_system_instruction(message):
+        return "prompt_injection"
+
+    # If the student is submitting a step on an active problem, let step validation handle it
+    if (
+        request.action == VisualTutorAction.SUBMIT_STEP
+        or request.student_submitted_step
+    ) and (request.current_state.problem_text or "").strip():
+        return None
+
+    # Built-in help button clicks have their own handlers
+    if request.action in {
+        VisualTutorAction.REQUEST_HINT,
+        VisualTutorAction.REQUEST_STUCK_HELP,
+        VisualTutorAction.EXPLAIN_DIFFERENTLY,
+    }:
+        return None
+
+    # Empty message when action is START or when there is no problem text is handled by _greeting
+    if not message:
+        return None
+
+    # 2. Punctuation / symbol only (no letters or digits)
+    if _detect_empty_or_punctuation(message):
+        return "punctuation_only"
+
+    # 3. Greeting or small talk without math
+    if _detect_greeting_or_smalltalk(message):
+        return "greeting_smalltalk"
+
+    # 4. Unparseable gibberish without math
+    if _detect_unparseable_gibberish(message):
+        return "unparseable_gibberish"
+
+    return None
+
+
+def build_not_a_problem_message(reason: str, language_mode: str = "english") -> dict[str, str]:
+    """Clarification asking for a solvable STEM problem, in the student's language."""
+    mode = (language_mode or "").strip().lower()
+    is_khmer = mode in {"khmer", "km"}
+    is_bilingual = mode == "bilingual"
+
+    if reason == "greeting_smalltalk":
+        text_en = (
+            "Hello! I am your AI visual tutor for mathematics, physics, and chemistry. "
+            "Please provide a STEM problem you would like to explore or solve together."
+        )
+        text_km = (
+            "សួស្តី! ខ្ញុំជាគ្រូបង្រៀន AI សម្រាប់មុខវិជ្ជាគណិតវិទ្យា រូបវិទ្យា និងគីមីវិទ្យា។ "
+            "សូមផ្ញើលំហាត់ STEM ដែលអ្នកចង់ដោះស្រាយជាមួយគ្នា។"
+        )
+        task_en = "Type or ask a math, physics, or chemistry problem."
+        task_km = "សូមបញ្ចូលលំហាត់គណិតវិទ្យា រូបវិទ្យា ឬគីមីវិទ្យាមួយ។"
+        title_en = "Welcome to STEM Tutor"
+        title_km = "សូមស្វាគមន៍"
+    elif reason == "punctuation_only":
+        text_en = (
+            "I couldn't detect a problem statement. "
+            "Please provide a complete mathematics, physics, or chemistry problem."
+        )
+        text_km = (
+            "ខ្ញុំមិនបានឃើញប្រធានលំហាត់ជាក់លាក់ណាមួយទេ។ "
+            "សូមផ្ញើលំហាត់គណិតវិទ្យា រូបវិទ្យា ឬគីមីវិទ្យាពេញលេញមួយ។"
+        )
+        task_en = "Please enter a STEM problem."
+        task_km = "សូមបញ្ចូលលំហាត់ STEM មួយ។"
+        title_en = "Problem Required"
+        title_km = "សូមបញ្ចូលលំហាត់"
+    elif reason == "prompt_injection":
+        text_en = (
+            "I am designed to guide you step-by-step through STEM problems in "
+            "mathematics, physics, and chemistry. "
+            "Please provide a STEM problem to get started."
+        )
+        text_km = (
+            "ខ្ញុំត្រូវបានបង្កើតឡើងដើម្បីជួយអ្នកដោះស្រាយលំហាត់ STEM ក្នុងមុខវិជ្ជា"
+            "គណិតវិទ្យា រូបវិទ្យា និងគីមីវិទ្យាតាមជំហាននីមួយៗ។ "
+            "សូមបញ្ចូលលំហាត់ STEM ដើម្បីចាប់ផ្តើម។"
+        )
+        task_en = "Please enter a STEM problem."
+        task_km = "សូមបញ្ចូលលំហាត់ STEM មួយ។"
+        title_en = "STEM Tutor Ready"
+        title_km = "ត្រៀមខ្លួនសម្រាប់លំហាត់ STEM"
+    else:  # unparseable_gibberish or other
+        text_en = (
+            "I couldn't recognize that as a mathematics, physics, or chemistry problem. "
+            "Please provide a clear STEM problem for us to solve together."
+        )
+        text_km = (
+            "ខ្ញុំមិនបានសម្គាល់ឃើញថាជាលំហាត់គណិតវិទ្យា រូបវិទ្យា ឬគីមីវិទ្យានោះទេ។ "
+            "សូមផ្ញើលំហាត់ STEM ឲ្យបានច្បាស់លាស់ដើម្បីយើងដោះស្រាយជាមួយគ្នា។"
+        )
+        task_en = "Please provide a clear STEM problem."
+        task_km = "សូមផ្ញើលំហាត់ STEM ឲ្យបានច្បាស់លាស់មួយ។"
+        title_en = "Clarification Needed"
+        title_km = "ត្រូវការបញ្ជាក់បន្ថែម"
+
+    # Only bilingual mode shows both languages. Pairing them in a single-language
+    # turn hands the student prose they cannot read.
+    if is_khmer:
+        return {
+            "display_text": f"{text_km}\n\n{text_en}" if is_bilingual else text_km,
+            "spoken_text": text_km,
+            "student_task": task_km,
+            "board_title": title_km,
+            "board_content": text_km,
+        }
+    return {
+        "display_text": f"{text_en}\n\n{text_km}" if is_bilingual else text_en,
+        "spoken_text": text_en,
+        "student_task": task_en,
+        "board_title": title_en,
+        "board_content": text_en,
+    }
+
+
+def _not_a_problem_turn(
+    request: VisualTutorTurnRequest,
+    *,
+    session_id: str,
+    reason: str,
+) -> VisualTutorTurnResponse:
+    """Clarification turn for non-solvable or non-STEM student input."""
+    lang_mode = str(
+        getattr(request.language_mode, "value", request.language_mode)
+        or request.metadata.get("language_mode")
+        or "english"
+    )
+    is_km = lang_mode.strip().lower() in {"khmer", "km"}
+    clarification = build_not_a_problem_message(reason, lang_mode)
+    message = clarification["display_text"]
+    spoken_text = clarification["spoken_text"]
+    metadata = {
+        "screen_state": "unsupported_problem",
+        "generation_path": "not_a_problem",
+        "fallback_reason": "not_a_problem",
+        "not_a_problem_reason": reason,
+        "verified": False,
+        "verification": {
+            "status": "cannot_verify",
+            "verified": False,
+            "concise_evidence": clarification["student_task"],
+            "student_message": clarification["student_task"],
+        },
+    }
+    return VisualTutorTurnResponse(
+        session_id=session_id,
+        turn_id=str(uuid.uuid4()),
+        spoken_text=spoken_text,
+        display_text=message,
+        teaching_mode=VisualTutorTeachingMode.GUIDED_QUESTION,
+        final_answer_locked=True,
+        student_task=clarification["student_task"],
+        board=VisualTutorBoard(
+            type=VisualTutorBoardType.FORMULA_CARD,
+            title=clarification["board_title"],
+            items=[
+                VisualTutorBoardItem(
+                    label="Status",
+                    content=clarification["board_content"],
+                    status="active",
+                ),
+            ],
+            metadata=metadata,
+        ),
+        speech=VisualTutorSpeech(
+            text=spoken_text,
+            language="km" if is_km else "en",
+        ),
+        interaction=VisualTutorInteraction(
+            type=VisualTutorInteractionType.TEXT_RESPONSE,
+            prompt=clarification["student_task"],
+            input_enabled=True,
+            expected_answer_locked=False,
+        ),
+        allowed_actions=[],
+        mastery_signal=VisualTutorMasterySignal.EXPLORING,
+        metadata=metadata,
+    )
+
+
 def _solver_not_ready_turn(
     request: VisualTutorTurnRequest,
     *,
@@ -502,6 +830,20 @@ def handle_visual_tutor_turn(
         return _finalize_response(
             request,
             _off_topic_for_lesson_turn(request, session_id=session_id, decision=topic_decision),
+        )
+    # Check for non-problem student inputs (gibberish, punctuation-only, greeting, prompt injection)
+    # BEFORE any worked-solution planner (limits, physics, chemistry, dynamic worked solution).
+    not_a_problem_reason = _check_not_a_problem_input(request)
+    if not_a_problem_reason is not None:
+        logger.info(
+            "visual_tutor_not_a_problem reason=%r action=%r message=%r",
+            not_a_problem_reason,
+            getattr(request.action, "value", request.action),
+            (request.message or "")[:200],
+        )
+        return _finalize_response(
+            request,
+            _not_a_problem_turn(request, session_id=session_id, reason=not_a_problem_reason),
         )
     # A new limit problem is answered with the complete, sympy-verified worked
     # solution by default. Students who choose "Try it myself" (tutor_mode)
@@ -2508,6 +2850,7 @@ def _fallback_reason(metadata: dict[str, Any], response_source: str) -> Optional
         "reviewed_curriculum_required",
         "out_of_scope_lock",
         "off_topic_for_lesson",
+        "not_a_problem",
     }:
         return str(reason)
     if response_source == "template_fallback":

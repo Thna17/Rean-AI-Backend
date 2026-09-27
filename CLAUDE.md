@@ -46,7 +46,34 @@ cd admin-ai-tutor && npm run dev
 3. **Web Caching**: Flutter web must be built with `--pwa-strategy=none` and served via `tool/serve_web.py` with `Cache-Control: no-store` to prevent stale JS bundles.
 4. **Auth Boundaries**:
    - Gateway verifies Firebase ID tokens from students and issues JWTs for admins.
-   - `ai-service` is **internal only**; it authenticates the gateway via `X-Visual-Tutor-Internal-Token` (`visual-tutor-dev-token`) and trusts `X-Visual-Tutor-User-Id`. You can debug `ai-service` directly using these headers.
+   - `ai-service` is **internal only**; it authenticates the gateway via `X-Visual-Tutor-Internal-Token` (configured via `VISUAL_TUTOR_INTERNAL_TOKEN` in `.env`) and trusts `X-Visual-Tutor-User-Id`. You can debug `ai-service` directly using these headers.
+
+### Verify a Clean Install & Pre-Release Checklist
+
+See [docs/runbook.md](file:///Users/macbookpro/Desktop/Development/AI%20Project/ReanAI/docs/runbook.md) for full runbook details and native binary troubleshooting.
+
+- **Authoritative Lockfiles**: Use `npm ci`, not `npm install`, for the gateway (`backend-ai-tutor/backend`) and admin (`admin-ai-tutor`), so lockfiles remain authoritative.
+- **Python Virtualenv**: Always invoke `venv/bin/python3` explicitly in `ai-service`; bare `python3` is system Python 3.9 and fails on `str | None` syntax.
+- **Next.js Native SWC Binary**: In `admin-ai-tutor`, verify `node_modules/@next/swc-*/next-swc.*.node` exists and is ~88 MB (not truncated to `README.md` and `package.json`). If truncated, reinstall the platform package (e.g. `npm install @next/swc-darwin-arm64` on Apple Silicon or `@next/swc-linux-x64-gnu` on Linux).
+
+#### Pre-Release Commands (Must Pass Before Release)
+
+```bash
+# 1. AI Service
+cd ai-service && venv/bin/python3 -m pytest -q                      # 1,460 passed
+
+# 2. Student App (analysis & tests)
+cd ai_tutor && flutter analyze && flutter test                      # clean, 400 passed
+
+# 3. Student App (web production bundle)
+cd ai_tutor && flutter build web --pwa-strategy=none                # succeeds
+
+# 4. Gateway (Node / Express)
+cd backend-ai-tutor/backend && npm ci && npm test && npx tsc --noEmit # passes
+
+# 5. Admin Portal (Next.js)
+cd admin-ai-tutor && npm ci && npm run build                        # succeeds
+```
 
 ---
 

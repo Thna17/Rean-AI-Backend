@@ -84,6 +84,13 @@ _X = sympy.Symbol("x")
 _X_TOKEN_RE = re.compile(r"(?<![A-Za-z\\])x(?![A-Za-z])")
 
 
+_KHMER_DIGITS = str.maketrans("0123456789", "០១២៣៤៥៦៧៨៩")
+
+
+def _to_khmer_digits(n: Any) -> str:
+    return str(n).translate(_KHMER_DIGITS)
+
+
 @dataclass(frozen=True)
 class SolutionStep:
     key: str
@@ -136,6 +143,9 @@ def match_worked_solution(request: VisualTutorTurnRequest) -> Optional[LimitOfFu
         problem = parse_limit_of_function(request.current_state.problem_text or "")
     if problem is None:
         return None
+    if _uses_khmer(request, problem) and not problem.is_khmer:
+        import dataclasses
+        problem = dataclasses.replace(problem, is_khmer=True)
     if request.action in {VisualTutorAction.SUBMIT_PROBLEM, VisualTutorAction.START}:
         return problem
     if request.action == VisualTutorAction.SUBMIT_STEP:
@@ -162,7 +172,11 @@ def match_worked_solution_followup(
     # A message that is itself a whole new limit starts a new solution instead.
     if parse_limit_of_function(request.message or "") is not None:
         return None
-    return parse_limit_of_function(request.current_state.problem_text or "")
+    problem = parse_limit_of_function(request.current_state.problem_text or "")
+    if problem is not None and _uses_khmer(request, problem) and not problem.is_khmer:
+        import dataclasses
+        problem = dataclasses.replace(problem, is_khmer=True)
+    return problem
 
 
 def _normalize_question_key(question: str) -> str:
@@ -180,7 +194,7 @@ def answer_about_solution(
     """Answer a student's question about one step, keeping the solution on the
     board so they can still see the step being discussed."""
     is_khmer = _uses_khmer(request, problem)
-    solution = solve_limit(problem)
+    solution = solve_limit(problem, is_khmer=is_khmer)
     step = _referenced_step(request, solution)
     answer, degraded_reason = _explain_step(
         question=request.message or "",
@@ -189,7 +203,12 @@ def answer_about_solution(
         is_khmer=is_khmer,
         llm_client=llm_client,
     )
-    heading = f"About {step.heading}" if step else "About this solution"
+    if is_khmer:
+        heading = f"អំពី {step.heading}" if step else "អំពីដំណោះស្រាយនេះ"
+        task = "សួរខ្ញុំបន្ថែមអំពីដំណោះស្រាយនេះ ឬផ្ញើលំហាត់ថ្មីមួយទៀត។"
+    else:
+        heading = f"About {step.heading}" if step else "About this solution"
+        task = "Ask me anything else about this solution, or send another problem."
     extra_metadata = (
         {"degraded_mode": True, "degraded_reason": degraded_reason}
         if degraded_reason
@@ -204,7 +223,7 @@ def answer_about_solution(
             SolutionStep(key="reply", heading=heading, explanation=answer),
         ],
         message=answer,
-        task="Ask me anything else about this solution, or send another problem.",
+        task=task,
         focus_section=f"step-{step.key}" if step else None,
         extra_metadata=extra_metadata,
     )
@@ -232,6 +251,11 @@ def _referenced_step(
         "0/0": "try",
         "indeterminate": "try",
         "zero over zero": "try",
+        "កត្តា": "factor",
+        "សម្រួល": "cancel",
+        "ជំនួស": "substitute",
+        "តារាង": "check",
+        "រាងមិនកំណត់": "try",
     }
     for needle, key in keywords.items():
         if needle in words:
@@ -239,6 +263,12 @@ def _referenced_step(
                 if step.key == key:
                     return step
     # A question with no clear target is about the step numbered in it, if any.
+    km_digits = {"១": 1, "២": 2, "៣": 3, "៤": 4, "៥": 5}
+    for km_d, num in km_digits.items():
+        if f"ជំហានទី {km_d}" in words or f"ជំហានទី{km_d}" in words or f"ជំហាន {km_d}" in words:
+            if 1 <= num <= len(solution.steps):
+                return solution.steps[num - 1]
+
     for step in solution.steps:
         if step.heading.split("·")[0].strip().lower() in words:
             return step
@@ -276,6 +306,13 @@ def _explain_step(
     # The shared client always asks the provider for JSON, so the answer is
     # requested as one JSON field rather than as prose.
     system_prompt = (
+        "You are a patient Grade 12 maths teacher in Cambodia. Answer the "
+        "student's question about one step of a solution that is already on "
+        "the board. Rules: speak directly to the student in natural Khmer; at "
+        "most 3 short sentences; never contradict the solution; never invent "
+        "numbers that are not in it; no markdown, no LaTeX, no code. "
+        'Reply with JSON in exactly this shape: {"answer": "..."}'
+    ) if is_khmer else (
         "You are a patient Grade 12 maths teacher in Cambodia. Answer the "
         "student's question about one step of a solution that is already on "
         "the board. Rules: speak directly to the student in simple English; at "
@@ -348,8 +385,9 @@ def _looks_unsafe(text: str) -> bool:
     )
 
 
-def solve_limit(problem: LimitOfFunctionProblem) -> WorkedSolution:
-    cache_key = f"{problem.normalized_problem}:{getattr(problem, 'is_khmer', False)}"
+def solve_limit(problem: LimitOfFunctionProblem, *, is_khmer: bool = False) -> WorkedSolution:
+    is_km = is_khmer or getattr(problem, "is_khmer", False)
+    cache_key = f"{problem.normalized_problem}:{is_km}"
     if cache_key in _worked_solution_cache:
         return _worked_solution_cache[cache_key]
 
@@ -360,42 +398,44 @@ def solve_limit(problem: LimitOfFunctionProblem) -> WorkedSolution:
     target = _sympy_value(facts.get("reported_value"))
     lim = _lim_latex(point, direction)
     problem_latex = f"{lim} {_limit_body(expression)}"
-    answer_latex, answer_text = _answer(lim, expression, target, facts)
+    answer_latex, answer_text = _answer(lim, expression, target, facts, is_khmer=is_km)
 
+    heading_1 = "ជំហានទី ១ · យល់អំពីសំណួរ" if is_km else "Step 1 · Understand the question"
     steps: list[SolutionStep] = [
         SolutionStep(
             key="read",
-            heading="Step 1 · Understand the question",
-            explanation=_question_words(point, direction),
+            heading=heading_1,
+            explanation=_question_words(point, direction, is_khmer=is_km),
             latex=problem_latex,
         )
     ]
     method_steps: Optional[list[SolutionStep]] = None
     method = "table"
     if point in (sympy.oo, -sympy.oo):
-        method_steps = _divide_by_highest_power(expression, point, lim, target)
+        method_steps = _divide_by_highest_power(expression, point, lim, target, is_khmer=is_km)
         method = "divide_by_highest_power"
     else:
         substituted = _safe_subs(expression, point)
         if substituted is not None and substituted.is_finite and target is not None:
-            method_steps = _direct_substitution(expression, point, lim, target)
+            method_steps = _direct_substitution(expression, point, lim, target, is_khmer=is_km)
             method = "direct_substitution"
         elif substituted is sympy.nan:
-            method_steps = _factor_and_cancel(expression, point, lim, target)
+            method_steps = _factor_and_cancel(expression, point, lim, target, is_khmer=is_km)
             method = "factor_and_cancel"
 
     if method_steps is None:
         method = "table"
-        method_steps = _table_reasoning(expression, point, direction, facts)
+        method_steps = _table_reasoning(expression, point, direction, facts, is_khmer=is_km)
 
     steps.extend(method_steps)
     table = _table(facts, point, direction)
     if table is not None and method != "table":
+        check_heading = "ផ្ទៀងផ្ទាត់ជាមួយតារាងតម្លៃ" if is_km else "Check with a table of values"
         steps.append(
             SolutionStep(
                 key="check",
-                heading="Check with a table of values",
-                explanation=_table_check_words(point, direction, facts),
+                heading=check_heading,
+                explanation=_table_check_words(point, direction, facts, is_khmer=is_km),
                 table=table,
             )
         )
@@ -403,7 +443,7 @@ def solve_limit(problem: LimitOfFunctionProblem) -> WorkedSolution:
         problem_latex=problem_latex,
         answer_latex=answer_latex,
         answer_text=answer_text,
-        steps=_numbered(steps),
+        steps=_numbered(steps, is_khmer=is_km),
         method=method,
     )
     _worked_solution_cache[cache_key] = solution
@@ -416,17 +456,27 @@ def build_worked_solution_turn(
     *,
     session_id: str,
 ) -> VisualTutorTurnResponse:
-    solution = solve_limit(problem)
+    is_khmer = _uses_khmer(request, problem)
+    solution = solve_limit(problem, is_khmer=is_khmer)
+    if is_khmer:
+        message = (
+            f"នេះជាដំណោះស្រាយលម្អិតមួយជំហានម្តងៗ។ {solution.answer_text} "
+            "អ្នកអាចសួរអំពីជំហានណាមួយដែលចង់ឱ្យពន្យល់បន្ថែមបាន។"
+        )
+        task = "សួរខ្ញុំអំពីជំហានណាមួយ ឬសាកល្បងលីមីតផ្សេងទៀត។"
+    else:
+        message = (
+            f"Here is the full solution, step by step. {solution.answer_text} "
+            "Ask me about any step you want me to explain."
+        )
+        task = "Ask me about any step you'd like explained, or try another limit."
     return _solution_turn(
         request,
         problem,
         solution,
         session_id=session_id,
-        message=(
-            f"Here is the full solution, step by step. {solution.answer_text} "
-            "Ask me about any step you want me to explain."
-        ),
-        task="Ask me about any step you'd like explained, or try another limit.",
+        message=message,
+        task=task,
     )
 
 
@@ -436,11 +486,16 @@ def _uses_khmer(request: VisualTutorTurnRequest, problem: Optional[LimitOfFuncti
     lang = getattr(request, "language_mode", None)
     if hasattr(lang, "value"):
         lang = lang.value
-    val = str(lang or request.metadata.get("language_mode") or "").strip().lower()
+    metadata = request.metadata if isinstance(request.metadata, dict) else {}
+    val = str(lang or metadata.get("language_mode") or "").strip().lower()
     if val in {"khmer", "km"}:
         return True
     locale = (request.locale or "").lower()
     if locale.startswith("km"):
+        return True
+    if re.search(r"[\u1780-\u17ff]", request.message or ""):
+        return True
+    if request.current_state and re.search(r"[\u1780-\u17ff]", request.current_state.problem_text or ""):
         return True
     return False
 
@@ -465,12 +520,12 @@ def _solution_turn(
     """
     is_khmer = _uses_khmer(request, problem)
     effective_task = task
-    if is_khmer:
-        effective_task = "សួរខ្ញុំអំពីជំហានណាមួយ ឬសុំឱ្យពន្យល់តាមរបៀបផ្សេង។"
+    if is_khmer and not any("\u1780" <= c <= "\u17ff" for c in effective_task):
+        effective_task = "សួរខ្ញុំអំពីជំហានណាមួយ ឬសាកល្បងលីមីតផ្សេងទៀត។"
 
     effective_message = message
-    if is_khmer:
-        effective_message = "នេះជាដំណោះស្រាយលម្អិតមួយជំហានម្តងៗ។ អ្នកអាចសួរអំពីជំហានណាមួយដែលចង់ឱ្យពន្យល់បន្ថែមបាន។"
+    if is_khmer and not any("\u1780" <= c <= "\u17ff" for c in effective_message):
+        effective_message = f"នេះជាដំណោះស្រាយលម្អិតមួយជំហានម្តងៗ។ {solution.answer_text} អ្នកអាចសួរអំពីជំហានណាមួយដែលចង់ឱ្យពន្យល់បន្ថែមបាន។"
 
     turn_id = str(uuid.uuid4())
     actions: list[VisualTutorBoardAction] = []
@@ -652,18 +707,26 @@ def _solution_turn(
 # ── algebraic routes ────────────────────────────────────────────────────────
 
 
-def _direct_substitution(expression, point, lim, target) -> Optional[list[SolutionStep]]:
+def _direct_substitution(expression, point, lim, target, is_khmer: bool = False) -> Optional[list[SolutionStep]]:
     value = _safe_subs(expression, point)
     if value is None or not _same(value, target):
         return None
+    heading = "ជំហានទី ២ · ជំនួសតម្លៃដោយផ្ទាល់" if is_khmer else "Step 2 · Substitute directly"
+    if is_khmer:
+        explanation = (
+            f"ការជំនួស x = {_plain(point)} ទៅក្នុង f(x) មិនបណ្ដាលឱ្យមានការចែកនឹងសូន្យទេ "
+            "ដូច្នេះអនុគមន៍គឺជាប់ត្រង់ចំណុចនោះ ហើយយើងអាចជំនួសដោយផ្ទាល់បាន។"
+        )
+    else:
+        explanation = (
+            f"Putting x = {_plain(point)} into f(x) does not divide by zero, "
+            "so the function is continuous there and we can simply substitute."
+        )
     return [
         SolutionStep(
             key="substitute",
-            heading="Step 2 · Substitute directly",
-            explanation=(
-                f"Putting x = {_plain(point)} into f(x) does not divide by zero, "
-                "so the function is continuous there and we can simply substitute."
-            ),
+            heading=heading,
+            explanation=explanation,
             latex=_chain(
                 f"{lim} {_limit_body(expression)}",
                 _substituted_latex(expression, point),
@@ -673,7 +736,7 @@ def _direct_substitution(expression, point, lim, target) -> Optional[list[Soluti
     ]
 
 
-def _factor_and_cancel(expression, point, lim, target) -> Optional[list[SolutionStep]]:
+def _factor_and_cancel(expression, point, lim, target, is_khmer: bool = False) -> Optional[list[SolutionStep]]:
     numerator, denominator = sympy.fraction(sympy.together(expression))
     if denominator == 1 or not (numerator.is_polynomial(_X) and denominator.is_polynomial(_X)):
         return None
@@ -688,15 +751,55 @@ def _factor_and_cancel(expression, point, lim, target) -> Optional[list[Solution
         sympy.factor(numerator), sympy.Pow(sympy.factor(denominator), -1, evaluate=False),
         evaluate=False,
     )
+    if is_khmer:
+        h_try = "ជំហានទី ២ · សាកល្បងជំនួសជាមុនសិន"
+        exp_try = (
+            f"ការជំនួស x = {_plain(point)} នាំឱ្យទទួលបាន 0/0។ នេះហៅថារាងមិនកំណត់។ "
+            "វាមិនមានន័យថាចម្លើយស្មើ 0 នោះទេ — វាប្រាប់យើងឱ្យសម្រួលកន្សោមជាមុនសិន មុននឹងជំនួស។"
+        )
+        h_factor = "ជំហានទី ៣ · ដាក់ភាគយក និងភាគបែងជាផលគុណកត្តា"
+        exp_factor = (
+            f"{_factor_hint(numerator, denominator, is_khmer=True)} ផ្នែកទាំងពីរមានកត្តារួម "
+            f"({_plain(common)}) ដែលជាកត្តាធ្វើឱ្យកើតមាន 0/0។"
+        )
+        h_cancel = "ជំហានទី ៤ · សម្រួលកត្តារួមចោល"
+        exp_cancel = (
+            f"យើងអាចសម្រួល ({_plain(common)}) បាន ពីព្រោះ x គ្រាន់តែខិតទៅជិត "
+            f"{_plain(point)} ហើយមិនដែលស្មើវាឡើយ ដូច្នេះ ({_plain(common)}) មិនដែលស្មើនឹងសូន្យទេ។"
+        )
+        h_sub = "ជំហានទី ៥ · ជំនួសទៅក្នុងកន្សោមសម្រួលរួច"
+        exp_sub = (
+            f"កន្សោមដែលសម្រួលរួចមិនមានបញ្ហាត្រង់ x = {_plain(point)} ទេ ដូច្នេះឥឡូវនេះយើងអាចជំនួសបាន។"
+        )
+    else:
+        h_try = "Step 2 · Try substituting first"
+        exp_try = (
+            f"Putting x = {_plain(point)} in gives 0/0. This is called an "
+            "indeterminate form. It does not mean the answer is 0 — it tells "
+            "us to simplify the expression before substituting."
+        )
+        h_factor = "Step 3 · Factor the top and bottom"
+        exp_factor = (
+            f"{_factor_hint(numerator, denominator, is_khmer=False)} Both parts share the "
+            f"factor ({_plain(common)}), which is exactly what makes 0/0."
+        )
+        h_cancel = "Step 4 · Cancel the common factor"
+        exp_cancel = (
+            f"We can cancel ({_plain(common)}) because x only gets close to "
+            f"{_plain(point)} and never equals it, so ({_plain(common)}) is "
+            "never zero."
+        )
+        h_sub = "Step 5 · Substitute into the simpler expression"
+        exp_sub = (
+            f"The simplified expression has no problem at x = {_plain(point)}, "
+            "so now substitution works."
+        )
+
     return [
         SolutionStep(
             key="try",
-            heading="Step 2 · Try substituting first",
-            explanation=(
-                f"Putting x = {_plain(point)} in gives 0/0. This is called an "
-                "indeterminate form. It does not mean the answer is 0 — it tells "
-                "us to simplify the expression before substituting."
-            ),
+            heading=h_try,
+            explanation=exp_try,
             latex=(
                 f"\\frac{{{_substituted_latex(numerator, point)}}}"
                 f"{{{_substituted_latex(denominator, point)}}} = \\frac{{0}}{{0}}"
@@ -704,30 +807,20 @@ def _factor_and_cancel(expression, point, lim, target) -> Optional[list[Solution
         ),
         SolutionStep(
             key="factor",
-            heading="Step 3 · Factor the top and bottom",
-            explanation=(
-                f"{_factor_hint(numerator, denominator)} Both parts share the "
-                f"factor ({_plain(common)}), which is exactly what makes 0/0."
-            ),
+            heading=h_factor,
+            explanation=exp_factor,
             latex=f"{sympy.latex(expression)} = {sympy.latex(factored)}",
         ),
         SolutionStep(
             key="cancel",
-            heading="Step 4 · Cancel the common factor",
-            explanation=(
-                f"We can cancel ({_plain(common)}) because x only gets close to "
-                f"{_plain(point)} and never equals it, so ({_plain(common)}) is "
-                "never zero."
-            ),
+            heading=h_cancel,
+            explanation=exp_cancel,
             latex=f"{sympy.latex(expression)} = {sympy.latex(simplified)}, \\quad x \\neq {sympy.latex(point)}",
         ),
         SolutionStep(
             key="substitute",
-            heading="Step 5 · Substitute into the simpler expression",
-            explanation=(
-                f"The simplified expression has no problem at x = {_plain(point)}, "
-                "so now substitution works."
-            ),
+            heading=h_sub,
+            explanation=exp_sub,
             latex=_chain(
                 f"{lim} {_limit_body(simplified)}",
                 _substituted_latex(simplified, point),
@@ -737,7 +830,7 @@ def _factor_and_cancel(expression, point, lim, target) -> Optional[list[Solution
     ]
 
 
-def _divide_by_highest_power(expression, point, lim, target) -> Optional[list[SolutionStep]]:
+def _divide_by_highest_power(expression, point, lim, target, is_khmer: bool = False) -> Optional[list[SolutionStep]]:
     numerator, denominator = sympy.fraction(sympy.together(expression))
     if denominator == 1 or not (numerator.is_polynomial(_X) and denominator.is_polynomial(_X)):
         return None
@@ -758,24 +851,40 @@ def _divide_by_highest_power(expression, point, lim, target) -> Optional[list[So
     value = sympy.simplify(top_limit / bottom_limit)
     if not _same(value, target):
         return None
+    if is_khmer:
+        h_div = f"ជំហានទី ២ · ចែកភាគយក និងភាគបែងនឹង {_plain(power)}"
+        exp_div = (
+            f"សម្រាប់ប្រភាគនៅពេល x → ∞ ចែកគ្រប់តួទាំងអស់នឹងស្វ័យគុណធំបំផុតនៃ x នៅភាគបែង គឺ {_plain(power)}។ "
+            "ការធ្វើបែបនេះមិនផ្លាស់ប្តូរតម្លៃប្រភាគឡើយ។"
+        )
+        h_shrink = "ជំហានទី ៣ · ឱ្យ x កើនឡើងកាន់តែធំ"
+        exp_shrink = (
+            "គ្រប់តួដែលមាន x នៅភាគបែង នឹងខិតទៅជិត 0 ទៅៗ នៅពេល x កើនឡើងធំខ្លាំង "
+            "ដូច្នេះនៅសល់តែតួថេរតែប៉ុណ្ណោះ។"
+        )
+    else:
+        h_div = f"Step 2 · Divide top and bottom by {_plain(power)}"
+        exp_div = (
+            f"For a fraction as x → ∞, divide every term by the highest power "
+            f"of x in the bottom, which is {_plain(power)}. This does not change "
+            "the value of the fraction."
+        )
+        h_shrink = "Step 3 · Let x grow very large"
+        exp_shrink = (
+            "Every term with x in its denominator gets closer and closer to 0 "
+            "as x gets huge, so only the constant terms are left."
+        )
     return [
         SolutionStep(
             key="divide",
-            heading=f"Step 2 · Divide top and bottom by {_plain(power)}",
-            explanation=(
-                f"For a fraction as x → ∞, divide every term by the highest power "
-                f"of x in the bottom, which is {_plain(power)}. This does not change "
-                "the value of the fraction."
-            ),
+            heading=h_div,
+            explanation=exp_div,
             latex=f"{sympy.latex(expression)} = \\frac{{{sympy.latex(top)}}}{{{sympy.latex(bottom)}}}",
         ),
         SolutionStep(
             key="shrink",
-            heading="Step 3 · Let x grow very large",
-            explanation=(
-                "Every term with x in its denominator gets closer and closer to 0 "
-                "as x gets huge, so only the constant terms are left."
-            ),
+            heading=h_shrink,
+            explanation=exp_shrink,
             latex=_chain(
                 f"{lim} \\frac{{{sympy.latex(top)}}}{{{sympy.latex(bottom)}}}",
                 f"\\frac{{{sympy.latex(top_limit)}}}{{{sympy.latex(bottom_limit)}}}",
@@ -785,28 +894,40 @@ def _divide_by_highest_power(expression, point, lim, target) -> Optional[list[So
     ]
 
 
-def _table_reasoning(expression, point, direction, facts) -> list[SolutionStep]:
+def _table_reasoning(expression, point, direction, facts, is_khmer: bool = False) -> list[SolutionStep]:
     steps: list[SolutionStep] = []
     if point not in (sympy.oo, -sympy.oo):
         substituted = _safe_subs(expression, point)
-        if substituted is sympy.nan:
-            what = "0/0, an indeterminate form, so substitution alone cannot tell us the limit"
-        elif substituted is None or not substituted.is_finite:
-            what = "a division by zero, so f(x) is not defined at that point"
+        if is_khmer:
+            if substituted is sympy.nan:
+                what = "0/0 ដែលជារាងមិនកំណត់ ដូច្នេះការជំនួសតែមួយមុខមិនអាចប្រាប់ពីលីមីតបានទេ"
+            elif substituted is None or not substituted.is_finite:
+                what = "ការចែកនឹងសូន្យ ដូច្នេះ f(x) មិនកំណត់ត្រង់ចំណុចនោះទេ"
+            else:
+                what = f"{_plain(substituted)} ប៉ុន្តែលីមីតអាស្រ័យលើតម្លៃក្បែរនោះ មិនមែនតម្លៃចំចំណុចនោះឡើយ"
+            h_try = "ជំហានទី ២ · សាកល្បងជំនួសជាមុនសិន"
+            exp_try = f"ការជំនួស x = {_plain(point)} នាំឱ្យទទួលបាន {what}។"
         else:
-            what = f"{_plain(substituted)}, but the limit depends on nearby values, not the value at the point"
+            if substituted is sympy.nan:
+                what = "0/0, an indeterminate form, so substitution alone cannot tell us the limit"
+            elif substituted is None or not substituted.is_finite:
+                what = "a division by zero, so f(x) is not defined at that point"
+            else:
+                what = f"{_plain(substituted)}, but the limit depends on nearby values, not the value at the point"
+            h_try = "Step 2 · Try substituting first"
+            exp_try = f"Putting x = {_plain(point)} in gives {what}."
         steps.append(
             SolutionStep(
                 key="try",
-                heading="Step 2 · Try substituting first",
-                explanation=f"Putting x = {_plain(point)} in gives {what}.",
+                heading=h_try,
+                explanation=exp_try,
             )
         )
     steps.append(
         SolutionStep(
             key="table",
-            heading="Look at a table of values",
-            explanation=_table_check_words(point, direction, facts),
+            heading="ពិនិត្យមើលតារាងតម្លៃ" if is_khmer else "Look at a table of values",
+            explanation=_table_check_words(point, direction, facts, is_khmer=is_khmer),
             table=_table(facts, point, direction),
         )
     )
@@ -816,14 +937,18 @@ def _table_reasoning(expression, point, direction, facts) -> list[SolutionStep]:
 # ── wording and formatting helpers ──────────────────────────────────────────
 
 
-def _numbered(steps: list[SolutionStep]) -> list[SolutionStep]:
+def _numbered(steps: list[SolutionStep], is_khmer: bool = False) -> list[SolutionStep]:
     numbered: list[SolutionStep] = []
     for number, step in enumerate(steps, start=1):
         heading = step.heading.split("·", 1)[-1].strip()
+        if is_khmer:
+            step_prefix = f"ជំហានទី {_to_khmer_digits(number)} · "
+        else:
+            step_prefix = f"Step {number} · "
         numbered.append(
             SolutionStep(
                 key=step.key,
-                heading=f"Step {number} · {heading}",
+                heading=f"{step_prefix}{heading}",
                 explanation=step.explanation,
                 latex=step.latex,
                 table=step.table,
@@ -832,9 +957,22 @@ def _numbered(steps: list[SolutionStep]) -> list[SolutionStep]:
     return numbered
 
 
-def _answer(lim: str, expression, target, facts) -> tuple[str, str]:
+def _answer(lim: str, expression, target, facts, is_khmer: bool = False) -> tuple[str, str]:
     classification = facts.get("classification")
     body = f"{lim} {_limit_body(expression)}"
+    if is_khmer:
+        if target is not None and target.is_finite:
+            return f"{body} = {sympy.latex(target)}", f"លីមីតគឺ {_plain(target)}។"
+        if target in (sympy.oo, -sympy.oo):
+            val = "∞" if target == sympy.oo else "−∞"
+            return (
+                f"{body} = {sympy.latex(target)}",
+                f"f(x) កើនឡើងគ្មានដែនកំណត់ ដូច្នេះលីមីតគឺ {val}។",
+            )
+        if classification == "does_not_exist":
+            return f"{body} \\text{{ does not exist}}", "លីមីតមិនមានទេ។"
+        return f"{body} \\text{{ does not exist}}", "លីមីតមិនមានទេ។"
+
     if target is not None and target.is_finite:
         return f"{body} = {sympy.latex(target)}", f"The limit is {_plain(target)}."
     if target in (sympy.oo, -sympy.oo):
@@ -847,9 +985,38 @@ def _answer(lim: str, expression, target, facts) -> tuple[str, str]:
     return f"{body} \\text{{ does not exist}}", "The limit does not exist."
 
 
-def _table_check_words(point, direction, facts) -> str:
+def _table_check_words(point, direction, facts, is_khmer: bool = False) -> str:
     left = _sympy_value(facts.get("left_value"))
     right = _sympy_value(facts.get("right_value"))
+    if is_khmer:
+        if point in (sympy.oo, -sympy.oo):
+            value = _sympy_value(facts.get("limit_value"))
+            if value is not None and value.is_finite:
+                return f"នៅពេល x កើនឡើងកាន់តែធំទៅៗ f(x) ខិតទៅជិត {_plain(value)}។"
+            return "នៅពេល x កើនឡើងកាន់តែធំទៅៗ f(x) មិនខិតទៅរកតម្លៃណាមួយជាក់លាក់ឡើយ។"
+        if direction in ("left", "right"):
+            value = left if direction == "left" else right
+            dir_km = "ខាងឆ្វេង" if direction == "left" else "ខាងស្តាំ"
+            approach = f"នៅពេល x ខិតទៅជិត {_plain(point)} ពី{dir_km}"
+            if value is not None and value.is_finite:
+                return f"{approach} f(x) ខិតទៅជិត {_plain(value)}។"
+            if value == -sympy.oo:
+                return f"{approach} f(x) ថយចុះកាន់តែតូចទៅៗគ្មានដែនកំណត់ (អវិជ្ជមាន)។"
+            if value == sympy.oo:
+                return f"{approach} f(x) កើនឡើងកាន់តែធំទៅៗគ្មានដែនកំណត់។"
+            return f"{approach} f(x) មិនខិតទៅរកតម្លៃណាមួយជាក់លាក់ឡើយ។"
+        if left is not None and right is not None and _same(left, right) and left.is_finite:
+            return (
+                f"ទាំងពីខាងឆ្វេង និងពីខាងស្តាំនៃ x = {_plain(point)} f(x) ខិតទៅជិត "
+                f"{_plain(left)} — ទាំងសងខាងមានតម្លៃដូចគ្នា។"
+            )
+        if left is not None and right is not None and not _same(left, right):
+            return (
+                f"ពីខាងឆ្វេង f(x) ខិតទៅជិត {_plain(left)} ប៉ុន្តែពីខាងស្តាំវាខិតទៅជិត "
+                f"{_plain(right)}។ ខាងទាំងសងខាងមិនមានតម្លៃដូចគ្នាទេ ដូច្នេះលីមីតសងខាងមិនមានឡើយ។"
+            )
+        return f"នៅក្បែរ x = {_plain(point)} f(x) កើនឡើងគ្មានដែនកំណត់ ដោយមិនខិតទៅរកចំនួនជាក់លាក់ណាមួយឡើយ។"
+
     if point in (sympy.oo, -sympy.oo):
         value = _sympy_value(facts.get("limit_value"))
         if value is not None and value.is_finite:
@@ -881,23 +1048,33 @@ def _table_check_words(point, direction, facts) -> str:
     return f"Near x = {_plain(point)}, f(x) grows without bound instead of settling on a number."
 
 
-def _factor_hint(numerator, denominator) -> str:
+def _factor_hint(numerator, denominator, is_khmer: bool = False) -> str:
     for part in (numerator, denominator):
         poly = sympy.Poly(part, _X)
         if poly.degree() != 2:
             continue
         a, b, c = poly.all_coeffs()
         if b == 0 and a > 0 and c < 0:
+            if is_khmer:
+                return f"{_plain(part)} គឺជារាងផលដកការេ៖ a² − b² = (a − b)(a + b)។"
             return f"{_plain(part)} is a difference of squares: a² − b² = (a − b)(a + b)."
         if a == 1:
             roots = [root for root, count in sympy.roots(poly).items() for _ in range(count)]
             if len(roots) == 2 and all(root.is_integer for root in roots):
                 first, second = -roots[0], -roots[1]
+                if is_khmer:
+                    return (
+                        f"ដើម្បីដាក់ {_plain(part)} ជាផលគុណកត្តា រកពីរចំនួនដែលគុណគ្នាបាន "
+                        f"{_plain(c)} និងបូកគ្នាបាន {_plain(b)}៖ ចំនួនទាំងនោះគឺ {_plain(first)} "
+                        f"និង {_plain(second)}។"
+                    )
                 return (
                     f"To factor {_plain(part)}, find two numbers that multiply to "
                     f"{_plain(c)} and add to {_plain(b)}: they are {_plain(first)} "
                     f"and {_plain(second)}."
                 )
+    if is_khmer:
+        return "ដាក់ផ្នែកនីមួយៗជាផលគុណកត្តា ដើម្បីឱ្យយើងអាចមើលឃើញកត្តារួមរបស់វា។"
     return "Factor each part so we can see what they have in common."
 
 
@@ -937,7 +1114,26 @@ def _lim_latex(point, direction) -> str:
     return f"\\lim_{{x \\to {sympy.latex(point)}{side}}}"
 
 
-def _question_words(point, direction) -> str:
+def _question_words(point, direction, is_khmer: bool = False) -> str:
+    if is_khmer:
+        if point == sympy.oo:
+            return (
+                "យើងចង់ដឹងថាតើតម្លៃ f(x) ខិតទៅជិតតម្លៃណា នៅពេល x កើនឡើងធំទៅៗគ្មានដែនកំណត់។ "
+                "x មិនដែលស្មើអនន្តទេ — យើងមើលទៅលើនិន្នាការនៃតម្លៃ។"
+            )
+        if point == -sympy.oo:
+            return (
+                "យើងចង់ដឹងថាតើតម្លៃ f(x) ខិតទៅជិតតម្លៃណា នៅពេល x ថយចុះកាន់តែតូចទៅៗគ្មានដែនកំណត់ (អវិជ្ជមាន)។ "
+                "យើងមើលទៅលើនិន្នាការ មិនមែនតម្លៃមួយគត់នោះទេ។"
+            )
+        side = " ពីខាងឆ្វេង (តម្លៃតូចជាងបន្តិច)" if direction == "left" else (
+            " ពីខាងស្តាំ (តម្លៃធំជាងបន្តិច)" if direction == "right" else ""
+        )
+        return (
+            f"យើងចង់ដឹងថាតើតម្លៃ f(x) ខិតទៅជិតតម្លៃណា នៅពេល x ខិតទៅជិត "
+            f"{_plain(point)}{side}។ x មិនចាំបាច់ស្មើ "
+            f"{_plain(point)} នោះទេ — យើងពិនិត្យមើលតម្លៃដែលនៅក្បែរវា។"
+        )
     if point == sympy.oo:
         return (
             "We want to know what value f(x) gets closer and closer to as x grows "

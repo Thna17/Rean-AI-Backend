@@ -133,6 +133,30 @@ def verify_math(query: MathQuery) -> MathResponse:
         if "=" not in query.expression:
             expr = sympy.simplify(_parse(query.expression))
             return MathResponse(status="cannot_verify", verified=False, normalized_expression=str(expr).replace("**", "^"), student_message="This is an expression, not a checkable equation or student step.", evidence={"reason": "expression_has_no_verifiable_claim"})
+        if query.expression.count("=") > 1:
+            from api.services.visual_tutor.algebra_worked_solution import extract_algebra_equations
+            parsed = extract_algebra_equations(query.expression)
+            if len(parsed) == 2:
+                (_, lhs1, rhs1), (_, lhs2, rhs2) = parsed
+                diff1 = sympy.simplify(lhs1 - rhs1)
+                diff2 = sympy.simplify(lhs2 - rhs2)
+                _ensure_safe_expression(diff1)
+                _ensure_safe_expression(diff2)
+                syms = sorted((diff1.free_symbols | diff2.free_symbols), key=lambda s: s.name)
+                if len(syms) == 2:
+                    var1, var2 = syms
+                    sol = sympy.solve([sympy.Eq(lhs1, rhs1), sympy.Eq(lhs2, rhs2)], (var1, var2))
+                    if isinstance(sol, dict) and var1 in sol and var2 in sol:
+                        if sympy.simplify((lhs1 - rhs1).subs(sol)) == 0 and sympy.simplify((lhs2 - rhs2).subs(sol)) == 0:
+                            sol_str = f"{var1} = {sol[var1]}, {var2} = {sol[var2]}"
+                            return MathResponse(
+                                status="correct",
+                                verified=True,
+                                normalized_expression=f"{lhs1} = {rhs1}, {lhs2} = {rhs2}",
+                                solution=sol_str,
+                                student_message="This system of linear equations and its solution set were verified.",
+                                evidence={"method": "sympy_linear_system_solve", "variables": [str(var1), str(var2)]},
+                            )
         lhs, rhs = _equation(query.expression)
         difference = sympy.simplify(lhs - rhs)
         _ensure_safe_expression(difference)

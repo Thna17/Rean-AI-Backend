@@ -11,12 +11,16 @@ Provides step-by-step whiteboard solutions for ANY in-scope STEM problem:
 
 from __future__ import annotations
 
+import collections.abc
 import json
 import logging
 import re
+import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from threading import Lock
+from typing import Any, Generic, Iterator, List, Optional, TypeVar
 
 import sympy
 
@@ -48,8 +52,15 @@ from api.services.visual_tutor.physics_kinematics import (
     WorkedPhysicsSolution,
 )
 from api.services.curriculum.curriculum_store import get_default_curriculum_store
-from api.services.visual_tutor.rag_curriculum_gate import ClassificationResult
+from api.services.visual_tutor.rag_curriculum_gate import (
+    ClassificationResult,
+    classify_student_query,
+)
 from api.services.visual_tutor.teaching_plan_contract import validate_teaching_plan
+from api.services.visual_tutor.algebra_worked_solution import (
+    try_solve_algebra_problem,
+    verify_algebra_solution_by_substitution,
+)
 from api.services.visual_tutor.worked_solution import (
     match_worked_solution,
     solve_limit,
@@ -77,12 +88,135 @@ class GenericWorkedSolution:
     is_verified: bool
     curriculum_topic: Optional[str] = None
     curriculum_sources: list[str] = field(default_factory=list)
+    is_degraded: bool = False
 
 
-# In-memory cache for dynamic solutions and session follow-up tracking
-_dynamic_solution_cache: dict[str, GenericWorkedSolution] = {}
-_dynamic_followup_cache: dict[str, str] = {}
-_session_followups: dict[str, list[GenericSolutionStep]] = {}
+K = TypeVar("K")
+V = TypeVar("V")
+
+
+class TTLCache(collections.abc.MutableMapping[K, V]):
+    """Bounded in-memory LRU cache with time-to-live (TTL) expiration."""
+
+    def __init__(self, maxsize: int = 512, ttl_seconds: float = 1800.0) -> None:
+        self.maxsize = maxsize
+        self.ttl_seconds = ttl_seconds
+        self._data: OrderedDict[K, tuple[V, float]] = OrderedDict()
+        self._lock = Lock()
+
+    def _is_expired(self, expiry: float) -> bool:
+        return time.monotonic() > expiry
+
+    def _purge_expired(self, now: Optional[float] = None) -> None:
+        current_time = time.monotonic() if now is None else now
+        expired_keys = [k for k, (_, exp) in self._data.items() if current_time > exp]
+        for k in expired_keys:
+            self._data.pop(k, None)
+
+    def __getitem__(self, key: K) -> V:
+        with self._lock:
+            if key not in self._data:
+                raise KeyError(key)
+            val, expiry = self._data[key]
+            if self._is_expired(expiry):
+                del self._data[key]
+                raise KeyError(key)
+            self._data.move_to_end(key)
+            return val
+
+    def __setitem__(self, key: K, value: V) -> None:
+        with self._lock:
+            now = time.monotonic()
+            expiry = now + self.ttl_seconds
+            if key in self._data:
+                self._data[key] = (value, expiry)
+                self._data.move_to_end(key)
+                return
+
+            if len(self._data) >= self.maxsize:
+                self._purge_expired(now)
+
+            while len(self._data) >= self.maxsize and self._data:
+                self._data.popitem(last=False)
+
+            self._data[key] = (value, expiry)
+
+    def __delitem__(self, key: K) -> None:
+        with self._lock:
+            del self._data[key]
+
+    def __contains__(self, key: object) -> bool:
+        with self._lock:
+            if key not in self._data:
+                return False
+            val, expiry = self._data[key]
+            if self._is_expired(expiry):
+                del self._data[key]
+                return False
+            return True
+
+    def get(self, key: K, default: Any = None) -> Any:
+        with self._lock:
+            if key not in self._data:
+                return default
+            val, expiry = self._data[key]
+            if self._is_expired(expiry):
+                del self._data[key]
+                return default
+            self._data.move_to_end(key)
+            return val
+
+    def pop(self, key: K, *args: Any) -> Any:
+        with self._lock:
+            if key in self._data:
+                val, expiry = self._data.pop(key)
+                if not self._is_expired(expiry):
+                    return val
+            if args:
+                return args[0]
+            raise KeyError(key)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._data.clear()
+
+    def __len__(self) -> int:
+        with self._lock:
+            self._purge_expired()
+            return len(self._data)
+
+    def __iter__(self) -> Iterator[K]:
+        with self._lock:
+            self._purge_expired()
+            return iter(list(self._data.keys()))
+
+    def keys(self) -> list[K]:
+        with self._lock:
+            self._purge_expired()
+            return list(self._data.keys())
+
+    def values(self) -> list[V]:
+        with self._lock:
+            self._purge_expired()
+            return [v for v, _ in self._data.values()]
+
+    def items(self) -> list[tuple[K, V]]:
+        with self._lock:
+            self._purge_expired()
+            return [(k, v) for k, (v, _) in self._data.items()]
+
+    def __repr__(self) -> str:
+        with self._lock:
+            self._purge_expired()
+            return f"TTLCache(maxsize={self.maxsize}, ttl_seconds={self.ttl_seconds}, size={len(self._data)})"
+
+
+# In-memory bounded LRU/TTL cache for dynamic solutions and session follow-up tracking (~512 max entries, ~30 min TTL).
+# NOTE: This cache is per-replica (in-process memory). Bounded to max 512 entries with 1800s (30m) TTL
+# to prevent memory leaks while providing fast dynamic problem/followup lookup per worker.
+_dynamic_solution_cache: TTLCache[str, GenericWorkedSolution] = TTLCache(maxsize=512, ttl_seconds=1800.0)
+_dynamic_followup_cache: TTLCache[str, str] = TTLCache(maxsize=512, ttl_seconds=1800.0)
+_session_followups: TTLCache[str, list[GenericSolutionStep]] = TTLCache(maxsize=512, ttl_seconds=1800.0)
 
 
 def _detect_khmer_request(question: str, request: VisualTutorTurnRequest) -> bool:
@@ -241,12 +375,16 @@ def _extract_khmer_terms_summary(chunks: list[CurriculumChunk]) -> str:
 
 def build_dynamic_worked_solution_turn(
     request: VisualTutorTurnRequest,
-    classification: ClassificationResult,
+    classification: Optional[ClassificationResult] = None,
     *,
-    session_id: str,
+    session_id: str = "default_session",
     llm_client: Any = None,
 ) -> VisualTutorTurnResponse:
     """Solve any STEM problem and return a complete step-by-step whiteboard turn."""
+    if classification is None:
+        query = (request.message or (request.current_state and request.current_state.problem_text) or "").strip()
+        classification = classify_student_query(query, grade=request.grade, subject=request.subject)
+
     is_khmer = classification.is_khmer or _uses_khmer(request)
 
     # Reset accumulated session followups for a new problem
@@ -255,7 +393,7 @@ def build_dynamic_worked_solution_turn(
     _session_followups.pop(session_id, None)
 
     # 1. Attempt deterministic solver first
-    deterministic_solution = _try_solve_deterministic(request, classification)
+    deterministic_solution = _try_solve_deterministic(request, classification, is_khmer=is_khmer)
     if deterministic_solution is not None:
         return _build_turn_response(
             request,
@@ -277,7 +415,8 @@ def build_dynamic_worked_solution_turn(
             is_khmer=is_khmer,
             llm_client=llm_client,
         )
-        _dynamic_solution_cache[cache_key] = solution
+        if not solution.is_degraded:
+            _dynamic_solution_cache[cache_key] = solution
 
     return _build_turn_response(
         request,
@@ -286,6 +425,9 @@ def build_dynamic_worked_solution_turn(
         is_khmer=is_khmer,
         board_update_mode="replace",
     )
+
+
+solve_dynamic_problem = build_dynamic_worked_solution_turn
 
 
 def answer_dynamic_followup(
@@ -303,11 +445,14 @@ def answer_dynamic_followup(
     # Reconstruct the base solution
     cache_key = f"{problem_text}:{is_khmer}:{classification.is_verified}"
     solution = _dynamic_solution_cache.get(cache_key)
+    if solution is not None and getattr(solution, "is_degraded", False):
+        solution = None
     if solution is None:
         for alt_lang in (True, False):
             alt_key = f"{problem_text}:{alt_lang}:{classification.is_verified}"
-            if alt_key in _dynamic_solution_cache:
-                solution = _dynamic_solution_cache[alt_key]
+            alt_solution = _dynamic_solution_cache.get(alt_key)
+            if alt_solution is not None and not getattr(alt_solution, "is_degraded", False):
+                solution = alt_solution
                 break
     if solution is None:
         deterministic = _try_solve_deterministic(request, classification)
@@ -320,7 +465,8 @@ def answer_dynamic_followup(
                 is_khmer=False,
                 llm_client=llm_client,
             )
-            _dynamic_solution_cache[cache_key] = solution
+            if not solution.is_degraded:
+                _dynamic_solution_cache[cache_key] = solution
 
     # Retrieve accumulated session followups to preserve across consecutive turns
     session_key = session_id or problem_text or "default"
@@ -410,6 +556,7 @@ def answer_dynamic_followup(
 def _try_solve_deterministic(
     request: VisualTutorTurnRequest,
     classification: ClassificationResult,
+    is_khmer: bool = False,
 ) -> Optional[GenericWorkedSolution]:
     """Check if SymPy deterministic solvers can handle this problem."""
     msg = request.message or request.current_state.problem_text or ""
@@ -418,7 +565,7 @@ def _try_solve_deterministic(
     limit_problem = match_worked_solution(request)
     if limit_problem is not None:
         try:
-            ws = solve_limit(limit_problem)
+            ws = solve_limit(limit_problem, is_khmer=is_khmer)
             steps = [
                 GenericSolutionStep(
                     key=s.key,
@@ -445,6 +592,9 @@ def _try_solve_deterministic(
     physics_problem = match_physics_kinematics_problem(request)
     if physics_problem is not None:
         try:
+            if is_khmer and not physics_problem.is_khmer:
+                import dataclasses
+                physics_problem = dataclasses.replace(physics_problem, is_khmer=True)
             ps = solve_kinematics(physics_problem)
             steps = [
                 GenericSolutionStep(
@@ -472,6 +622,9 @@ def _try_solve_deterministic(
     chemistry_problem = match_chemistry_stoichiometry_problem(request)
     if chemistry_problem is not None:
         try:
+            if is_khmer and not chemistry_problem.is_khmer:
+                import dataclasses
+                chemistry_problem = dataclasses.replace(chemistry_problem, is_khmer=True)
             cs = solve_stoichiometry(chemistry_problem)
             steps = [
                 GenericSolutionStep(
@@ -494,6 +647,14 @@ def _try_solve_deterministic(
             )
         except Exception:
             logger.warning("Deterministic chemistry solve failed; falling back to dynamic RAG")
+
+    # Algebra (linear equations, quadratics, simultaneous systems)
+    try:
+        algebra_solution = try_solve_algebra_problem(request, is_khmer=is_khmer)
+        if algebra_solution is not None:
+            return algebra_solution
+    except Exception:
+        logger.warning("Deterministic algebra solve failed; falling back to dynamic RAG")
 
     return None
 
@@ -645,6 +806,16 @@ def _solve_with_llm_rag(
 
         parsed = _parse_llm_solution_json(raw_output)
         if parsed is not None:
+            ans_text = parsed.get("answer_text", "Solution complete")
+            ans_latex = parsed.get("answer_latex", "")
+            if not is_verified:
+                sub_verified, _ = verify_algebra_solution_by_substitution(
+                    problem_text,
+                    ans_text,
+                    ans_latex,
+                )
+                if sub_verified:
+                    is_verified = True
             steps = [
                 GenericSolutionStep(
                     key=s.get("key", f"step_{idx + 1}"),
@@ -658,8 +829,8 @@ def _solve_with_llm_rag(
             return GenericWorkedSolution(
                 problem_text=problem_text,
                 steps=steps,
-                answer_text=parsed.get("answer_text", "Solution complete"),
-                answer_latex=parsed.get("answer_latex", ""),
+                answer_text=ans_text,
+                answer_latex=ans_latex,
                 is_verified=is_verified,
                 curriculum_topic=topic,
                 curriculum_sources=chunk_ids,
@@ -740,6 +911,7 @@ def _build_fallback_solution(
         is_verified=resolved_verified,
         curriculum_topic=resolved_topic,
         curriculum_sources=resolved_sources,
+        is_degraded=True,
     )
 
 
@@ -866,10 +1038,17 @@ def _build_turn_response(
     # Add steps
     for step in solution.steps:
         section = f"step-{step.key}"
+        heading = step.heading
+        if is_khmer:
+            m = re.match(r"^Step\s*(\d+)\s*(?:·|:|-)?\s*(.*)$", heading, re.IGNORECASE)
+            if m:
+                step_num = _to_khmer_numeral(int(m.group(1)))
+                rest = m.group(2).strip()
+                heading = f"ជំហានទី {step_num} · {rest}" if rest else f"ជំហានទី {step_num}"
         add(
             VisualTutorCanvasActionType.WRITE_TEXT,
             section,
-            text=f"{step.heading}. {step.explanation}",
+            text=f"{heading}. {step.explanation}",
         )
         if step.latex:
             add(
@@ -892,10 +1071,22 @@ def _build_turn_response(
 
     # Add Final Answer
     answer_label = "ចម្លើយ" if is_khmer else "Answer"
+    ans_text = solution.answer_text
+    if is_khmer:
+        if ans_text.strip() in {"Solution completed", "Solution complete"}:
+            ans_text = "ដំណោះស្រាយបានបញ្ចប់"
+        elif "The limit is" in ans_text:
+            val = ans_text.replace("The limit is", "").strip().rstrip(".")
+            ans_text = f"លីមីតគឺ {val}។"
+        elif ans_text.startswith("The answer is"):
+            val = ans_text.replace("The answer is", "").strip().rstrip(".")
+            ans_text = f"ចម្លើយគឺ {val}។"
+    if ans_text.startswith(f"{answer_label} · "):
+        ans_text = ans_text[len(f"{answer_label} · "):]
     add(
         VisualTutorCanvasActionType.WRITE_TEXT,
         "answer",
-        text=f"{answer_label} · {solution.answer_text}",
+        text=f"{answer_label} · {ans_text}",
     )
     if solution.answer_latex:
         add(
@@ -966,6 +1157,16 @@ def _build_turn_response(
         "is_followup": (board_update_mode == "append"),
         "board_version": next_ver,
         "base_board_version": base_ver,
+        "verification": {
+            "status": "correct" if solution.is_verified else "cannot_verify",
+            "verified": solution.is_verified,
+            "student_message": (
+                "Verified using SymPy substitution check."
+                if solution.is_verified
+                else "AI answer — not machine-checked."
+            ),
+            "concise_evidence": "SymPy verified" if solution.is_verified else "AI unverified",
+        },
     }
 
     teaching_plan = validate_teaching_plan(

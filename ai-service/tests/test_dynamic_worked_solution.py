@@ -189,3 +189,263 @@ def test_dynamic_worked_solution_honest_degradation_when_required():
     assert res.metadata.get("solver_ready") is False
     assert "not ready yet" in res.spoken_text.lower() or "មិនទាន់រួចរាល់" in res.spoken_text
 
+
+def test_degraded_fallback_not_stored_in_dynamic_solution_cache():
+    """Verify that transient LLM failures do not poison _dynamic_solution_cache with fallback solutions."""
+    import json
+    from api.services.visual_tutor.dynamic_worked_solution import (
+        _dynamic_solution_cache,
+        solve_dynamic_problem,
+    )
+
+    class FailingLLMClient:
+        def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+            raise RuntimeError("DeepSeek 503 Service Unavailable")
+
+    class WorkingLLMClient:
+        def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+            return json.dumps({
+                "steps": [
+                    {
+                        "key": "solve",
+                        "heading": "Step 1 · Solve Trigonometric Equation",
+                        "explanation": "Solving sin(x) = 1/2 gives angles in Quadrant I and II: x = 30° and x = 150°.",
+                        "latex": r"x = 30^\circ, 150^\circ",
+                    }
+                ],
+                "answer_text": "x = 30° and x = 150°",
+                "answer_latex": r"x = 30^\circ, \quad x = 150^\circ",
+            })
+
+    problem_query = "Solve sin(x) = 1/2 for 0 <= x <= 360 degrees"
+    classification = classify_student_query(problem_query, grade=11, subject="Mathematics")
+    req = VisualTutorTurnRequest(
+        user_id="probe",
+        subject="Mathematics",
+        grade=11,
+        message=problem_query,
+        language_mode="english",
+        action=VisualTutorAction.SUBMIT_PROBLEM,
+    )
+
+    _dynamic_solution_cache.clear()
+
+    # 1. First call fails because LLM client raises
+    turn1 = solve_dynamic_problem(
+        req,
+        classification,
+        session_id="test-session-degraded-cache",
+        llm_client=FailingLLMClient(),
+    )
+    assert turn1 is not None
+
+    # BUT the degraded fallback solution must NOT be stored in the cache
+    cache_key = f"{problem_query}:False:{classification.is_verified}"
+    assert cache_key not in _dynamic_solution_cache
+    assert len(_dynamic_solution_cache) == 0
+
+    # 2. Second call with a working LLM client must return the real solution, NOT the poisoned fallback
+    turn2 = solve_dynamic_problem(
+        req,
+        classification,
+        session_id="test-session-degraded-cache",
+        llm_client=WorkingLLMClient(),
+    )
+    assert turn2 is not None
+    assert any("30" in (a.text or a.latex or "") for a in turn2.board_actions)
+    assert not any("Solution completed" in (a.text or "") for a in turn2.board_actions)
+
+    # A real, non-degraded solution should now be cached
+    assert cache_key in _dynamic_solution_cache
+
+
+def test_degraded_fallback_not_stored_in_followup_reconstruction():
+    """Verify that call site 2 (answer_dynamic_followup) does not cache degraded fallback solutions."""
+    from api.services.visual_tutor.dynamic_worked_solution import (
+        _dynamic_solution_cache,
+        answer_dynamic_followup,
+    )
+
+    class FailingLLMClient:
+        def complete(self, *, system_prompt: str, user_prompt: str) -> str:
+            raise RuntimeError("DeepSeek 500 Internal Error")
+
+    problem_query = "Calculate enthalpy change Delta H for reaction A -> B"
+    classification = classify_student_query(problem_query, grade=11, subject="Chemistry")
+    req = VisualTutorTurnRequest(
+        user_id="probe-followup",
+        subject="Chemistry",
+        grade=11,
+        message="Why is Delta H negative?",
+        language_mode="english",
+        action=VisualTutorAction.SUBMIT_STEP,
+        current_state=VisualTutorTurnState(
+            problem_text=problem_query,
+            board_version=1,
+        ),
+    )
+
+    _dynamic_solution_cache.clear()
+
+    turn = answer_dynamic_followup(
+        req,
+        classification,
+        session_id="test-session-followup-degraded",
+        llm_client=FailingLLMClient(),
+    )
+    assert turn is not None
+
+    # Verify that neither language key was stored in _dynamic_solution_cache
+    for lang in (True, False):
+        key = f"{problem_query}:{lang}:{classification.is_verified}"
+        assert key not in _dynamic_solution_cache
+    assert len(_dynamic_solution_cache) == 0
+
+
+def test_ttl_cache_lru_and_expiration():
+    """Test TTLCache bounded capacity, LRU eviction order, and TTL expiry."""
+    import time
+    from api.services.visual_tutor.dynamic_worked_solution import TTLCache
+
+    # 1. Bounded LRU Eviction
+    cache: TTLCache[str, int] = TTLCache(maxsize=3, ttl_seconds=60.0)
+    cache["a"] = 1
+    cache["b"] = 2
+    cache["c"] = 3
+    assert len(cache) == 3
+
+    # Touch 'a' so 'b' becomes least recently used
+    _ = cache["a"]
+
+    # Insert 'd' -> should evict 'b'
+    cache["d"] = 4
+    assert len(cache) == 3
+    assert "b" not in cache
+    assert "a" in cache
+    assert "c" in cache
+    assert "d" in cache
+    assert cache.get("b") is None
+
+    # 2. TTL Expiration
+    short_cache: TTLCache[str, str] = TTLCache(maxsize=10, ttl_seconds=0.05)
+    short_cache["key1"] = "val1"
+    assert "key1" in short_cache
+    assert short_cache["key1"] == "val1"
+
+    time.sleep(0.08)
+    assert "key1" not in short_cache
+    assert short_cache.get("key1") is None
+    assert len(short_cache) == 0
+
+
+def test_session_followups_bounded_eviction():
+    """Test that _session_followups is bounded and evicts older sessions."""
+    from api.services.visual_tutor.dynamic_worked_solution import (
+        GenericSolutionStep,
+        _session_followups,
+    )
+
+    _session_followups.clear()
+    assert len(_session_followups) == 0
+
+    # Insert items up to capacity and beyond
+    original_maxsize = _session_followups.maxsize
+    try:
+        _session_followups.maxsize = 5
+        for i in range(7):
+            _session_followups[f"session_{i}"] = [
+                GenericSolutionStep(key=f"s_{i}", heading=f"Heading {i}", explanation=f"Exp {i}")
+            ]
+
+        assert len(_session_followups) == 5
+        # Oldest sessions 0 and 1 should have been evicted
+        assert "session_0" not in _session_followups
+        assert "session_1" not in _session_followups
+        assert "session_6" in _session_followups
+    finally:
+        _session_followups.maxsize = original_maxsize
+        _session_followups.clear()
+
+
+def test_generic_worked_solution_is_degraded_flag():
+    """Test is_degraded flag defaults to False and is set True on fallback solutions."""
+    from api.services.visual_tutor.dynamic_worked_solution import (
+        GenericWorkedSolution,
+        _build_fallback_solution,
+    )
+    from api.services.visual_tutor.rag_curriculum_gate import ClassificationResult
+
+    normal_sol = GenericWorkedSolution(
+        problem_text="Test",
+        steps=[],
+        answer_text="Ans",
+        answer_latex="Ans",
+        is_verified=True,
+    )
+    assert normal_sol.is_degraded is False
+
+    classification = ClassificationResult(
+        tier="unverified",
+        subject="mathematics",
+    )
+    fallback = _build_fallback_solution(
+        "Unsolvable problem",
+        is_khmer=False,
+        classification=classification,
+    )
+    assert fallback.is_degraded is True
+    assert fallback.answer_text == "Solution completed"
+
+
+def test_dynamic_solution_cache_bounded_size_and_ttl():
+    """Test that _dynamic_solution_cache bounds memory (maxsize) and evicts on TTL expiry."""
+    import time
+    from api.services.visual_tutor.dynamic_worked_solution import (
+        GenericWorkedSolution,
+        _dynamic_solution_cache,
+    )
+
+    _dynamic_solution_cache.clear()
+    orig_max = _dynamic_solution_cache.maxsize
+    orig_ttl = _dynamic_solution_cache.ttl_seconds
+    try:
+        # 1. Bounded size eviction
+        _dynamic_solution_cache.maxsize = 3
+        _dynamic_solution_cache.ttl_seconds = 60.0
+
+        for i in range(5):
+            _dynamic_solution_cache[f"prob_{i}"] = GenericWorkedSolution(
+                problem_text=f"prob_{i}",
+                steps=[],
+                answer_text=f"ans_{i}",
+                answer_latex=f"ans_{i}",
+                is_verified=True,
+            )
+
+        assert len(_dynamic_solution_cache) == 3
+        assert "prob_0" not in _dynamic_solution_cache
+        assert "prob_1" not in _dynamic_solution_cache
+        assert "prob_4" in _dynamic_solution_cache
+
+        # 2. TTL expiration
+        _dynamic_solution_cache.clear()
+        _dynamic_solution_cache.ttl_seconds = 0.05
+        _dynamic_solution_cache["prob_short"] = GenericWorkedSolution(
+            problem_text="short",
+            steps=[],
+            answer_text="short",
+            answer_latex="short",
+            is_verified=True,
+        )
+        assert "prob_short" in _dynamic_solution_cache
+        time.sleep(0.08)
+        assert "prob_short" not in _dynamic_solution_cache
+        assert len(_dynamic_solution_cache) == 0
+    finally:
+        _dynamic_solution_cache.maxsize = orig_max
+        _dynamic_solution_cache.ttl_seconds = orig_ttl
+        _dynamic_solution_cache.clear()
+
+
+
+

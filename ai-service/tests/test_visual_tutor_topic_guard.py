@@ -193,3 +193,19 @@ def test_orchestrator_still_solves_on_topic_problem_in_a_lesson():
         lesson_request(LIMITS, "Find the limit of (x^2-4)/(x-2) as x approaches 2")
     )
     assert response.metadata.get("fallback_reason") != "off_topic_for_lesson"
+
+
+def test_khmer_off_topic_refusal_contains_no_latin_in_lesson_name():
+    """Assert that the Khmer refusal uses Khmer lesson label with no Latin characters."""
+    import re
+    request = lesson_request(LINEAR, "រកលីមីតនៃ (x^2-4)/(x-2) ពេល x ខិតទៅ 2")
+    request = request.model_copy(update={"language_mode": VisualTutorLanguageMode.KHMER})
+    response = handle_visual_tutor_turn(request)
+    assert response.metadata.get("fallback_reason") == "off_topic_for_lesson"
+
+    khmer_refusal = response.display_text.split("\n\n")[0]
+    quoted_topics = re.findall(r"«([^»]+)»", khmer_refusal)
+    assert len(quoted_topics) > 0
+    for topic_name in quoted_topics:
+        assert not re.search(r"[A-Za-z]", topic_name), f"Found Latin letters in Khmer topic label: {topic_name}"
+

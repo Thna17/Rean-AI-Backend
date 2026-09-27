@@ -59,6 +59,8 @@ def test_production_rejects_deepseek_without_a_real_key():
     ("field", "value"),
     [
         ("VISUAL_TUTOR_INTERNAL_TOKEN", "short"),
+        ("VISUAL_TUTOR_INTERNAL_TOKEN", "replace_with_a_unique_high_entropy_secret"),
+        ("VISUAL_TUTOR_INTERNAL_TOKEN", "visual-tutor-dev-token-for-dev-only"),
         ("MONGODB_URI", "mongodb://localhost:27017"),
         ("OPENROUTER_API_KEY", ""),
         # Removed scan feature: OCR is off by default, so the key is only

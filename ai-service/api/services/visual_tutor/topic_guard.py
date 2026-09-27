@@ -206,6 +206,20 @@ class TopicGuardDecision:
     reason: str = "on_topic"
 
     @property
+    def lesson_label_en(self) -> str:
+        family = _BY_KEY.get(self.lesson_family or "")
+        return family.label_en if family else self.lesson_topic
+
+    @property
+    def lesson_label_km(self) -> str:
+        family = _BY_KEY.get(self.lesson_family or "")
+        if family:
+            return family.label_km
+        if re.search(r"[\u1780-\u17ff]", self.lesson_topic):
+            return self.lesson_topic
+        return self.lesson_topic
+
+    @property
     def detected_label_en(self) -> str:
         family = _BY_KEY.get(self.detected_family or "")
         return family.label_en if family else "a different topic"
@@ -214,6 +228,7 @@ class TopicGuardDecision:
     def detected_label_km(self) -> str:
         family = _BY_KEY.get(self.detected_family or "")
         return family.label_km if family else "ប្រធានបទផ្សេង"
+
 
 
 def _strong_families(text: str) -> list[str]:
@@ -330,28 +345,30 @@ def evaluate_topic_guard(request: VisualTutorTurnRequest) -> Optional[TopicGuard
 def build_off_topic_message(decision: TopicGuardDecision, language_mode: str = "english") -> dict[str, str]:
     """Bilingual redirect that names the lesson and what the question looked like."""
     is_khmer = (language_mode or "").strip().lower() in {"khmer", "km"}
-    topic = decision.lesson_topic
+    topic_en = decision.lesson_topic
+    topic_km = decision.lesson_label_km
 
     text_en = (
-        f"This lesson is about {topic}. Your question looks like it is about "
+        f"This lesson is about {topic_en}. Your question looks like it is about "
         f"{decision.detected_label_en}, so I can't solve it in this lesson. "
-        f"Ask me a {topic} problem, or go back to Home to ask about anything else."
+        f"Ask me a {topic_en} problem, or go back to Home to ask about anything else."
     )
     text_km = (
-        f"មេរៀននេះគឺអំពី «{topic}»។ សំណួររបស់អ្នកហាក់ដូចជាទាក់ទងនឹង{decision.detected_label_km} "
-        f"ដូច្នេះខ្ញុំមិនអាចដោះស្រាយវានៅក្នុងមេរៀននេះបានទេ។ សូមសួរលំហាត់អំពី «{topic}» "
+        f"មេរៀននេះគឺអំពី «{topic_km}»។ សំណួររបស់អ្នកហាក់ដូចជាទាក់ទងនឹង{decision.detected_label_km} "
+        f"ដូច្នេះខ្ញុំមិនអាចដោះស្រាយវានៅក្នុងមេរៀននេះបានទេ។ សូមសួរលំហាត់អំពី «{topic_km}» "
         "ឬត្រឡប់ទៅទំព័រដើមដើម្បីសួរអំពីប្រធានបទផ្សេង។"
     )
     if is_khmer:
         return {
             "display_text": f"{text_km}\n\n{text_en}",
-            "student_task": f"សូមសួរលំហាត់អំពី «{topic}»។",
-            "board_title": f"តោះផ្តោតលើ «{topic}»",
+            "student_task": f"សូមសួរលំហាត់អំពី «{topic_km}»។",
+            "board_title": f"តោះផ្តោតលើ «{topic_km}»",
             "board_content": text_km,
         }
     return {
         "display_text": f"{text_en}\n\n{text_km}",
-        "student_task": f"Ask a {topic} problem.",
-        "board_title": f"Let's stay on {topic}",
+        "student_task": f"Ask a {topic_en} problem.",
+        "board_title": f"Let's stay on {topic_en}",
         "board_content": text_en,
     }
+

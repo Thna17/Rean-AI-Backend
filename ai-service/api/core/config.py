@@ -174,8 +174,17 @@ class Settings(BaseSettings):
                 "SECRET_KEY must be a random string of at least 32 characters in production"
             )
 
-        if not self.VISUAL_TUTOR_INTERNAL_TOKEN or len(self.VISUAL_TUTOR_INTERNAL_TOKEN) < 32:
-            raise ValueError("VISUAL_TUTOR_INTERNAL_TOKEN must be at least 32 characters in staging and production")
+        token = (self.VISUAL_TUTOR_INTERNAL_TOKEN or "").strip()
+        token_lower = token.lower()
+        if (
+            not token
+            or len(token) < 32
+            or "replace_with" in token_lower
+            or "dev-token" in token_lower
+        ):
+            raise ValueError(
+                "VISUAL_TUTOR_INTERNAL_TOKEN must be a unique 32+ character production secret and not a placeholder"
+            )
         if not self.MONGODB_URI or any(value in self.MONGODB_URI.lower() for value in ("localhost", "127.0.0.1")):
             raise ValueError("A non-local durable MONGODB_URI is required in staging and production")
 

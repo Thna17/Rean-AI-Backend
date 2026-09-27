@@ -33,9 +33,9 @@ def _local_limits_demo_enabled_by_default(monkeypatch):
     )
 
 
-def _request(*, action: VisualTutorAction = VisualTutorAction.START, message: str = "", step: int = 0, wrong_attempts: int = 0) -> VisualTutorTurnRequest:
+def _request(*, action: VisualTutorAction = VisualTutorAction.START, message: str = "", step: int = 0, wrong_attempts: int = 0, language_mode: str = "khmer") -> VisualTutorTurnRequest:
     return VisualTutorTurnRequest(
-        user_id="test-student", session_id="limits-local-session", subject="Mathematics", topic="Limits of Functions", language_mode="khmer", action=action, message=message,
+        user_id="test-student", session_id="limits-local-session", subject="Mathematics", topic="Limits of Functions", language_mode=language_mode, action=action, message=message,
         current_state=VisualTutorTurnState(lesson_id=_LESSON_ID, current_step_index=step, wrong_attempts=wrong_attempts),
         metadata={"entry_context": "lesson", "is_curriculum_scoped": True, "grade": 12, "subject_id": "math", "topic_id": "math-g12-limits-of-functions", "lesson_id": _LESSON_ID, "teaching_moment_id": _MOMENT, "curriculum_version_id": _VERSION},
     )
@@ -333,6 +333,7 @@ def test_new_limit_problem_answers_with_the_full_worked_solution(monkeypatch) ->
         _request(
             action=VisualTutorAction.SUBMIT_PROBLEM,
             message="Find the limit of f(x) = 2x + 1 as x approaches 3",
+            language_mode="english",
         ),
         llm_client=fake_llm,
     )

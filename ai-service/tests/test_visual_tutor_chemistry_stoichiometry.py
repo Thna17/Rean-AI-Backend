@@ -363,3 +363,42 @@ def test_unsupported_chemistry_problem_dynamic_unverified() -> None:
     )
     assert response.metadata.get("verified") is False
     assert response.metadata.get("curriculum_status") == "ai_unverified"
+
+
+def test_water_synthesis_word_problem_verified_and_states_masses() -> None:
+    """Verify that 'How many grams of water are produced when 4 g of hydrogen reacts completely with oxygen?'
+    is solved with exact atomic masses (35.75 g), states atomic masses on the board, and returns verified=True.
+    """
+    msg = "How many grams of water are produced when 4 g of hydrogen reacts completely with oxygen?"
+    problem = parse_chemistry_stoichiometry_problem(msg)
+    assert problem is not None, "Word problem should be parsed by chemistry stoichiometry solver"
+    assert problem.given_species == "H2"
+    assert problem.given_value == 4.0
+    assert problem.target_species == "H2O"
+    assert problem.target_unit == "g"
+
+    solution = solve_stoichiometry(problem)
+    assert solution.target_value == pytest.approx(35.75, abs=0.05)
+    assert "35.75" in solution.answer_text
+
+    # Verify board states atomic masses
+    molar_step = next(s for s in solution.steps if s.key == "molar")
+    assert "1.008" in molar_step.explanation or "2.016" in str(molar_step.table)
+
+    # Test full turn through orchestrator
+    response = handle_visual_tutor_turn(
+        VisualTutorTurnRequest(
+            user_id="student-1",
+            subject="Chemistry",
+            topic="Stoichiometry",
+            message=msg,
+            action=VisualTutorAction.SUBMIT_PROBLEM,
+            metadata={"grade": 12},
+        )
+    )
+    assert response.metadata.get("worked_solution") is True
+    assert response.metadata.get("verified") is True
+    assert response.metadata.get("verification", {}).get("status") == "correct"
+    assert response.metadata.get("verification", {}).get("verified") is True
+    assert "35.75" in response.spoken_text or "35.75" in response.display_text
+
