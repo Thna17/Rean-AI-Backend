@@ -343,8 +343,14 @@ def evaluate_topic_guard(request: VisualTutorTurnRequest) -> Optional[TopicGuard
 
 
 def build_off_topic_message(decision: TopicGuardDecision, language_mode: str = "english") -> dict[str, str]:
-    """Bilingual redirect that names the lesson and what the question looked like."""
-    is_khmer = (language_mode or "").strip().lower() in {"khmer", "km"}
+    """Redirect naming the lesson and what the question looked like.
+
+    One language, chosen by `language_mode`. Pairing both in a single-language
+    turn hands the student prose they cannot read.
+    """
+    mode = (language_mode or "").strip().lower()
+    is_khmer = mode in {"khmer", "km"}
+    is_bilingual = mode == "bilingual"
     topic_en = decision.lesson_topic
     topic_km = decision.lesson_label_km
 
@@ -360,13 +366,13 @@ def build_off_topic_message(decision: TopicGuardDecision, language_mode: str = "
     )
     if is_khmer:
         return {
-            "display_text": f"{text_km}\n\n{text_en}",
+            "display_text": f"{text_km}\n\n{text_en}" if is_bilingual else text_km,
             "student_task": f"សូមសួរលំហាត់អំពី «{topic_km}»។",
             "board_title": f"តោះផ្តោតលើ «{topic_km}»",
             "board_content": text_km,
         }
     return {
-        "display_text": f"{text_en}\n\n{text_km}",
+        "display_text": f"{text_en}\n\n{text_km}" if is_bilingual else text_en,
         "student_task": f"Ask a {topic_en} problem.",
         "board_title": f"Let's stay on {topic_en}",
         "board_content": text_en,

@@ -209,3 +209,50 @@ def test_khmer_off_topic_refusal_contains_no_latin_in_lesson_name():
     for topic_name in quoted_topics:
         assert not re.search(r"[A-Za-z]", topic_name), f"Found Latin letters in Khmer topic label: {topic_name}"
 
+
+
+@pytest.mark.parametrize("language_mode", ["english", "khmer"])
+def test_off_topic_refusal_uses_one_language(language_mode: str) -> None:
+    """A student must not be shown a redirect in a language they cannot read."""
+    import re
+
+    from api.services.visual_tutor.topic_guard import (
+        TopicGuardDecision,
+        build_off_topic_message,
+    )
+
+    khmer = re.compile(r"[ក-៿]")
+    decision = TopicGuardDecision(
+        False,
+        "Linear Equations & Systems",
+        "linear_equations",
+        "limits",
+        "off_topic_for_lesson",
+    )
+    shown = build_off_topic_message(decision, language_mode)["display_text"]
+
+    if language_mode == "khmer":
+        assert khmer.search(shown)
+        assert "Linear Equations" not in shown, shown
+    else:
+        assert not khmer.search(shown), shown
+
+
+def test_bilingual_mode_is_the_only_one_that_shows_both() -> None:
+    import re
+
+    from api.services.visual_tutor.topic_guard import (
+        TopicGuardDecision,
+        build_off_topic_message,
+    )
+
+    decision = TopicGuardDecision(
+        False,
+        "Linear Equations & Systems",
+        "linear_equations",
+        "limits",
+        "off_topic_for_lesson",
+    )
+    shown = build_off_topic_message(decision, "bilingual")["display_text"]
+    assert re.compile(r"[ក-៿]").search(shown)
+    assert "Linear Equations" in shown
