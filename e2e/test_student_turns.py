@@ -42,7 +42,7 @@ SOLVED_PROBLEMS = [
         "A car starts from rest and accelerates at 2 m/s^2 for 5 s. "
         "Find its velocity and the distance travelled.",
         "Physics",
-        ["10"],
+        ["10", "25"],
     ),
     (
         "stoichiometry",
@@ -128,13 +128,6 @@ def test_a_turn_opens_a_session_the_student_can_come_back_to(gateway):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="The kinematics solver answers only the first quantity asked. This "
-    "question asks for velocity and distance; it returns v = 10 m/s and never "
-    "computes s = ut + at^2/2 = 25 m, so a standard two-part Grade 11 question "
-    "gets half an answer.",
-)
 def test_kinematics_answers_every_quantity_the_question_asks_for(gateway):
     turn = gateway.solve(
         "A car starts from rest and accelerates at 2 m/s^2 for 5 s. "

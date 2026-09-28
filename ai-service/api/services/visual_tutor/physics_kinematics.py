@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import dataclasses
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -38,6 +39,17 @@ from api.models.visual_tutor import (
 from api.services.visual_tutor.teaching_plan_contract import validate_teaching_plan
 
 logger = logging.getLogger(__name__)
+
+# Khmer digits are U+17E0..U+17E9; built from codepoints to keep the source
+# safe from any encoding mishap.
+_KHMER_DIGITS = str.maketrans(
+    "0123456789", "".join(chr(0x17E0 + digit) for digit in range(10))
+)
+
+
+def _khmer_numeral(value: int) -> str:
+    """Khmer digits for a step number, matching the headings built below."""
+    return str(value).translate(_KHMER_DIGITS)
 
 TRY_MYSELF_MODE = "try_myself"
 
@@ -86,6 +98,10 @@ class PhysicsKinematicsProblem:
     motion_type: str  # "horizontal_acceleration", "braking", "free_fall", "vertical_upward"
     g_value: float = 9.8
     is_khmer: bool = False
+    # Further quantities the question asked for. "Find its velocity and the
+    # distance travelled" is a standard two-part exam question, and answering only
+    # the first is answering it wrongly.
+    extra_targets: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -305,18 +321,24 @@ def parse_physics_kinematics_problem(text: str) -> Optional[PhysicsKinematicsPro
         knowns["s"] = float(s_match.group(1))
         units["s"] = "m"
 
-    # Identify Target Unknown
-    target: Optional[str] = None
-    if re.search(r"(?:find|what is|calculate|រក)\s+(?:its\s+)?(?:final\s+)?(?:velocity|speed|v)|ល្បឿនចុងក្រោយ|រក\s*v", lowered):
-        target = "v"
-    elif re.search(r"(?:how far|stopping distance|maximum height|how high|distance|height|ចម្ងាយចរ|កម្ពស់|រក\s*s|រក\s*h)", lowered):
-        target = "s"
-    elif re.search(r"(?:how long|time taken|time to stop|reach its highest point|time|ពេលវេលា|រយៈពេល|រក\s*t)", lowered):
-        target = "t"
-    elif re.search(r"(?:find|calculate|what is|រក)\s+(?:the\s+)?(?:acceleration|deceleration|a|សំទុះ)", lowered):
-        target = "a"
-    elif re.search(r"(?:initial\s+velocity|initial\s+speed|u|ល្បឿនដើម|រក\s*u)", lowered):
-        target = "u"
+    # Identify every unknown the question asks for. A question may ask for more
+    # than one, so each pattern is tested rather than stopping at the first match.
+    _TARGET_PATTERNS: tuple[tuple[str, str], ...] = (
+        ("v", r"(?:find|what is|calculate|determine|រក)\b[^.?!]*?\b(?:final\s+)?(?:velocity|speed)\b|ល្បឿនចុងក្រោយ|រក\s*v"),
+        ("s", r"(?:how far|stopping distance|maximum height|how high|distance|height|ចម្ងាយចរ|កម្ពស់|រក\s*s|រក\s*h)"),
+        ("t", r"(?:how long|time taken|time to stop|reach its highest point|time|ពេលវេលា|រយៈពេល|រក\s*t)"),
+        ("a", r"(?:find|calculate|what is|determine|រក)\b[^.?!]*?\b(?:acceleration|deceleration)\b|សំទុះ"),
+        ("u", r"(?:initial\s+velocity|initial\s+speed|u|ល្បឿនដើម|រក\s*u)"),
+    )
+    requested: list[str] = []
+    for variable, pattern in _TARGET_PATTERNS:
+        # A quantity already given is data, not a question.
+        if variable in knowns:
+            continue
+        if re.search(pattern, lowered) and variable not in requested:
+            requested.append(variable)
+
+    target: Optional[str] = requested[0] if requested else None
 
     # Infer target if not explicitly caught
     if target is None or target in knowns:
@@ -325,6 +347,7 @@ def parse_physics_kinematics_problem(text: str) -> Optional[PhysicsKinematicsPro
             if v not in knowns:
                 target = v
                 break
+        requested = [target] if target else []
 
     if target is None:
         return None
@@ -345,6 +368,7 @@ def parse_physics_kinematics_problem(text: str) -> Optional[PhysicsKinematicsPro
         motion_type=motion_type,
         g_value=g_val,
         is_khmer=is_km,
+        extra_targets=tuple(v for v in requested[1:]),
     )
 
 
@@ -528,6 +552,53 @@ def solve_kinematics(problem: PhysicsKinematicsProblem) -> WorkedPhysicsSolution
             latex=f"{sub_latex} = {disp_val}\\text{{ {unit}}}",
         )
     )
+
+    # Work any further quantity the question asked for. Each is solved the same
+    # deterministic way, with the quantity just found available as a known, and its
+    # formula and arithmetic are shown on the board rather than asserted.
+    for extra in problem.extra_targets:
+        if extra == target or extra in knowns:
+            continue
+        extended = dict(knowns)
+        extended[target] = target_val
+        try:
+            sub_solution = solve_kinematics(
+                dataclasses.replace(
+                    problem,
+                    knowns=extended,
+                    target=extra,
+                    target_unit=VARIABLE_UNITS.get(extra, "m"),
+                    extra_targets=(),
+                )
+            )
+        except Exception:
+            # A quantity we cannot derive is left unanswered rather than guessed.
+            logger.warning(
+                "kinematics could not also solve for %s; answering the primary target only",
+                extra,
+            )
+            continue
+        step_number = len(steps) + 1
+        for sub_step in sub_solution.steps:
+            if sub_step.key not in ("formula", "calc"):
+                continue
+            steps.append(
+                PhysicsSolutionStep(
+                    key=f"{sub_step.key}_{extra}",
+                    heading=(
+                        f"ជំហានទី {_khmer_numeral(step_number)} · {sub_step.heading.split('· ', 1)[-1]}"
+                        if problem.is_khmer
+                        else f"Step {step_number} · {sub_step.heading.split('· ', 1)[-1]}"
+                    ),
+                    explanation=sub_step.explanation,
+                    latex=sub_step.latex,
+                    table=sub_step.table,
+                    forces=sub_step.forces,
+                )
+            )
+            step_number += 1
+        answer_text = f"{answer_text} {sub_solution.answer_text}"
+        answer_latex = f"{answer_latex}, \\quad {sub_solution.answer_latex}"
 
     return WorkedPhysicsSolution(
         problem_latex=f"\\text{{{problem.normalized_problem[:60]}}}",

@@ -10,7 +10,7 @@ Flutter tests inject fake repositories, and the AI service's own `test_e2e_*` fi
 call the orchestrator in-process. A bug that lives *between* two services is
 invisible to all of them.
 
-This suite found five bugs. Three are fixed; the rest are pinned below.
+This suite found five bugs. Four are fixed; the rest are pinned below.
 
 ## Running it
 
@@ -93,12 +93,9 @@ in staging or production.
 
 ## Known failures
 
-Three real bugs are pinned as `xfail`. They are product defects, not test problems.
+Two real bugs are pinned as `xfail`. They are product defects, not test problems.
 
-**1. Kinematics answers only the first quantity asked.** "Find its velocity and the
-distance travelled" returns `v = 10 m/s` and never computes `s = 25 m`.
-
-**2. An upstream failure returns a stack trace.** Acceptable in development, but the
+**1. An upstream failure returns a stack trace.** Acceptable in development, but the
 same handler serves production, so it needs an explicit environment guard.
 
 A softer finding is recorded too: an action outside the contract (say `ask_question`)
@@ -125,6 +122,14 @@ mode string was overloaded to mean both "how to merge" and "is this a follow-up"
 correcting it broke board versioning until the two were separated. Follow-ups now
 return 200 with the board intact — verified end to end: `board_version` advances
 1→2→3→4→5 and all ten prior actions survive each turn.
+
+**Kinematics answered only the first quantity asked.** Target detection was an
+`if/elif` chain that stopped at the first match, so "find its velocity and the
+distance travelled" returned `v = 10 m/s` and never computed `s = 25 m` — half an
+answer to the standard two-part exam question. Every requested quantity is now
+detected, and each extra one is solved the same deterministic way with the quantity
+just found available as a known, so its formula and arithmetic appear on the board
+rather than being asserted.
 
 **All six STEM visual primitives were dropped at the gateway**, each replaced with a
 "One board item could not be shown" notice, even though the AI service emits them and

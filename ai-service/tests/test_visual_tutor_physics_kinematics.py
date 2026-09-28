@@ -346,3 +346,94 @@ def test_unsupported_physics_problem_dynamic_unverified() -> None:
     )
     assert response.metadata.get("verified") is False
     assert response.metadata.get("curriculum_status") == "ai_unverified"
+
+
+# ==============================================================================
+# Multi-quantity questions
+# ==============================================================================
+
+
+def test_a_question_asking_two_quantities_answers_both() -> None:
+    """u = 0, a = 2 m/s^2, t = 5 s -> v = 10 m/s AND s = 25 m.
+
+    Target detection was if/elif, so it stopped at the first match: this question
+    returned only the velocity and never computed the distance. A two-part question
+    is the standard shape in a Grade 11 exam, so half an answer is a wrong answer.
+    """
+    text = (
+        "A car starts from rest and accelerates at 2 m/s^2 for 5 s. "
+        "Find its velocity and the distance travelled."
+    )
+    problem = parse_physics_kinematics_problem(text)
+    assert problem is not None
+    assert problem.target == "v"
+    assert list(problem.extra_targets) == ["s"], (
+        f"the distance was not recognised as asked: {problem.extra_targets}"
+    )
+
+    solution = solve_kinematics(problem)
+    assert solution.target_value == pytest.approx(10.0)
+    assert "10" in solution.answer_text
+    assert "25" in solution.answer_text, (
+        f"the distance is missing from the answer: {solution.answer_text!r}"
+    )
+
+    # Both quantities have to be worked on the board, not just stated. Which SUVAT
+    # form the solver picks is its own business — with v now known, s = (u+v)/2 · t
+    # is the simpler route — so this asserts that a displacement formula and its
+    # arithmetic are shown, not which identity was used.
+    board_latex = " ".join(step.latex or "" for step in solution.steps)
+    assert "s =" in board_latex, (
+        f"no displacement formula was shown: {board_latex}"
+    )
+    assert "= 25" in board_latex, (
+        f"the distance was never worked out on the board: {board_latex}"
+    )
+
+
+def test_asking_distance_first_still_answers_both() -> None:
+    """Order must not decide which quantity gets solved."""
+    text = (
+        "A car starts from rest and accelerates at 2 m/s^2 for 5 s. "
+        "Find the distance travelled and its final velocity."
+    )
+    problem = parse_physics_kinematics_problem(text)
+    assert problem is not None
+    solved = {problem.target, *problem.extra_targets}
+    assert solved == {"v", "s"}, f"expected both v and s, got {solved}"
+
+    answer = solve_kinematics(problem).answer_text
+    assert "10" in answer and "25" in answer, answer
+
+
+def test_a_single_quantity_question_is_unchanged() -> None:
+    """The common case must not grow a second answer it was never asked for."""
+    text = "A car starts from rest and accelerates at 2 m/s^2 for 5 seconds. Find its final velocity."
+    problem = parse_physics_kinematics_problem(text)
+    assert problem is not None
+    assert problem.target == "v"
+    assert list(problem.extra_targets) == []
+
+    answer = solve_kinematics(problem).answer_text
+    assert "10" in answer
+    assert "25" not in answer, f"an unrequested distance was volunteered: {answer!r}"
+
+
+def test_both_quantities_verify_with_their_own_units() -> None:
+    """A student answering either part must be marked correct, with unit checking."""
+    text = (
+        "A car starts from rest and accelerates at 2 m/s^2 for 5 s. "
+        "Find its velocity and the distance travelled."
+    )
+    problem = parse_physics_kinematics_problem(text)
+    assert problem is not None
+    solve_kinematics(problem)  # the board is built from this
+
+    velocity_ok, _ = verify_kinematics_answer("10 m/s", 10.0, "m/s")
+    distance_ok, _ = verify_kinematics_answer("25 m", 25.0, "m")
+    assert velocity_ok is True
+    assert distance_ok is True
+
+    # The unit still has to be right for each part.
+    wrong_unit, message = verify_kinematics_answer("25 m/s", 25.0, "m")
+    assert wrong_unit is False, message
