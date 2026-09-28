@@ -26,7 +26,8 @@ def test_algebra_verification_linear_equation():
     verification = public_turn.get("verification", {})
 
     assert verification.get("verified") is True, f"Expected verified True, got {verification}"
-    assert verification.get("status") in ("correct", "verified")
+    # "verified" is not in the public contract; the gateway 502s on it.
+    assert verification.get("status") == "correct"
     assert res.metadata.get("verified") is True
 
 
@@ -44,7 +45,8 @@ def test_algebra_verification_quadratic_equation():
     verification = public_turn.get("verification", {})
 
     assert verification.get("verified") is True, f"Expected verified True, got {verification}"
-    assert verification.get("status") in ("correct", "verified")
+    # "verified" is not in the public contract; the gateway 502s on it.
+    assert verification.get("status") == "correct"
     assert res.metadata.get("verified") is True
 
 
@@ -62,7 +64,8 @@ def test_algebra_verification_simultaneous_equations():
     verification = public_turn.get("verification", {})
 
     assert verification.get("verified") is True, f"Expected verified True, got {verification}"
-    assert verification.get("status") in ("correct", "verified")
+    # "verified" is not in the public contract; the gateway 502s on it.
+    assert verification.get("status") == "correct"
     assert res.metadata.get("verified") is True
 
 
