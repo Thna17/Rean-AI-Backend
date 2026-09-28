@@ -2516,7 +2516,6 @@ def _finalize_response(
         response_metadata["verification_verified"] = is_correct_operation
     elif (
         request.action == VisualTutorAction.SUBMIT_STEP
-        and response.metadata.get("board_update_mode") != "append"
         and not response.metadata.get("is_followup")
     ):
         problem = request.current_state.problem_text or request.metadata.get(
@@ -2588,11 +2587,10 @@ def _finalize_response(
         ),
         "verification": response_metadata.get("verification_result"),
     }
-    # Ensure follow-up turns preserve board_update_mode="append" and monotonic board_version
-    is_followup_turn = bool(
-        response.metadata.get("board_update_mode") == "append"
-        or response.metadata.get("is_followup")
-    )
+    # Keep a follow-up's board_version monotonic. The mode it reports has to stay
+    # inside the public contract: "append" is refused by both the gateway and the
+    # Flutter client, which made every follow-up a 502.
+    is_followup_turn = bool(response.metadata.get("is_followup"))
     if is_followup_turn:
         current_ver = (
             request.client_board_version
@@ -2605,7 +2603,9 @@ def _finalize_response(
         bumped_ver = current_ver + 1
         response_metadata["board_version"] = bumped_ver
         response_metadata["base_board_version"] = current_ver
-        response_metadata["board_update_mode"] = "append"
+        # The payload carries the whole board, so "replace" is both accurate and
+        # contract-legal; `is_followup` carries the follow-up signal instead.
+        response_metadata["board_update_mode"] = "replace"
         response_metadata["is_followup"] = True
 
     response_metadata = _public_response_metadata(response_metadata)

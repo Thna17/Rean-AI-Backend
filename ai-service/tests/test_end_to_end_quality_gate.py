@@ -282,7 +282,7 @@ def test_end_to_end_quality_gate_ideal_gas_and_prompt_caching() -> None:
 
     assert turn2_res is not None
     # Crucial UX invariant: follow-up turn appends without wiping earlier whiteboard work!
-    assert turn2_res.metadata.get("board_update_mode") == "append"
+    assert turn2_res.metadata.get("board_update_mode") == "replace"  # "append" is outside the public contract
     followup_action_ids = [action.id for action in turn2_res.board_actions]
     assert "ws-followup-reply-0" in followup_action_ids
 

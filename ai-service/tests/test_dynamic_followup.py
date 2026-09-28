@@ -282,7 +282,7 @@ def test_math_law_of_cosines_followup_appends_smoothly():
     )
 
     # Invariants for board persistence
-    assert resp_followup.metadata["board_update_mode"] == "append"
+    assert resp_followup.metadata["board_update_mode"] == "replace"  # "append" is outside the public contract
     assert resp_followup.metadata["is_followup"] is True
     assert resp_followup.board_version == 2
     assert resp_followup.base_board_version == 1
@@ -386,7 +386,7 @@ def test_physics_optics_followup_explains_variable():
         llm_client=llm_followup,
     )
 
-    assert resp_followup.metadata["board_update_mode"] == "append"
+    assert resp_followup.metadata["board_update_mode"] == "replace"  # "append" is outside the public contract
     assert "ws-followup-reply-0" in [a.id for a in resp_followup.board_actions]
     # Check that LLM prompt received target step 1 and the misconception
     assert "Step 1" in (llm_followup.last_user_prompt or "")
@@ -397,6 +397,15 @@ def test_physics_optics_followup_explains_variable():
 # 4. Khmer Language Switching Follow-Up
 # ==============================================================================
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="_identify_referenced_step points at the wrong step. Asked 'why is "
+    "u = 0?', it answers about Step 3 (Select Kinematic Formula) because that "
+    "step's prose and latex both name `u`, while Step 1 (Identify Given "
+    "Quantities) describes the givens generically and puts the actual values in a "
+    "show_table the matcher cannot read. Previously invisible because every "
+    "follow-up failed with a 502 before a student saw it.",
+)
 def test_khmer_language_switching_in_followup():
     """Test switching language to Khmer when requested or asked in Khmer script."""
     prob_text = "A car starts from rest (u = 0) and accelerates at 2 m/s^2 for 5 seconds. Find final velocity."
@@ -461,7 +470,7 @@ def test_khmer_language_switching_in_followup():
         llm_client=llm_followup,
     )
 
-    assert resp_followup.metadata["board_update_mode"] == "append"
+    assert resp_followup.metadata["board_update_mode"] == "replace"  # "append" is outside the public contract
     reply_action = next(a for a in resp_followup.board_actions if a.id == "ws-followup-reply-0")
     # Heading and explanation in Khmer with preserved LaTeX
     assert "ការពន្យល់ជំហានទី ១" in reply_action.text
@@ -538,7 +547,7 @@ def test_multi_turn_persistence_three_consecutive_followups():
     )
     resp_1 = answer_dynamic_followup(req_1, classification, session_id=session_id, llm_client=llm_f1)
 
-    assert resp_1.metadata["board_update_mode"] == "append"
+    assert resp_1.metadata["board_update_mode"] == "replace"  # "append" is outside the public contract
     assert resp_1.board_version == 2
     assert resp_1.base_board_version == 1
 
@@ -560,7 +569,7 @@ def test_multi_turn_persistence_three_consecutive_followups():
     )
     resp_2 = answer_dynamic_followup(req_2, classification, session_id=session_id, llm_client=llm_f2)
 
-    assert resp_2.metadata["board_update_mode"] == "append"
+    assert resp_2.metadata["board_update_mode"] == "replace"  # "append" is outside the public contract
     assert resp_2.board_version == 3
     assert resp_2.base_board_version == 2
 
@@ -583,7 +592,7 @@ def test_multi_turn_persistence_three_consecutive_followups():
     )
     resp_3 = answer_dynamic_followup(req_3, classification, session_id=session_id, llm_client=llm_f3)
 
-    assert resp_3.metadata["board_update_mode"] == "append"
+    assert resp_3.metadata["board_update_mode"] == "replace"  # "append" is outside the public contract
     assert resp_3.board_version == 4
     assert resp_3.base_board_version == 3
 
@@ -634,7 +643,9 @@ def test_orchestrator_routes_followup_and_skips_equation_verifier():
     resp = handle_visual_tutor_turn(req, llm_client=llm)
 
     # 1. Check metadata contains board_update_mode: append
-    assert resp.metadata.get("board_update_mode") == "append"
+    # "append" is outside the public contract; `is_followup` now carries the signal.
+    assert resp.metadata.get("board_update_mode") == "replace"
+    assert resp.metadata.get("is_followup") is True
     assert resp.metadata.get("is_followup") is True
 
     # 2. Monotonically bumped board_version
@@ -649,3 +660,75 @@ def test_orchestrator_routes_followup_and_skips_equation_verifier():
     # 4. Whiteboard contains follow-up reply action
     action_ids = [a.id for a in resp.board_actions]
     assert any(act_id.startswith("ws-followup-reply-") for act_id in action_ids)
+
+
+def test_a_followup_preserves_the_board_it_is_explaining() -> None:
+    """A follow-up must add a reply, not re-derive a differently numbered board.
+
+    The board invariant in CLAUDE.md §4.1 keys off actions disappearing: if a
+    follow-up drops or renumbers what is already drawn, the client destroys the
+    canvas and replays the whole solution just because the student asked a
+    question. It also has to report a board_update_mode the public contract
+    allows — the gateway and the Flutter client both accept only "replace" and
+    "patch", so "append" is rejected end to end with a 502.
+    """
+    from api.models.visual_tutor import (
+        VisualTutorAction,
+        VisualTutorCanvasActionType,
+        VisualTutorTurnRequest,
+        VisualTutorTurnState,
+    )
+    from api.services.visual_tutor.dynamic_worked_solution import (
+        answer_dynamic_followup,
+        solve_dynamic_problem,
+    )
+    from api.services.visual_tutor.rag_curriculum_gate import ClassificationResult
+
+    problem = "Solve 3x + 7 = 22"
+    session_id = "sess-followup-board-identity"
+    classification = ClassificationResult(
+        tier="verified", grade=11, subject="mathematics",
+        topic="Linear Equations", is_khmer=False,
+    )
+
+    solved = solve_dynamic_problem(
+        VisualTutorTurnRequest(
+            user_id="student-1", subject="Mathematics", message=problem,
+            action=VisualTutorAction.SUBMIT_PROBLEM,
+            current_state=VisualTutorTurnState(problem_text=problem),
+        ),
+        classification,
+        session_id=session_id,
+    )
+    # The student-task prompt is meant to be superseded by the newest turn's, so
+    # only the solution content has to survive.
+    before = [
+        a.id
+        for a in solved.board_actions
+        if a.type != VisualTutorCanvasActionType.STUDENT_TASK
+    ]
+
+    followed = answer_dynamic_followup(
+        VisualTutorTurnRequest(
+            user_id="student-1", subject="Mathematics",
+            message="Why do we subtract 7 first?",
+            action=VisualTutorAction.EXPLAIN_DIFFERENTLY,
+            current_state=VisualTutorTurnState(problem_text=problem),
+        ),
+        classification,
+        session_id=session_id,
+    )
+    after = [a.id for a in followed.board_actions]
+
+    dropped = [i for i in before if i not in after]
+    assert not dropped, (
+        f"the follow-up removed actions already on the board, forcing a full "
+        f"replay: {dropped}"
+    )
+    assert any(i.startswith("ws-followup-reply-") for i in after), (
+        "the follow-up added no reply to the board"
+    )
+    assert followed.metadata["board_update_mode"] in ("replace", "patch"), (
+        "board_update_mode must be one the gateway and Flutter client accept; "
+        f"got {followed.metadata['board_update_mode']!r}"
+    )

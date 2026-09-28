@@ -393,8 +393,15 @@ def build_dynamic_worked_solution_turn(
     _session_followups.pop(session_id, None)
 
     # 1. Attempt deterministic solver first
+    problem_text = (request.message or request.current_state.problem_text or "").strip()
+    cache_key = f"{problem_text}:{is_khmer}:{classification.is_verified}"
     deterministic_solution = _try_solve_deterministic(request, classification, is_khmer=is_khmer)
     if deterministic_solution is not None:
+        # Remember it. A follow-up that cannot find the solution behind the board
+        # re-derives one by another route, which renumbers every action and makes
+        # the client destroy the canvas and replay the whole lesson.
+        if not deterministic_solution.is_degraded:
+            _dynamic_solution_cache[cache_key] = deterministic_solution
         return _build_turn_response(
             request,
             deterministic_solution,
@@ -404,8 +411,6 @@ def build_dynamic_worked_solution_turn(
         )
 
     # 2. Dynamic RAG-grounded LLM solution
-    problem_text = (request.message or request.current_state.problem_text or "").strip()
-    cache_key = f"{problem_text}:{is_khmer}:{classification.is_verified}"
     if cache_key in _dynamic_solution_cache:
         solution = _dynamic_solution_cache[cache_key]
     else:
@@ -455,7 +460,13 @@ def answer_dynamic_followup(
                 solution = alt_solution
                 break
     if solution is None:
-        deterministic = _try_solve_deterministic(request, classification)
+        # `request.message` is the student's question here, so the matcher has to be
+        # pointed at the problem or it tries to solve "Why subtract 7 first?".
+        deterministic = _try_solve_deterministic(
+            request.model_copy(update={"message": problem_text}),
+            classification,
+            is_khmer=is_khmer,
+        )
         if deterministic is not None:
             solution = deterministic
         else:
@@ -541,7 +552,7 @@ def answer_dynamic_followup(
     previous_replies.append(reply_step)
     _session_followups[session_key] = previous_replies
 
-    # 4. Append to whiteboard with board_update_mode: "append" and monotonic board_version
+    # 4. Append the reply to the whiteboard, keeping board_version monotonic.
     return _build_turn_response(
         request,
         solution,
@@ -549,7 +560,13 @@ def answer_dynamic_followup(
         is_khmer=is_khmer,
         extra_sections=previous_replies,
         message_override=explanation,
-        board_update_mode="append",
+        # The response carries the complete board — every prior action plus the new
+        # reply — so "replace" is both accurate and contract-legal. "append" is not
+        # in the public contract and is refused by the gateway and the client alike.
+        board_update_mode="replace",
+        # Versioning still has to behave like a follow-up: build on the board the
+        # student is looking at rather than restarting at version 1.
+        is_followup=True,
     )
 
 
@@ -992,6 +1009,7 @@ def _build_turn_response(
     extra_sections: Optional[list[GenericSolutionStep]] = None,
     message_override: Optional[str] = None,
     board_update_mode: str = "replace",
+    is_followup: bool = False,
 ) -> VisualTutorTurnResponse:
     """Build standardized VisualTutorTurnResponse with deterministic board actions."""
     turn_id = str(uuid.uuid4())
@@ -1142,8 +1160,8 @@ def _build_turn_response(
         or getattr(request.current_state, "board_version", None)
         or 1
     )
-    base_ver = incoming_ver if board_update_mode == "append" else 0
-    next_ver = incoming_ver + 1 if board_update_mode == "append" else 1
+    base_ver = incoming_ver if is_followup else 0
+    next_ver = incoming_ver + 1 if is_followup else 1
 
     # Prepare metadata with 3-tier verification and board update mode
     metadata: dict[str, Any] = {
@@ -1154,7 +1172,7 @@ def _build_turn_response(
         "curriculum_sources": solution.curriculum_sources,
         "source": "dynamic_worked_solution",
         "board_update_mode": board_update_mode,
-        "is_followup": (board_update_mode == "append"),
+        "is_followup": is_followup,
         "board_version": next_ver,
         "base_board_version": base_ver,
         "verification": {

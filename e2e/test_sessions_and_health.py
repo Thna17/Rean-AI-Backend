@@ -31,17 +31,6 @@ class TestSessionLifecycle:
             "a restored session carried none of its board actions"
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="Every follow-up turn is rejected with 502 INVALID_TEACHING_PLAN. The "
-        "AI service sets board_update_mode='append' on a follow-up "
-        "(dynamic_worked_solution.py:552), but the public contract allows only "
-        "'replace' and 'patch' — and BOTH the gateway "
-        "(teaching-plan.contract.ts:425) and the Flutter client "
-        "(visual_tutor_models.dart:1019) enforce that. So hints, 'explain "
-        "differently', stuck help and step submission all fail: the interactive "
-        "Q&A loop that CLAUDE.md names as the product's core is dead end to end.",
-    )
     def test_a_second_turn_advances_the_board_version(self, gateway):
         first = gateway.solve("Solve 3x + 7 = 22")
         second = gateway.turn(
@@ -55,19 +44,33 @@ class TestSessionLifecycle:
         assert follow_up["session_id"] == first["session_id"], (
             "a follow-up started a new session instead of continuing the lesson"
         )
-        assert follow_up["board_version"] >= first["board_version"], (
-            "the board version went backwards between turns"
+        assert follow_up["board_version"] > first["board_version"], (
+            "a follow-up must advance the board version so conflict detection works"
+        )
+        assert follow_up["base_board_version"] == first["board_version"], (
+            "a follow-up must be based on the board the student is looking at"
+        )
+        assert follow_up["board_update_mode"] in ("replace", "patch")
+
+        # Nothing already drawn may disappear, or the client destroys the canvas
+        # and replays the whole solution just because a question was asked.
+        before = {
+            a.get("id")
+            for a in (first["teaching_plan"] or {}).get("visible_board_actions") or []
+            if str(a.get("type")) != "student_task"
+        }
+        after = {
+            a.get("id")
+            for a in (follow_up["teaching_plan"] or {}).get("visible_board_actions")
+            or []
+        }
+        assert before <= after, (
+            f"the follow-up dropped actions already on the board: {sorted(before - after)}"
         )
 
     @pytest.mark.parametrize(
         "action",
         ["request_hint", "explain_differently", "request_stuck_help", "submit_step"],
-    )
-    @pytest.mark.xfail(
-        strict=True,
-        reason="Same root cause as the follow-up failure above: "
-        "board_update_mode='append' is outside the public contract, so every "
-        "interactive action on an open session returns 502.",
     )
     def test_each_interactive_action_works_on_an_open_session(self, gateway, action):
         first = gateway.solve("Solve 3x + 7 = 22")
