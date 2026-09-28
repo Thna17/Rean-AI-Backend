@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Optional, Set
 
-from api.services.visual_tutor.solvers import parse_limit_of_function
+from api.services.visual_tutor.solvers import parse_limit_of_function, parse_linear_equation
 
 SUPPORTED_GRADES: Set[int] = {12}
 
@@ -96,6 +96,18 @@ _CHEMISTRY_RE = re.compile(
     re.IGNORECASE,
 )
 _CHEMISTRY_KM_RE = re.compile(r"(គីមីវិទ្យា|ប្រតិកម្ម|សមីការគីមី|ម៉ូល|អាស៊ីត|បាស|អាតូម|ម៉ូលេគុល)")
+# Word boundaries are safe here because this pattern is English-only -- the
+# Khmer terms live in _MATH_KM_RE, where \b must never be used because Khmer
+# is written without word boundaries.
+_MATH_RE = re.compile(
+    r"\b(mathematic\w*|algebra\w*|equation|inequalit\w*|simplify|expand|"
+    r"factor(?:ise|ize|ing|ed|s)?|limit|derivative|differentiate|integral|"
+    r"integrate|slope|gradient|quadratic|polynomial|logarithm\w*|exponential|"
+    r"probability|permutation|combination|matrix|vector|sine|cosine|tangent|"
+    r"trigonometr\w*)\b",
+    re.IGNORECASE,
+)
+_MATH_KM_RE = re.compile(r"(គណិតវិទ្យា|សមីការ|អសមីការ|ដោះស្រាយ|អនុគមន៍|លីមីត|ដេរីវេ|អាំងតេក្រាល|ពហុធា)")
 
 
 @dataclass(frozen=True)
@@ -153,6 +165,20 @@ def normalize_subject(
     return norm
 
 
+def _looks_like_mathematics(text: str) -> bool:
+    """Last-resort subject detection for an undetermined ("general") lesson.
+
+    Reached only after physics and chemistry have had their turn, so it cannot
+    take a problem away from them: it can only rescue a message that would
+    otherwise be refused as an unsupported subject.
+    """
+    if not text:
+        return False
+    if _MATH_RE.search(text) or _MATH_KM_RE.search(text):
+        return True
+    return parse_linear_equation(text) is not None
+
+
 def check_scope(
     *,
     grade: Optional[int],
@@ -200,6 +226,11 @@ def check_scope(
             norm_subject = SUBJECT_PHYSICS
         elif _CHEMISTRY_RE.search(message) or _CHEMISTRY_KM_RE.search(message):
             norm_subject = SUBJECT_CHEMISTRY
+        elif _looks_like_mathematics(message) or _looks_like_mathematics(problem_text):
+            # The student app ships a "General" lesson whose starter problem is
+            # "3x + 4 = 19". Rescuing only limits above meant every other
+            # Grade 10-12 maths problem was refused inside the tutor's own lesson.
+            norm_subject = SUBJECT_MATH
 
     if norm_subject not in SUPPORTED_SUBJECTS:
         return ScopeDecision(

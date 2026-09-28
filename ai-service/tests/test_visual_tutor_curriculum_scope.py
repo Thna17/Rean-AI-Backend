@@ -17,6 +17,7 @@ from api.models.visual_tutor import (
 )
 from api.services.visual_tutor.orchestrator import handle_visual_tutor_turn
 from api.services.visual_tutor.pilot import enforce_pilot_scope
+from api.services.visual_tutor.scope import check_scope
 
 
 @pytest.fixture(autouse=True)
@@ -374,3 +375,51 @@ def test_the_out_of_scope_refusal_speaks_one_language() -> None:
     both = build_out_of_scope_message("bilingual")
     assert khmer.search(both["display_text"])
     assert "This tutor is currently available" in both["display_text"]
+
+
+class TestAGeneralLessonStillAcceptsMathematics:
+    """A lesson whose subject is "General" refused its own starter problem.
+
+    The student app ships a "General" lesson whose starter is "3x + 4 = 19".
+    check_scope only rescued an undetermined subject when the message parsed as
+    a limit, so every other Grade 10-12 maths problem -- linear equations,
+    derivatives, anything -- fell through to "unsupported_subject" and the
+    student was told the tutor does not cover their subject while sitting in
+    the tutor's own lesson.
+    """
+
+    def test_the_general_lesson_starter_problem_is_in_scope(self) -> None:
+        decision = check_scope(grade=12, subject="General", message="3x + 4 = 19")
+
+        assert decision.is_in_scope
+        assert decision.subject == "mathematics"
+
+    def test_other_general_maths_problems_are_in_scope(self) -> None:
+        for message in ("solve 2x - 5 = 11", "differentiate x^2 + 3x", "factor x^2 - 9"):
+            decision = check_scope(grade=12, subject="General", message=message)
+            assert decision.is_in_scope, message
+            assert decision.subject == "mathematics", message
+
+    def test_khmer_maths_under_a_general_lesson_is_in_scope(self) -> None:
+        decision = check_scope(grade=12, subject="General", message="ដោះស្រាយសមីការ 3x + 4 = 19")
+
+        assert decision.is_in_scope
+        assert decision.subject == "mathematics"
+
+    def test_physics_and_chemistry_keep_their_own_subject(self) -> None:
+        """Widening the maths fallback must not steal the other two subjects."""
+        physics = check_scope(
+            grade=12, subject="General", message="a car accelerates from rest at 2 m/s^2 for 5 s"
+        )
+        chemistry = check_scope(
+            grade=12, subject="General", message="balance the reaction 2H2 + O2 -> 2H2O"
+        )
+
+        assert physics.subject == "physics"
+        assert chemistry.subject == "chemistry"
+
+    def test_a_genuinely_unsupported_subject_is_still_refused(self) -> None:
+        biology = check_scope(grade=12, subject="General", message="what is a cell?")
+
+        assert not biology.is_in_scope
+        assert biology.refusal_reason == "unsupported_subject"
