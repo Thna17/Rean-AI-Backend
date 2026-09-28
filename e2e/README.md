@@ -10,8 +10,7 @@ Flutter tests inject fake repositories, and the AI service's own `test_e2e_*` fi
 call the orchestrator in-process. A bug that lives *between* two services is
 invisible to all of them.
 
-This suite found four bugs on its first run. Two are fixed; the rest are pinned
-below.
+This suite found five bugs. Three are fixed; the rest are pinned below.
 
 ## Running it
 
@@ -96,17 +95,10 @@ in staging or production.
 
 Three real bugs are pinned as `xfail`. They are product defects, not test problems.
 
-**1. All six STEM visual primitives are dropped at the gateway.** The AI service
-declares `draw_free_body_diagram`, `draw_molecule`, `draw_atom_model`,
-`draw_particle_diagram`, `draw_circuit_diagram` and `show_reaction_layout`. The
-gateway's action allowlist contains none of them, so each is replaced with a "One
-board item could not be shown" notice. The Flutter renderer supports them; only the
-middle layer disagrees.
-
-**2. Kinematics answers only the first quantity asked.** "Find its velocity and the
+**1. Kinematics answers only the first quantity asked.** "Find its velocity and the
 distance travelled" returns `v = 10 m/s` and never computes `s = 25 m`.
 
-**3. An upstream failure returns a stack trace.** Acceptable in development, but the
+**2. An upstream failure returns a stack trace.** Acceptable in development, but the
 same handler serves production, so it needs an explicit environment guard.
 
 A softer finding is recorded too: an action outside the contract (say `ask_question`)
@@ -133,6 +125,15 @@ mode string was overloaded to mean both "how to merge" and "is this a follow-up"
 correcting it broke board versioning until the two were separated. Follow-ups now
 return 200 with the board intact — verified end to end: `board_version` advances
 1→2→3→4→5 and all ten prior actions survive each turn.
+
+**All six STEM visual primitives were dropped at the gateway**, each replaced with a
+"One board item could not be shown" notice, even though the AI service emits them and
+the Flutter renderer draws them. The types and their payloads had to be added to four
+separate allowlists in `teaching-plan.contract.ts` — the action set, the plan-action
+field set, the public projection's `publicKeys`, and the public turn's
+`allowedPublicActionKeys` — and each payload is now validated against the same rules
+the Python contract enforces, so a malformed diagram is still refused rather than
+rubber-stamped.
 
 **The off-topic refusal concatenated Khmer and English**, so a student in either
 language was shown prose they could not read. Same defect as one already fixed in

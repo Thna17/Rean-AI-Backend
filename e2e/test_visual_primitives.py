@@ -44,15 +44,6 @@ def test_a_dropped_board_item_is_at_least_admitted_to_the_student(gateway):
             )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="The gateway's action allowlist in teaching-plan.contract.ts contains "
-    "none of the six STEM visual primitives the AI service declares, so every "
-    "free-body diagram, molecule, atom model, particle diagram, circuit diagram "
-    "and reaction layout is replaced with a 'could not be shown' notice. The "
-    "whole visual-primitive feature is dead in production even though the AI "
-    "service emits it and the Flutter renderer supports it.",
-)
 def test_a_physics_free_body_diagram_reaches_the_student(gateway, ai_service):
     """Pins the drop, and proves it happens at the gateway rather than upstream."""
     problem = (
@@ -89,13 +80,6 @@ def test_a_physics_free_body_diagram_reaches_the_student(gateway, ai_service):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="All six STEM visual primitives are declared by the AI service and "
-    "absent from the gateway's allowlist. Same defect as the free-body diagram "
-    "test above, asserted directly against the two contract files so it holds "
-    "even when no problem happens to produce a diagram.",
-)
 def test_the_gateway_and_ai_service_agree_on_which_actions_exist(ai_service):
     """A contract drift check that does not need a problem to trigger a diagram.
 
