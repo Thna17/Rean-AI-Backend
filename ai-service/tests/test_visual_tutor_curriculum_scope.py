@@ -345,3 +345,32 @@ def test_pilot_scope_refuses_biology_with_helpful_403(monkeypatch) -> None:
         enforce_pilot_scope(req)
     assert exc_info.value.status_code == 403
     assert "Grade 10–12" in exc_info.value.detail or "ថ្នាក់ទី១០" in exc_info.value.detail
+
+
+def test_the_out_of_scope_refusal_speaks_one_language() -> None:
+    """A single-language turn must not be answered in two languages.
+
+    build_out_of_scope_message paired the English and Khmer copies
+    unconditionally, so a student in either mode was handed a paragraph they
+    could not read. The same defect was already fixed in
+    build_not_a_problem_message and build_off_topic_message; this builder was
+    missed.
+    """
+    import re as _re
+
+    from api.services.visual_tutor.scope import build_out_of_scope_message
+
+    khmer = _re.compile(r"[ក-៿]")
+
+    english = build_out_of_scope_message("english")
+    assert not khmer.search(english["display_text"])
+    assert not khmer.search(english["spoken_text"])
+
+    khmer_copy = build_out_of_scope_message("khmer")
+    assert khmer.search(khmer_copy["display_text"])
+    assert "This tutor is currently available" not in khmer_copy["display_text"]
+    assert "This tutor is currently available" not in khmer_copy["spoken_text"]
+
+    both = build_out_of_scope_message("bilingual")
+    assert khmer.search(both["display_text"])
+    assert "This tutor is currently available" in both["display_text"]

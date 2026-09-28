@@ -264,9 +264,14 @@ def check_scope(
 
 
 def build_out_of_scope_message(language_mode: str = "english") -> dict[str, str]:
-    """Generate helpful bilingual out-of-scope refusal text explaining supported curriculum."""
+    """Out-of-scope refusal text, in one language chosen by `language_mode`.
+
+    Only "bilingual" pairs the two copies. Pairing them in a single-language
+    turn hands the student a paragraph they cannot read.
+    """
     norm_lang = (language_mode or "english").strip().lower()
     is_khmer = norm_lang in {"khmer", "km"}
+    is_bilingual = norm_lang == "bilingual"
 
     text_en = (
         "This tutor is currently available for Grade 10–12 Mathematics, "
@@ -278,12 +283,12 @@ def build_out_of_scope_message(language_mode: str = "english") -> dict[str, str]
     )
 
     if is_khmer:
-        message = f"{text_km}\n\n{text_en}"
+        message = f"{text_km}\n\n{text_en}" if is_bilingual else text_km
         student_task = "សូមសាកល្បងលំហាត់ថ្នាក់ទី១០-១២ លើមុខវិជ្ជា គណិតវិទ្យា រូបវិទ្យា ឬគីមីវិទ្យា។"
         board_title = "មិនស្ថិតក្នុងវិសាលភាព (Out of Scope)"
         board_content = text_km
     else:
-        message = f"{text_en}\n\n{text_km}"
+        message = f"{text_en}\n\n{text_km}" if is_bilingual else text_en
         student_task = "Try a Grade 10–12 problem in Mathematics, Physics, or Chemistry."
         board_title = "Not in current scope"
         board_content = text_en
