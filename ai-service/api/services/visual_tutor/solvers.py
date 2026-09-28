@@ -2749,12 +2749,17 @@ def parse_limit_of_function(message: str) -> Optional[LimitOfFunctionProblem]:
 
 
 def _limit_expression_text(expr_text: str) -> Optional[str]:
-    """Strip a leading 'f(x) =' / 'y =' / 'find the limit of' prefix.
+    """Strip a leading 'f(x) =' / 'y =' / 'lim' / 'find the limit of' prefix.
 
     The clause regex's own optional prefix groups only match when they sit
     immediately before the expression; re.search can still let expr swallow
     earlier descriptive text (e.g. "Find the limit of f(x) = ..."), so this
     does a second pass over whatever expr actually captured.
+
+    The operator is stripped whether or not it is spelled out. A bare "lim",
+    as in "lim (x^2-4)/(x-2) as x approaches 2", used to survive into the
+    expression, where sympy read it as a call to an undefined function and
+    reported a limit that exists as "does not exist".
     """
     prefix_match = re.search(
         r"(?:f\s*\(\s*x\s*\)\s*=|y\s*=)\s*(.+)$", expr_text, re.IGNORECASE
@@ -2763,7 +2768,10 @@ def _limit_expression_text(expr_text: str) -> Optional[str]:
         cleaned = prefix_match.group(1).strip()
     else:
         cleaned = re.sub(
-            r"^.*?(?:\blimit\s+of\b|(?:រក|គណនា)?\s*លីមីត\s*(?:នៃ)?)\s*", "", expr_text, flags=re.IGNORECASE
+            r"^.*?(?:\blim(?:it)?\b(?:\s+of\b)?|(?:រក|គណនា)?\s*លីមីត\s*(?:នៃ)?)\s*",
+            "",
+            expr_text,
+            flags=re.IGNORECASE,
         ).strip()
     return cleaned or None
 
