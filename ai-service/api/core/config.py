@@ -48,6 +48,13 @@ class Settings(BaseSettings):
         ""
     ).strip() or MONGODB_ATLAS_URI or "mongodb://localhost:27017"
     MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "ai_tutor_dev")
+    # A MongoDB this deployment runs itself, rather than a managed cluster.
+    # Declaring it is what allows a local MONGODB_URI outside development: the
+    # check below exists to stop someone shipping against the database they
+    # develop against, which silence cannot be distinguished from.
+    MONGODB_SELF_HOSTED: bool = (
+        os.getenv("MONGODB_SELF_HOSTED", "false").lower() == "true"
+    )
     MONGODB_TLS_ALLOW_INVALID_CERTIFICATES: bool = (
         os.getenv("MONGODB_TLS_ALLOW_INVALID_CERTIFICATES", "false").lower() == "true"
     )
@@ -185,8 +192,14 @@ class Settings(BaseSettings):
             raise ValueError(
                 "VISUAL_TUTOR_INTERNAL_TOKEN must be a unique 32+ character production secret and not a placeholder"
             )
-        if not self.MONGODB_URI or any(value in self.MONGODB_URI.lower() for value in ("localhost", "127.0.0.1")):
-            raise ValueError("A non-local durable MONGODB_URI is required in staging and production")
+        is_local_uri = any(
+            value in (self.MONGODB_URI or "").lower() for value in ("localhost", "127.0.0.1")
+        )
+        if not self.MONGODB_URI or (is_local_uri and not self.MONGODB_SELF_HOSTED):
+            raise ValueError(
+                "A non-local durable MONGODB_URI is required in staging and production "
+                "(set MONGODB_SELF_HOSTED=true if this deployment runs its own MongoDB)"
+            )
 
         if self.MONGODB_TLS_ALLOW_INVALID_CERTIFICATES:
             raise ValueError("MongoDB invalid TLS certificates are not allowed in production")

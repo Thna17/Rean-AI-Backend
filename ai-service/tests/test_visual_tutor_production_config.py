@@ -181,3 +181,38 @@ async def test_public_health_reports_degraded_without_exposing_configuration(mon
     assert payload["status"] == "degraded"
     assert payload["dependencies"]["visual_tutor_ai"] == "healthy"
     assert "do-not-expose-me" not in str(payload)
+
+
+class TestASelfHostedMongoDB:
+    """A MongoDB on the same host is a deployment choice, not a mistake.
+
+    The check rejecting a local MONGODB_URI exists so nobody ships staging
+    pointing at the throwaway database they develop against. It also blocked a
+    deliberate self-hosted deployment -- a VPS running its own mongod, chosen
+    over a managed cluster -- with no way to say so, which left the service
+    running in development mode on a machine serving real traffic.
+
+    Saying so explicitly is what distinguishes the two. Silence still fails.
+    """
+
+    def test_a_local_uri_is_still_refused_by_default(self):
+        with pytest.raises(ValidationError, match="non-local durable MONGODB_URI"):
+            _production_settings(MONGODB_URI="mongodb://localhost:27017")
+
+    def test_a_local_uri_is_accepted_when_declared_self_hosted(self):
+        settings = _production_settings(
+            MONGODB_URI="mongodb://localhost:27017",
+            MONGODB_SELF_HOSTED=True,
+        )
+
+        assert settings.MONGODB_URI == "mongodb://localhost:27017"
+        assert settings.MONGODB_SELF_HOSTED is True
+
+    def test_declaring_it_does_not_excuse_an_empty_uri(self):
+        with pytest.raises(ValidationError, match="non-local durable MONGODB_URI"):
+            _production_settings(MONGODB_URI="", MONGODB_SELF_HOSTED=True)
+
+    def test_a_managed_uri_needs_no_declaration(self):
+        settings = _production_settings()
+
+        assert settings.MONGODB_SELF_HOSTED is False
