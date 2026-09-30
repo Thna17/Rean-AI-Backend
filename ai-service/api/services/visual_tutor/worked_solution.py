@@ -36,6 +36,7 @@ from api.models.visual_tutor import (
     VisualTutorTurnRequest,
     VisualTutorTurnResponse,
 )
+from api.services.visual_tutor.graph_actions import graph_for_expression
 from api.services.visual_tutor.solvers import (
     LimitOfFunctionProblem,
     _limit_computation_facts,
@@ -480,6 +481,24 @@ def build_worked_solution_turn(
     )
 
 
+
+def _graph_focus(problem: "LimitOfFunctionProblem") -> float | None:
+    """The x the limit approaches, so the graph window contains it.
+
+    Built from the display string because that is what the problem stores;
+    an infinite limit has no finite point to centre on, so the window falls
+    back to the curve's own features.
+    """
+    text = (problem.target_point_display or "").strip()
+    if not text or "infinity" in text.lower():
+        return None
+    try:
+        import sympy
+
+        return float(sympy.sympify(text))
+    except Exception:
+        return None
+
 def _uses_khmer(request: VisualTutorTurnRequest, problem: Optional[LimitOfFunctionProblem] = None) -> bool:
     if getattr(problem, "is_khmer", False):
         return True
@@ -557,7 +576,7 @@ def _solution_turn(
             "layout_flow": "vertical",
             "section_id": section,
         }
-        for key in ("text", "latex", "table", "requires_student_response", "task_type"):
+        for key in ("text", "latex", "table", "graph", "requires_student_response", "task_type"):
             if key in fields and fields[key] is not None:
                 item[key] = fields[key]
         plan_actions.append(item)
@@ -590,6 +609,31 @@ def _solution_turn(
         latex=solution.answer_latex,
         duration_ms=600,
     )
+    # A limit is a statement about the shape of a curve near a point, so the
+    # curve is drawn under the working. The client plots a quadratic or a line
+    # from the expression and plots sampled points for anything else, which is
+    # what a rational function like (x^2-4)/(x-2) becomes -- hole and all.
+    graph = graph_for_expression(
+        problem.function_expression, focus=_graph_focus(problem)
+    )
+    if graph is not None:
+        add(
+            VisualTutorCanvasActionType.WRITE_TEXT,
+            "graph",
+            text="ក្រាបនៃអនុគមន៍" if is_khmer else "The graph of this function",
+        )
+        add(
+            VisualTutorCanvasActionType.SHOW_GRAPH,
+            "graph",
+            graph=graph,
+            duration_ms=900,
+            # Required by the board model for a bounded action. Flutter
+            # re-resolves the real size from the viewport, the same way it
+            # does for a table.
+            width=420,
+            height=280,
+        )
+
     # A reply is written under the finished solution, the way a teacher answers
     # a question in the space below their working.
     for reply in extra_sections or []:

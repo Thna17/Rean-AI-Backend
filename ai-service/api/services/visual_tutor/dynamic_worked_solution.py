@@ -56,6 +56,7 @@ from api.services.visual_tutor.rag_curriculum_gate import (
     ClassificationResult,
     classify_student_query,
 )
+from api.services.visual_tutor.graph_actions import graph_for_problem
 from api.services.visual_tutor.teaching_plan_contract import validate_teaching_plan
 from api.services.visual_tutor.algebra_worked_solution import (
     try_solve_algebra_problem,
@@ -89,6 +90,8 @@ class GenericWorkedSolution:
     curriculum_topic: Optional[str] = None
     curriculum_sources: list[str] = field(default_factory=list)
     is_degraded: bool = False
+    generation_path: str = "dynamic_llm"
+    verification_method: Optional[str] = None
 
 
 K = TypeVar("K")
@@ -601,6 +604,8 @@ def _try_solve_deterministic(
                 is_verified=True,
                 curriculum_topic="Limits of Functions",
                 curriculum_sources=["sympy_limits_v1"],
+                generation_path="deterministic_solver",
+                verification_method="sympy_limits",
             )
         except Exception:
             logger.warning("Deterministic limit solve failed; falling back to dynamic RAG")
@@ -631,6 +636,8 @@ def _try_solve_deterministic(
                 is_verified=True,
                 curriculum_topic="1D Kinematics",
                 curriculum_sources=["sympy_kinematics_v1"],
+                generation_path="deterministic_solver",
+                verification_method="sympy_kinematics",
             )
         except Exception:
             logger.warning("Deterministic physics solve failed; falling back to dynamic RAG")
@@ -661,6 +668,8 @@ def _try_solve_deterministic(
                 is_verified=True,
                 curriculum_topic="Stoichiometry",
                 curriculum_sources=["sympy_chemistry_v1"],
+                generation_path="deterministic_solver",
+                verification_method="stoichiometry_solver",
             )
         except Exception:
             logger.warning("Deterministic chemistry solve failed; falling back to dynamic RAG")
@@ -669,6 +678,8 @@ def _try_solve_deterministic(
     try:
         algebra_solution = try_solve_algebra_problem(request, is_khmer=is_khmer)
         if algebra_solution is not None:
+            algebra_solution.generation_path = "deterministic_solver"
+            algebra_solution.verification_method = "sympy_substitution"
             return algebra_solution
     except Exception:
         logger.warning("Deterministic algebra solve failed; falling back to dynamic RAG")
@@ -753,7 +764,11 @@ def _solve_with_llm_rag(
         except Exception as err:
             logger.debug("CurriculumStore dynamic query fallback error: %s", err)
 
-    is_verified = classification.is_verified
+    # A curriculum match proves that the explanation is grounded, not that the
+    # generated answer is mathematically correct. Only a deterministic checker
+    # may flip this flag to True.
+    is_verified = False
+    verification_method: Optional[str] = None
     topic = classification.topic or (chunks[0].topic if chunks else "General STEM Problem")
     chunk_ids = [c.id for c in chunks]
 
@@ -833,6 +848,7 @@ def _solve_with_llm_rag(
                 )
                 if sub_verified:
                     is_verified = True
+                    verification_method = "sympy_substitution"
             steps = [
                 GenericSolutionStep(
                     key=s.get("key", f"step_{idx + 1}"),
@@ -851,6 +867,8 @@ def _solve_with_llm_rag(
                 is_verified=is_verified,
                 curriculum_topic=topic,
                 curriculum_sources=chunk_ids,
+                generation_path="dynamic_llm",
+                verification_method=verification_method,
             )
     except Exception as exc:
         logger.warning("LLM dynamic solve failed (%s); building graceful fallback solution", exc)
@@ -862,7 +880,6 @@ def _solve_with_llm_rag(
         classification,
         topic=topic,
         chunk_ids=chunk_ids,
-        is_verified=is_verified,
     )
 
 
@@ -896,7 +913,6 @@ def _build_fallback_solution(
     *,
     topic: Optional[str] = None,
     chunk_ids: Optional[list[str]] = None,
-    is_verified: Optional[bool] = None,
 ) -> GenericWorkedSolution:
     """Graceful structured fallback when LLM is offline or timed out."""
     h1 = "ជំហានទី ១ · កំណត់លំហាត់" if is_khmer else "Step 1 · Identify Problem"
@@ -917,7 +933,6 @@ def _build_fallback_solution(
         GenericSolutionStep(key="identify", heading=h1, explanation=e1),
         GenericSolutionStep(key="solve", heading=h2, explanation=e2),
     ]
-    resolved_verified = classification.is_verified if is_verified is None else is_verified
     resolved_topic = topic or classification.topic or "General STEM Problem"
     resolved_sources = chunk_ids if chunk_ids is not None else [c.id for c in classification.matching_chunks]
     return GenericWorkedSolution(
@@ -925,10 +940,13 @@ def _build_fallback_solution(
         steps=steps,
         answer_text=ans,
         answer_latex=r"\text{Solution}",
-        is_verified=resolved_verified,
+        # A graceful fallback contains explanatory scaffolding only. Neither a
+        # curriculum match nor the presence of board steps verifies an answer.
+        is_verified=False,
         curriculum_topic=resolved_topic,
         curriculum_sources=resolved_sources,
         is_degraded=True,
+        generation_path="dynamic_degraded_fallback",
     )
 
 
@@ -1046,7 +1064,7 @@ def _build_turn_response(
             "layout_flow": "vertical",
             "section_id": section,
         }
-        for key in ("text", "latex", "requires_student_response", "task_type"):
+        for key in ("text", "latex", "graph", "requires_student_response", "task_type"):
             if key in fields and fields[key] is not None:
                 item[key] = fields[key]
         if table_val is not None:
@@ -1114,6 +1132,28 @@ def _build_turn_response(
             duration_ms=600,
         )
 
+    # If the problem is about a function, draw it. A quadratic or a line goes
+    # as an expression the client evaluates; anything else goes as sampled
+    # points, because an expression the painter cannot parse is silently
+    # dropped and the student sees empty axes.
+    graph = graph_for_problem(solution.problem_text)
+    if graph is not None:
+        add(
+            VisualTutorCanvasActionType.WRITE_TEXT,
+            "graph",
+            text="ក្រាបនៃអនុគមន៍" if is_khmer else "The graph of this function",
+        )
+        add(
+            VisualTutorCanvasActionType.SHOW_GRAPH,
+            "graph",
+            graph=graph,
+            duration_ms=900,
+            # Required by the board model for a bounded action; Flutter
+            # re-resolves the real size from the viewport.
+            width=420,
+            height=280,
+        )
+
     # Add extra reply sections (for follow-up questions) with ws-followup-reply-<idx>
     for reply_idx, reply in enumerate(extra_sections or []):
         add(
@@ -1167,6 +1207,7 @@ def _build_turn_response(
     metadata: dict[str, Any] = {
         "worked_solution": True,
         "verified": solution.is_verified,
+        "generation_path": solution.generation_path,
         "curriculum_status": "verified_curriculum" if solution.is_verified else "ai_unverified",
         "curriculum_topic": solution.curriculum_topic,
         "curriculum_sources": solution.curriculum_sources,
@@ -1179,11 +1220,16 @@ def _build_turn_response(
             "status": "correct" if solution.is_verified else "cannot_verify",
             "verified": solution.is_verified,
             "student_message": (
-                "Verified using SymPy substitution check."
+                "Verified by a deterministic mathematical checker."
                 if solution.is_verified
                 else "AI answer — not machine-checked."
             ),
-            "concise_evidence": "SymPy verified" if solution.is_verified else "AI unverified",
+            "concise_evidence": (
+                f"Verified by {solution.verification_method or 'deterministic solver'}"
+                if solution.is_verified
+                else "AI unverified"
+            ),
+            "verification_method": solution.verification_method,
         },
     }
 
