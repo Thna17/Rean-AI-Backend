@@ -16,7 +16,7 @@ from api.core.visual_tutor_gateway_auth import (
     require_visual_tutor_gateway,
 )
 from api.services.stt_service import get_stt_service
-from api.services.tts_service import get_tts_service
+from api.services.tts_service import TTSLanguageUnavailable, get_tts_service
 
 router = APIRouter(prefix="/api/v1/visual_tutor", tags=["Visual Tutor"])
 
@@ -144,10 +144,16 @@ async def synthesize_visual_tutor_voice(
     user_id = require_visual_tutor_gateway(x_visual_tutor_internal_token, x_visual_tutor_user_id)
     try:
         audio = await asyncio.wait_for(
-            asyncio.to_thread(get_tts_service().synthesize, body.text.strip()), timeout=30
+            asyncio.to_thread(get_tts_service().synthesize, body.text.strip(), body.language),
+            timeout=30,
         )
     except asyncio.TimeoutError as exc:
         raise HTTPException(504, "Tutor speech timed out. Please try again.") from exc
+    except TTSLanguageUnavailable as exc:
+        # Not an outage: this deployment has no voice for that language. The
+        # student app answers a 503 by trying the browser's own speech, which
+        # is the only route to Khmer audio today, so say so and let it.
+        raise HTTPException(503, f"No tutor voice for this language. {exc}") from exc
     except Exception as exc:
         raise HTTPException(503, "Tutor speech is temporarily unavailable.") from exc
     if not audio:

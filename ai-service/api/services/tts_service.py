@@ -17,9 +17,25 @@ _SERVICE_ROOT = Path(__file__).resolve().parent.parent.parent
 logger = logging.getLogger(__name__)
 
 
+class TTSUnavailable(RuntimeError):
+    """No voice could be loaded, so nothing can be spoken."""
+
+
+class TTSLanguageUnavailable(TTSUnavailable):
+    """The loaded voice does not speak the language that was asked for."""
+
+
+def _language_of(tag: str | None) -> str | None:
+    """The bare language of a tag: en_US, en-GB and en all reduce to "en"."""
+    if not tag:
+        return None
+    return tag.strip().replace("-", "_").split("_")[0].lower() or None
+
+
 class TTSService:
     def __init__(self) -> None:
         self._voice = None
+        self._voice_language: Optional[str] = None
 
     def _load_voice(self):
         if self._voice is not None:
@@ -79,21 +95,53 @@ class TTSService:
             resolved_model_path,
             config_path=resolved_config_path,
         )
+        self._voice_language = self._language_from_config(resolved_config_path) or _language_of(
+            settings.TTS_VOICE
+        )
+        logger.info("TTS voice loaded, speaking %s", self._voice_language or "an unknown language")
         return self._voice
 
-    def _generate_silent_wav(self) -> bytes:
-        wav_io = io.BytesIO()
-        with wave.open(wav_io, "wb") as wav_file:
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(22050)
-            wav_file.writeframes(b'\x00\x00' * 22050)  # 1 second of silence
-        return wav_io.getvalue()
+    @staticmethod
+    def _language_from_config(config_path: Optional[str]) -> Optional[str]:
+        """The language a Piper voice actually speaks, per its own config."""
+        if not config_path or not os.path.exists(config_path):
+            return None
+        try:
+            import json
 
-    def synthesize(self, text: str) -> bytes:
+            with open(config_path, encoding="utf-8") as handle:
+                config = json.load(handle)
+        except Exception:  # pragma: no cover - a malformed config is not fatal
+            return None
+        language = config.get("language")
+        if isinstance(language, dict):
+            return _language_of(language.get("code") or language.get("family"))
+        return _language_of(language if isinstance(language, str) else None)
+
+    def synthesize(self, text: str, language: str | None = None) -> bytes:
+        """Speak `text`, or raise if this service cannot speak it.
+
+        It deliberately does not fall back to a silent buffer. A caller cannot
+        distinguish silence from speech, so returning it hides a broken
+        install and, in the student app, suppresses the browser-speech
+        fallback that would otherwise have said something.
+        """
         voice = self._load_voice()
         if voice is None:
-            return self._generate_silent_wav()
+            raise TTSUnavailable(
+                "No TTS voice is installed. Add a Piper model under models/piper/."
+            )
+
+        wanted = _language_of(language)
+        speaks = _language_of(self._voice_language)
+        if wanted and speaks and wanted != speaks:
+            # Piper does not fail on foreign script: the phonemiser spells it
+            # out, so Khmer through an English voice returns minutes of noise
+            # rather than an error. Refusing here is what lets the client fall
+            # back to a browser voice that may actually speak the language.
+            raise TTSLanguageUnavailable(
+                f"The installed voice speaks {speaks}, not {wanted}."
+            )
 
         # Newer piper-tts versions return AudioChunk iterables.
         chunks = list(voice.synthesize(text))
