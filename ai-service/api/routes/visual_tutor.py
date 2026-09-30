@@ -446,6 +446,34 @@ async def list_visual_tutor_sessions(
     return VisualTutorSessionListResponse(sessions=sessions, total=len(sessions))
 
 
+def should_generate_practice(request: VisualTutorTurnRequest) -> bool:
+    """Whether this turn is asking the tutor to choose a practice problem.
+
+    A student who typed their own problem is never asking for one. The client
+    sends client_intent_hint="new_problem" for every problem a student starts,
+    including one typed into "Ask anything", so that hint cannot decide this on
+    its own: acting on it discarded the student's question, replaced it with a
+    canned problem, and -- with no topic on an ask-anything turn, where the
+    generator falls back to Linear Equations -- answered "3x + 4 = 19" to
+    everything.
+
+    The hint still means what it says when there is no question to honour, which
+    is how the practice screens ask for the next problem.
+    """
+    if matches_local_logic_demo(request) or matches_local_limits_demo(request):
+        # The local demos use a new_problem intent to start their own scripted
+        # teaching moment, and must reach the demo handler instead.
+        return False
+    if request.action == VisualTutorAction.GENERATE_PRACTICE:
+        return True
+    if request.metadata.get("mode") == "next_practice":
+        return True
+    return (
+        request.metadata.get("client_intent_hint") == "new_problem"
+        and not (request.message or "").strip()
+    )
+
+
 @router.post("/turn", response_model=None)
 async def visual_tutor_turn(
     request: VisualTutorTurnRequest,
@@ -518,15 +546,7 @@ async def visual_tutor_turn(
         # intent only to start its deterministic first teaching moment. It is
         # not targeted practice and must reach the provider-independent demo
         # handler instead of the unsupported-practice recovery branch.
-        if (
-            not matches_local_logic_demo(request)
-            and not matches_local_limits_demo(request)
-            and (
-            request.action == VisualTutorAction.GENERATE_PRACTICE
-            or request.metadata.get("mode") == "next_practice"
-            or request.metadata.get("client_intent_hint") == "new_problem"
-            )
-        ):
+        if should_generate_practice(request):
             problem = generate_practice_problem(
                 topic=request.topic or "Linear Equations",
                 metadata=request.metadata,
