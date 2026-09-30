@@ -176,3 +176,108 @@ class TestFocusPoint:
             assert graph is not None, focus
             assert math.isfinite(graph["x_min"]) and math.isfinite(graph["x_max"])
             assert graph["x_min"] < graph["x_max"]
+
+
+class TestKinematicsGraphs:
+    """Constant acceleration is a straight line on a velocity-time graph."""
+
+    def test_velocity_time_is_emitted_as_a_line(self) -> None:
+        from api.services.visual_tutor.graph_actions import velocity_time_graph
+
+        graph = velocity_time_graph(initial_velocity=0.0, acceleration=2.0, duration=5.0)
+        assert graph is not None
+        assert _client_can_plot(graph["function_expression"]), graph[
+            "function_expression"
+        ]
+
+    def test_the_window_covers_the_motion_described(self) -> None:
+        from api.services.visual_tutor.graph_actions import velocity_time_graph
+
+        # 5 seconds of motion: a window stopping at t = 2 would hide the answer.
+        graph = velocity_time_graph(initial_velocity=0.0, acceleration=2.0, duration=5.0)
+        assert graph is not None
+        assert graph["x_min"] <= 0.0
+        assert graph["x_max"] >= 5.0
+
+    def test_braking_slopes_downward_and_stays_on_screen(self) -> None:
+        from api.services.visual_tutor.graph_actions import velocity_time_graph
+
+        graph = velocity_time_graph(initial_velocity=20.0, acceleration=-4.0, duration=5.0)
+        assert graph is not None
+        assert _client_can_plot(graph["function_expression"])
+        assert graph["y_min"] <= 0.0 <= graph["y_max"]
+
+    def test_constant_velocity_is_not_worth_a_graph(self) -> None:
+        from api.services.visual_tutor.graph_actions import velocity_time_graph
+
+        assert velocity_time_graph(initial_velocity=5.0, acceleration=0.0, duration=3.0) is None
+
+    def test_nonsense_inputs_are_refused(self) -> None:
+        from api.services.visual_tutor.graph_actions import velocity_time_graph
+
+        assert velocity_time_graph(initial_velocity=0.0, acceleration=2.0, duration=0.0) is None
+        assert velocity_time_graph(initial_velocity=0.0, acceleration=2.0, duration=-1.0) is None
+        assert velocity_time_graph(
+            initial_velocity=float("nan"), acceleration=2.0, duration=5.0
+        ) is None
+
+    def test_the_payload_is_valid_for_both_models(self) -> None:
+        # Physics validates its plan against the teaching-plan contract as
+        # well as building board actions, so this payload has to pass both.
+        from api.models.visual_tutor import VisualTutorGraphSpec
+        from api.services.visual_tutor.graph_actions import velocity_time_graph
+        from api.services.visual_tutor.teaching_plan_contract import TeachingPlanGraph
+
+        graph = velocity_time_graph(initial_velocity=0.0, acceleration=2.0, duration=5.0)
+        assert graph is not None
+        VisualTutorGraphSpec.model_validate(graph)
+        TeachingPlanGraph.model_validate(graph)
+
+
+class TestKinematicsThroughProblemText:
+    """Kinematics reaches the board through whichever solver answers it.
+
+    A kinematics question is answered by the physics solver on one path and by
+    the generic solver on another, and the generic one has no idea what u, a
+    and t are. Recognising the motion from the problem text means the graph
+    appears either way, instead of depending on which solver happened to win.
+    """
+
+    def test_a_kinematics_sentence_produces_a_velocity_time_line(self) -> None:
+        graph = graph_for_problem(
+            "A car starts from rest and accelerates at 2 m/s^2 for 5 s. "
+            "Find its final velocity."
+        )
+        assert graph is not None
+        assert _client_can_plot(graph["function_expression"]), graph[
+            "function_expression"
+        ]
+        assert graph["x_max"] >= 5.0
+
+    def test_free_fall_is_recognised_too(self) -> None:
+        graph = graph_for_problem(
+            "A ball is dropped from rest and falls for 3 s. Find its velocity."
+        )
+        assert graph is not None
+        assert _client_can_plot(graph["function_expression"])
+
+    def test_a_phrasing_the_physics_parser_cannot_read_gets_no_graph(self) -> None:
+        # Documents a limitation rather than a decision. The kinematics parser
+        # only reads motion starting from rest: "a car moving at 20 m/s brakes
+        # at 4 m/s^2" does not parse at all, so there is nothing to draw. The
+        # graph is silent about it rather than guessing at the numbers.
+        assert (
+            graph_for_problem(
+                "A car moving at 20 m/s brakes at 4 m/s^2 for 5 s. Find its velocity."
+            )
+            is None
+        )
+
+    def test_a_sentence_about_nothing_in_particular_is_still_refused(self) -> None:
+        assert graph_for_problem("who was Isaac Newton") is None
+
+    def test_an_algebra_problem_is_not_mistaken_for_motion(self) -> None:
+        # The x expression must still win: this is a parabola, not a journey.
+        graph = graph_for_problem("solve x^2 - 5x + 6 = 0")
+        assert graph is not None
+        assert graph["function_expression"] == "x^2-5x+6"

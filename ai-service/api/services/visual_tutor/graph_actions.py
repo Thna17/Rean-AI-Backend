@@ -85,12 +85,45 @@ def graph_for_expression(
 
 
 def graph_for_problem(problem_text: str) -> dict[str, Any] | None:
-    """A graph for whatever function a problem is about, if it is about one."""
+    """A graph for whatever a problem is about, if it is about something.
+
+    An explicit function of x wins: "solve x^2 - 5x + 6 = 0" is a parabola,
+    not a journey. Failing that, a constant-acceleration question is drawn as
+    a velocity-time line, which is what makes the graph appear whether the
+    physics solver or the generic one ends up answering it.
+    """
     for candidate in _candidate_expressions(problem_text):
         graph = graph_for_expression(candidate)
         if graph is not None:
             return graph
-    return None
+    return _kinematics_graph(problem_text)
+
+
+def _kinematics_graph(problem_text: str) -> dict[str, Any] | None:
+    """A velocity-time line if this reads as constant-acceleration motion.
+
+    The physics parser is imported here rather than at module scope: it
+    imports the solver stack, which imports this module, and a cycle at import
+    time would take the service down rather than lose a graph.
+    """
+    try:
+        from api.services.visual_tutor.physics_kinematics import (
+            parse_physics_kinematics_problem,
+        )
+    except ImportError:  # pragma: no cover - only if the module is removed
+        return None
+    try:
+        problem = parse_physics_kinematics_problem(problem_text or "")
+    except Exception:  # pragma: no cover - a parse failure is not a graph
+        return None
+    if problem is None:
+        return None
+    knowns = problem.knowns or {}
+    return velocity_time_graph(
+        initial_velocity=knowns.get("u", 0.0),
+        acceleration=knowns.get("a", 0.0),
+        duration=knowns.get("t", 0.0),
+    )
 
 
 def _parse(expression: str) -> sympy.Expr | None:
@@ -302,3 +335,59 @@ def _candidate_expressions(problem_text: str) -> list[str]:
         offer(run)
 
     return candidates[:6]
+
+
+def velocity_time_graph(
+    *, initial_velocity: float, acceleration: float, duration: float
+) -> dict[str, Any] | None:
+    """A velocity-time graph for constant acceleration, or None.
+
+    v(t) = u + at is a straight line, which is one of the two shapes the
+    client can evaluate from an expression, so kinematics gets a real drawn
+    line rather than sampled points. Constant velocity is refused: a flat line
+    tells a student nothing the number above it did not.
+    """
+    values = (initial_velocity, acceleration, duration)
+    if any(not isinstance(v, (int, float)) or not math.isfinite(v) for v in values):
+        return None
+    if duration <= 0 or acceleration == 0:
+        return None
+    if any(abs(v) > _MAX_COORDINATE for v in values):
+        return None
+
+    # The window spans the motion described, with a little air either side so
+    # the line does not start and stop flush against the axes.
+    pad = duration * 0.15
+    x_min, x_max = -pad, duration + pad
+    end_velocity = initial_velocity + acceleration * duration
+    low, high = sorted((initial_velocity, end_velocity))
+    if high - low < 1e-6:
+        low, high = low - 1.0, high + 1.0
+    y_pad = (high - low) * 0.2
+    # Zero is kept on screen: where the line crosses it is the moment the
+    # object stops, which is usually the point of a braking question.
+    y_min = min(low - y_pad, 0.0)
+    y_max = max(high + y_pad, 0.0)
+    if y_min >= y_max:
+        return None
+
+    expression = _client_grammar(
+        sympy.sympify(initial_velocity) + sympy.sympify(acceleration) * _X
+    )
+    if expression is None:
+        return None
+
+    return {
+        "x_min": round(x_min, 3),
+        "x_max": round(x_max, 3),
+        "y_min": round(y_min, 3),
+        "y_max": round(y_max, 3),
+        # x_label/y_label exist on the board spec but not on the teaching-plan
+        # contract, and physics validates against both, so the axes keep their
+        # default names rather than making the payload valid in only one place.
+        "function_expression": expression,
+        "points": [
+            {"x": 0.0, "y": round(float(initial_velocity), 6)},
+            {"x": round(float(duration), 6), "y": round(float(end_velocity), 6)},
+        ],
+    }

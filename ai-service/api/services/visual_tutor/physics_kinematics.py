@@ -36,6 +36,7 @@ from api.models.visual_tutor import (
     VisualTutorTurnRequest,
     VisualTutorTurnResponse,
 )
+from api.services.visual_tutor.graph_actions import velocity_time_graph
 from api.services.visual_tutor.teaching_plan_contract import validate_teaching_plan
 
 logger = logging.getLogger(__name__)
@@ -886,7 +887,7 @@ def _physics_solution_turn(
             action_kwargs["table"] = fields["table"]
         if "forces" in fields:
             action_kwargs["metadata"]["forces"] = fields["forces"]
-        for k in ("text", "latex", "requires_student_response", "task_type"):
+        for k in ("text", "latex", "graph", "requires_student_response", "task_type"):
             if k in fields and fields[k] is not None:
                 action_kwargs[k] = fields[k]
 
@@ -902,7 +903,7 @@ def _physics_solution_turn(
             "layout_flow": "vertical",
             "section_id": section,
         }
-        for k in ("text", "latex", "table", "forces", "requires_student_response", "task_type"):
+        for k in ("text", "latex", "table", "graph", "forces", "requires_student_response", "task_type"):
             if k in fields and fields[k] is not None:
                 item[k] = fields[k]
         plan_actions.append(item)
@@ -943,6 +944,33 @@ def _physics_solution_turn(
         latex=solution.answer_latex,
         duration_ms=600,
     )
+
+    # Constant acceleration is a straight line on a velocity-time graph, and a
+    # line is one of the two shapes the client can evaluate from an
+    # expression, so the motion gets drawn rather than only described.
+    vt_graph = velocity_time_graph(
+        initial_velocity=problem.knowns.get("u", 0.0),
+        acceleration=problem.knowns.get("a", 0.0),
+        duration=problem.knowns.get("t", 0.0),
+    )
+    if vt_graph is not None:
+        add(
+            VisualTutorCanvasActionType.WRITE_TEXT,
+            "graph",
+            text=(
+                "ក្រាបល្បឿន-ពេលវេលា"
+                if problem.is_khmer
+                else "Velocity against time"
+            ),
+        )
+        add(
+            VisualTutorCanvasActionType.SHOW_GRAPH,
+            "graph",
+            graph=vt_graph,
+            duration_ms=900,
+            width=420,
+            height=280,
+        )
 
     # Extra reply sections
     for reply in extra_sections or []:
@@ -1030,8 +1058,17 @@ def _physics_solution_turn(
             "teaching_plan": plan,
             "worked_solution": True,
             "verified": True,
+            "generation_path": "deterministic_solver",
             "curriculum_status": "verified_curriculum",
             "curriculum_topic": "1D Kinematics",
+            "verification": {
+                "status": "correct",
+                "verified": True,
+                "student_message": "Programmatically verified using the kinematics solver.",
+                "concise_evidence": "Verified",
+                "verification_method": "sympy_kinematics",
+            },
+            "verification_result": "correct",
             "physics_kinematics": True,
             "motion_type": problem.motion_type,
             "target": solution.target,
