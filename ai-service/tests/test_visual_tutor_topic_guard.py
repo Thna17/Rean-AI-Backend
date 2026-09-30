@@ -256,3 +256,21 @@ def test_bilingual_mode_is_the_only_one_that_shows_both() -> None:
     shown = build_off_topic_message(decision, "bilingual")["display_text"]
     assert re.compile(r"[ក-៿]").search(shown)
     assert "Linear Equations" in shown
+
+
+def test_complex_numbers_lesson_accepts_complex_number_problems():
+    complex_lesson = (12, "Mathematics", "Complex Numbers", "math-g12-complex-numbers")
+    problems = [
+        r"z = 1 + i\sqrt{3}, \quad \text{find } |z|, \arg(z), \text{ and } z^6",
+        r"Find the modulus and argument of z = 1 + i",
+        r"Solve z^2 + 2z + 5 = 0",
+        r"គណនាម៉ូឌុល និងអាគុយម៉ង់នៃ z = 1 + i\sqrt{3}",
+    ]
+    for problem in problems:
+        req = lesson_request(complex_lesson, problem)
+        decision = evaluate_topic_guard(req)
+        assert decision is not None
+        assert decision.allowed, f"Expected {problem} to be allowed, got refusal: {decision.detected_family}"
+        assert decision.lesson_family == "complex_numbers"
+        assert decision.detected_family is None
+

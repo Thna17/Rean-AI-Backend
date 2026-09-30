@@ -104,10 +104,10 @@ _MATH_RE = re.compile(
     r"factor(?:ise|ize|ing|ed|s)?|limit|derivative|differentiate|integral|"
     r"integrate|slope|gradient|quadratic|polynomial|logarithm\w*|exponential|"
     r"probability|permutation|combination|matrix|vector|sine|cosine|tangent|"
-    r"trigonometr\w*)\b",
+    r"trigonometr\w*|complex|imaginary|modulus|conjugate)\b",
     re.IGNORECASE,
 )
-_MATH_KM_RE = re.compile(r"(គណិតវិទ្យា|សមីការ|អសមីការ|ដោះស្រាយ|អនុគមន៍|លីមីត|ដេរីវេ|អាំងតេក្រាល|ពហុធា)")
+_MATH_KM_RE = re.compile(r"(គណិតវិទ្យា|សមីការ|អសមីការ|ដោះស្រាយ|អនុគមន៍|លីមីត|ដេរីវេ|អាំងតេក្រាល|ពហុធា|កុំផ្លិច|ម៉ូឌុល|អាគុយម៉ង់)")
 
 
 @dataclass(frozen=True)

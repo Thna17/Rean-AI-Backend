@@ -95,8 +95,16 @@ FAMILIES: tuple[_Family, ...] = (
             r"\bmatri(?:x|ces)\b|\bdeterminant",
             r"ម៉ាទ្រីស"),
     _family("complex_numbers", "mathematics", "complex numbers", "ចំនួនកុំផ្លិច",
-            r"\bcomplex numbers?\b|\bimaginary\b",
-            r"កុំផ្លិច"),
+            r"\bcomplex numbers?\b|\bimaginary\b|"
+            r"\b(?:modulus|arg(?:ument)?|conjugate|polar form|trigonometric form|de moivre|euler'?s? formula)\b|"
+            r"\|[zZ]\||\\arg\b|\barg\s*\([zZ]\)|\bRe\s*\([zZ]\)|\bIm\s*\([zZ]\)|\\operatorname\{arg\}|"
+            r"\b[zZ]\s*=\s*[-+]?\d*\.?\d*\s*[-+]\s*(?:i\b|\\?sqrt)|"
+            r"\b[zZ]\s*=\s*.*?\bi\b|"
+            r"[-+]\s*i\s*\\?sqrt|\\?sqrt\{\d+\}\s*i|"
+            r"\b\d+\s*[-+]\s*\d*i\b|\b\d*i\s*[-+]\s*\d+\b|"
+            r"\b[zZ]\^|\b[zZ]²|\b[zZ]³|\\bar\{[zZ]\}|\\overline\{[zZ]\}|\bcis\b|"
+            r"\bi\^2\s*=\s*-1\b",
+            r"កុំផ្លិច|ចំនួនកុំផ្លិច|ម៉ូឌុល|អាគុយម៉ង់|ផ្នែកពិត|ផ្នែកនិម្មិត|ទម្រង់ត្រីកោណមាត្រ|ទម្រង់ពីជគណិត"),
     _family("geometry", "mathematics", "geometry", "ធរណីមាត្រ",
             r"\bcircles?\b|\bpolygons?\b|\bperimeter|\bpythagor|\bcircumference|\bspheres?\b|\bcylinders?\b|\bcones?\b",
             r"រង្វង់|ធរណីមាត្រ"),
@@ -151,7 +159,7 @@ FAMILIES: tuple[_Family, ...] = (
             r"\benthalpy|δh|\bexothermic|\bendothermic|\bcalorimet|\bhess",
             r"អង់តាល់ពី"),
     _family("atomic_structure", "chemistry", "atomic structure", "រចនាសម្ព័ន្ធអាតូម",
-            r"\belectron configuration|\bvalence|\batomic (?:number|mass|structure)|\bprotons?\b|\bneutrons?\b|\bisotopes?\b|\bperiodic table|\borbitals?\b|\bz\s*=\s*\d",
+            r"\belectron configuration|\bvalence|\batomic (?:number|mass|structure)|\bprotons?\b|\bneutrons?\b|\bisotopes?\b|\bperiodic table|\borbitals?\b|\b(?:atomic number|element)\s*[zZ]\s*=\s*\d+|\b[zZ]\s*=\s*\d+\s*(?:protons?|electrons?|neutrons?)",
             r"អាតូម|អេឡិចត្រុង|តារាងខួប"),
     _family("stoichiometry", "chemistry", "stoichiometry", "ស្តូគ្យូមេទ្រី",
             r"\bstoichiometr|\bmol(?:e|es)?\b|\bmolar mass|\bgrams?\b|\breact(?:s|ion|ions|ant|ants)?\b|\bproduced?\b|\byield\b|\blimiting reagent|\bchemical equation|\bbalanc(?:e|ed|ing)\b",
@@ -163,7 +171,8 @@ _BY_KEY = {family.key: family for family in FAMILIES}
 # Topics that legitimately use each other's vocabulary.
 RELATED: dict[str, frozenset[str]] = {
     "functions": frozenset({"quadratics", "linear_equations", "exponentials_logs", "polynomials"}),
-    "trigonometry": frozenset({"geometry"}),
+    "trigonometry": frozenset({"geometry", "complex_numbers"}),
+    "complex_numbers": frozenset({"trigonometry", "quadratics", "polynomials"}),
     "dynamics": frozenset({"kinematics"}),
     "energy": frozenset({"kinematics", "dynamics"}),
     "momentum": frozenset({"kinematics"}),
