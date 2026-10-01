@@ -59,15 +59,24 @@ def test_production_rejects_deepseek_without_a_real_key():
     ("field", "value"),
     [
         ("VISUAL_TUTOR_INTERNAL_TOKEN", "short"),
+        ("VISUAL_TUTOR_INTERNAL_TOKEN", "replace_with_a_unique_high_entropy_secret"),
+        ("VISUAL_TUTOR_INTERNAL_TOKEN", "visual-tutor-dev-token-for-dev-only"),
         ("MONGODB_URI", "mongodb://localhost:27017"),
         ("OPENROUTER_API_KEY", ""),
-        ("GEMINI_API_KEY", ""),
+        # Removed scan feature: OCR is off by default, so the key is only
+        # required when OCR is explicitly enabled (covered below).
         ("ALLOWED_ORIGINS", ["*"]),
     ],
 )
 def test_production_visual_tutor_configuration_rejects_missing_or_unsafe_values(field, value):
     with pytest.raises(ValidationError):
         _production_settings(**{field: value})
+
+
+def test_production_requires_gemini_key_only_when_ocr_is_enabled():
+    _production_settings(GEMINI_API_KEY="", VISUAL_TUTOR_OCR_ENABLED=False)
+    with pytest.raises(ValidationError):
+        _production_settings(GEMINI_API_KEY="", VISUAL_TUTOR_OCR_ENABLED=True)
 
 
 def test_staging_uses_the_same_fail_closed_visual_tutor_rules():
@@ -124,7 +133,7 @@ async def test_private_readiness_never_reports_healthy_without_mongo_or_ai(monke
 
 
 @pytest.mark.asyncio
-async def test_private_readiness_reports_degraded_for_optional_voice_or_scan_dependency(monkeypatch):
+async def test_private_readiness_reports_degraded_for_optional_ocr_dependency(monkeypatch):
     class HealthyAdmin:
         async def command(self, _name):
             return {"ok": 1}
@@ -172,3 +181,38 @@ async def test_public_health_reports_degraded_without_exposing_configuration(mon
     assert payload["status"] == "degraded"
     assert payload["dependencies"]["visual_tutor_ai"] == "healthy"
     assert "do-not-expose-me" not in str(payload)
+
+
+class TestASelfHostedMongoDB:
+    """A MongoDB on the same host is a deployment choice, not a mistake.
+
+    The check rejecting a local MONGODB_URI exists so nobody ships staging
+    pointing at the throwaway database they develop against. It also blocked a
+    deliberate self-hosted deployment -- a VPS running its own mongod, chosen
+    over a managed cluster -- with no way to say so, which left the service
+    running in development mode on a machine serving real traffic.
+
+    Saying so explicitly is what distinguishes the two. Silence still fails.
+    """
+
+    def test_a_local_uri_is_still_refused_by_default(self):
+        with pytest.raises(ValidationError, match="non-local durable MONGODB_URI"):
+            _production_settings(MONGODB_URI="mongodb://localhost:27017")
+
+    def test_a_local_uri_is_accepted_when_declared_self_hosted(self):
+        settings = _production_settings(
+            MONGODB_URI="mongodb://localhost:27017",
+            MONGODB_SELF_HOSTED=True,
+        )
+
+        assert settings.MONGODB_URI == "mongodb://localhost:27017"
+        assert settings.MONGODB_SELF_HOSTED is True
+
+    def test_declaring_it_does_not_excuse_an_empty_uri(self):
+        with pytest.raises(ValidationError, match="non-local durable MONGODB_URI"):
+            _production_settings(MONGODB_URI="", MONGODB_SELF_HOSTED=True)
+
+    def test_a_managed_uri_needs_no_declaration(self):
+        settings = _production_settings()
+
+        assert settings.MONGODB_SELF_HOSTED is False

@@ -24,6 +24,10 @@ from api.services.visual_tutor.solvers import (
     SlopeFromTwoPointsSolver,
 )
 
+# These tests cover the guided "Try it myself" flow (answer locked, one
+# step at a time); the default full-solution flow is covered elsewhere.
+pytestmark = pytest.mark.usefixtures("guided_tutor_mode")
+
 
 # This is the deliberately small, supported MVP.  New classifications must not
 # silently expand the production promise without a deterministic solver and a

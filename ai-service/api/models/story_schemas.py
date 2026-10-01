@@ -18,7 +18,8 @@ class DifficultyLevel(str, Enum):
 
 class LocalizedTitle(BaseModel):
     en: str
-    vi: str
+    km: Optional[str] = None
+    vi: Optional[str] = None
 
 
 class ContextDescription(BaseModel):

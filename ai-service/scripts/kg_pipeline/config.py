@@ -1,4 +1,4 @@
-"""Paths for importing LexiLingo-owned knowledge-graph data."""
+"""Paths for importing ReanAI-owned knowledge-graph data."""
 
 from pathlib import Path
 

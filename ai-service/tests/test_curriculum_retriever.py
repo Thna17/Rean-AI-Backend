@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from api.models.curriculum import CurriculumRetrievalRequest
 from api.services.curriculum.curriculum_retriever import retrieve_curriculum_context
 
@@ -86,6 +88,7 @@ def test_retrieves_grade_11_function_context() -> None:
     assert "math.g11.functions.domain_range" in result.curriculum_chunk_ids
     assert any("domain" in formula for formula in result.formulas)
     assert result.khmer_terms["function"] == "អនុគមន៍"
+    assert result.curriculum_sources[0]["source_type"] == "manual_seed"
 
 
 def test_grade_11_quadratic_retrieval_uses_problem_type_mapping() -> None:
@@ -115,8 +118,54 @@ def test_problem_type_never_crosses_grade_boundary_from_stale_context() -> None:
         )
     )
 
+    assert result.curriculum_chunk_ids
+    assert "math.g11.quadratic_functions.basic" not in result.curriculum_chunk_ids
+    assert all(chunk.grade == 10 for chunk in result.chunks)
+    assert all(chunk.subject == "Mathematics" for chunk in result.chunks)
+
+
+def test_retrieval_never_crosses_subject_boundary() -> None:
+    result = retrieve_curriculum_context(
+        CurriculumRetrievalRequest(
+            grade=11,
+            subject="Physics",
+            topic="Functions",
+            problem_type="function_domain",
+            message="Find the domain of f(x) = 1 / (x - 2)",
+        )
+    )
+
     assert result.curriculum_chunk_ids == []
+    assert result.chunks == []
     assert result.confidence == 0.0
+
+
+@pytest.mark.parametrize(
+    ("message", "language"),
+    [
+        ("Find the domain of f(x) = 1 / (x - 2)", "en"),
+        ("សូមរកដែនកំណត់នៃ f(x) = 1 / (x - 2)", "km"),
+    ],
+)
+def test_grade_11_function_retrieval_supports_english_and_khmer_queries(
+    message: str,
+    language: str,
+) -> None:
+    result = retrieve_curriculum_context(
+        CurriculumRetrievalRequest(
+            grade=11,
+            subject="Mathematics",
+            topic="Domain and Range",
+            problem_type="function_domain",
+            message=message,
+            language=language,
+        )
+    )
+
+    assert result.curriculum_chunk_ids[0] == "math.g11.functions.domain_range"
+    assert result.chunks[0].chapter == "Functions"
+    assert result.chunks[0].topic == "Domain and Range"
+    assert result.chunks[0].subtopic == "Domain and range of functions"
 
 
 def test_grade_12_function_transformation_retrieval() -> None:
@@ -151,6 +200,22 @@ def test_grade_12_exponential_log_retrieval_by_keyword_overlap() -> None:
     assert "log_a(b) = x means a^x = b" in result.formulas
     assert result.confidence > 0
     assert result.metadata["ranking"]["message"] == "keyword_overlap"
+
+
+def test_expanded_syllabus_retrieval_preserves_moeys_provenance() -> None:
+    result = retrieve_curriculum_context(
+        CurriculumRetrievalRequest(
+            grade=11,
+            subject="Mathematics",
+            topic="Sequences and Progressions",
+            problem_type="arithmetic_progression",
+            message="Find the common difference of an arithmetic progression",
+        )
+    )
+
+    assert result.curriculum_chunk_ids[0] == "math.g11.sequences.complete"
+    assert result.curriculum_sources[0]["source_type"] == "moeys_syllabus"
+    assert result.curriculum_sources[0]["section"]
 
 
 def test_unknown_topic_returns_empty_without_crashing() -> None:

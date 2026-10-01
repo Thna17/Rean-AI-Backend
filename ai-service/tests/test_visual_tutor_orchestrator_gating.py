@@ -3,7 +3,14 @@ from api.models.visual_tutor import (
     VisualTutorTurnRequest,
     VisualTutorTurnState,
 )
+
 from api.services.visual_tutor.orchestrator import handle_visual_tutor_turn
+
+import pytest
+
+# These tests cover the guided "Try it myself" flow (answer locked, one
+# step at a time); the default full-solution flow is covered elsewhere.
+pytestmark = pytest.mark.usefixtures("guided_tutor_mode")
 
 def test_orchestrator_gating_empty_message_nudges() -> None:
     # An empty message while waiting should trigger a nudge

@@ -1,17 +1,17 @@
 """
-Smart Ollama Configuration - Optimize cho Intel Mac
+Smart Ollama Configuration - Optimized for Intel / Apple Silicon Mac
 """
 
-# Tối ưu cho Qwen3-4B-Thinking
+# Optimized for Qwen3-4B-Thinking
 OLLAMA_OPTIMIZATIONS = {
-    # Streaming cho perceived speed
-    "stream": True,  # Return tokens ngay khi có
+    # Streaming for perceived speed
+    "stream": True,  # Return tokens as soon as available
     
     # Thread optimization
     "num_thread": 8,  # Match physical cores
     
-    # Context giảm từ 262K → 4K cho speed
-    "num_ctx": 4096,  # Đủ cho English teaching
+    # Context reduced from 262K → 4K for speed
+    "num_ctx": 4096,  # Sufficient for STEM tutoring
     
     # Generation control
     "num_predict": 256,  # Max tokens to generate
@@ -20,8 +20,8 @@ OLLAMA_OPTIMIZATIONS = {
     "top_k": 40,
     
     # Timeout & keep alive
-    "timeout": 15,  # Fail fast → fallback Gemini
-    "keep_alive": "5m",  # Unload sau 5 phút
+    "timeout": 15,  # Fail fast → fallback
+    "keep_alive": "5m",  # Unload after 5 minutes
 }
 
 # Fast model alternatives

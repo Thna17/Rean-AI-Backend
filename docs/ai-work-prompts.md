@@ -346,9 +346,10 @@ next bug harder to find:
 1. backend-ai-tutor/backend: 26 test failures across six suites, all from a
    missing getFirestore mock. The working pattern is already in
    src/routes/__tests__/tutor-api.test.ts — apply it to the rest.
-2. ai-service: three failures in tests/test_visual_tutor_routes.py, all from
-   non-limits problems meeting the scope lock. After prompt 2 opens the scope,
-   decide for each whether it should now pass, be rewritten, or be deleted.
+2. ai-service: three failures in tests/test_visual_tutor_routes.py. They exist
+   at HEAD and at older commits, and they are NOT caused by the scope lock (the
+   test setup disables it). Find the real cause of each, then fix the code or
+   the test.
 3. ai_tutor: nine failing tests across tutor_canvas_screen_test,
    tutor_context_routing_test, visual_tutor_backend_connection_test and
    tutor_session_resume_test. Work out for each whether it is a stale test or a

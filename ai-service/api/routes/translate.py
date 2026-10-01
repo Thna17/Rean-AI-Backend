@@ -1,7 +1,7 @@
 """
 Contextual Word Translation Route
 
-GET /api/v1/ai/translate?word=run&lang=vi&context=run+a+company
+GET /api/v1/ai/translate?word=run&lang=km&context=run+a+company
 
 Replaces MyMemory API (5k chars/day limit) with LLM-powered contextual translation.
 Fallback chain: Groq qwen3-32b → Ollama qwen3:1.7b → empty string.
@@ -18,12 +18,16 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Query
 
+from api.core.groq_key_pool import get_available_groq_key, record_groq_key_usage
+from api.services.trace_cag.llm_client import _throttled_post_json
+from api.services.ollama_service import get_ollama_service
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 _SYSTEM_PROMPT = (
-    "You are a Vietnamese-English dictionary assistant. "
+    "You are a multilingual educational dictionary assistant. "
     "Return ONLY valid JSON, no markdown, no explanation."
 )
 
@@ -38,7 +42,7 @@ def _build_user_prompt(word: str, lang: str, context: str) -> str:
         f'translation (meaning in {lang}), '
         f'phonetic (IPA notation or empty string), '
         f'part_of_speech (noun/verb/adjective/adverb/etc or empty string).\n'
-        f'Example: {{"translation":"chạy","phonetic":"/rʌn/","part_of_speech":"verb"}}'
+        f'Example: {{"translation":"រត់","phonetic":"/rʌn/","part_of_speech":"verb"}}'
     )
 
 
@@ -61,9 +65,6 @@ def _parse_llm_json(raw: str) -> dict:
 
 async def _translate_via_groq(word: str, lang: str, context: str) -> Optional[dict]:
     """Try Groq qwen3-32b for contextual translation. Returns None if unavailable."""
-    from api.core.groq_key_pool import get_available_groq_key, record_groq_key_usage
-    from api.services.trace_cag.llm_client import _throttled_post_json
-
     groq_key = await get_available_groq_key(estimated_tokens=130)
     if not groq_key:
         logger.info("[translate] Groq key pool exhausted, skipping")
@@ -120,8 +121,6 @@ async def _translate_via_groq(word: str, lang: str, context: str) -> Optional[di
 async def _translate_via_ollama(word: str, lang: str, context: str) -> Optional[dict]:
     """Fallback: Ollama local model (always available, 0 cost, ~1-2s latency)."""
     try:
-        from api.services.ollama_service import get_ollama_service
-
         ollama = get_ollama_service()
         if not await ollama.health_check():
             logger.info("[translate] Ollama unavailable, skipping")
@@ -151,7 +150,7 @@ async def _translate_via_ollama(word: str, lang: str, context: str) -> Optional[
 @router.get("/translate")
 async def translate_word(
     word: str = Query(..., min_length=1, max_length=100, description="English word to translate"),
-    lang: str = Query("vi", description="Target language code (vi, fr, ja, …)"),
+    lang: str = Query("km", description="Target language code (km, en, …)"),
     context: str = Query("", max_length=500, description="Caption sentence the word appears in"),
 ):
     """

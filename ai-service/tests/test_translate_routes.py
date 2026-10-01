@@ -22,26 +22,26 @@ class TestParseLlmJson:
         return _parse_llm_json(raw)
 
     def test_plain_json(self):
-        raw = '{"translation":"chạy","phonetic":"/rʌn/","part_of_speech":"verb"}'
+        raw = '{"translation":"រត់","phonetic":"/rʌn/","part_of_speech":"verb"}'
         result = self._parse(raw)
-        assert result["translation"] == "chạy"
+        assert result["translation"] == "រត់"
         assert result["phonetic"] == "/rʌn/"
         assert result["part_of_speech"] == "verb"
 
     def test_strips_json_fence(self):
-        raw = '```json\n{"translation":"công ty","phonetic":"","part_of_speech":"noun"}\n```'
+        raw = '```json\n{"translation":"ក្រុមហ៊ុន","phonetic":"","part_of_speech":"noun"}\n```'
         result = self._parse(raw)
-        assert result["translation"] == "công ty"
+        assert result["translation"] == "ក្រុមហ៊ុន"
 
     def test_strips_plain_fence(self):
-        raw = '```\n{"translation":"học","phonetic":"/lɜːn/","part_of_speech":"verb"}\n```'
+        raw = '```\n{"translation":"រៀន","phonetic":"/lɜːn/","part_of_speech":"verb"}\n```'
         result = self._parse(raw)
-        assert result["translation"] == "học"
+        assert result["translation"] == "រៀន"
 
     def test_json_embedded_in_text(self):
-        raw = 'Here is the result: {"translation":"chạy","phonetic":"","part_of_speech":"verb"} done.'
+        raw = 'Here is the result: {"translation":"រត់","phonetic":"","part_of_speech":"verb"} done.'
         result = self._parse(raw)
-        assert result["translation"] == "chạy"
+        assert result["translation"] == "រត់"
 
     def test_returns_empty_on_no_json(self):
         result = self._parse("Sorry, I cannot help with that.")
@@ -74,7 +74,7 @@ class TestTranslateRoute:
     async def test_groq_primary_path(self):
         """Happy path: Groq returns valid JSON → used as translation."""
         groq_payload = {
-            "choices": [{"message": {"content": '{"translation":"điều hành","phonetic":"/rʌn/","part_of_speech":"verb"}'}}],
+            "choices": [{"message": {"content": '{"translation":"ដឹកនាំ","phonetic":"/rʌn/","part_of_speech":"verb"}'}}],
             "usage": {"total_tokens": 95},
         }
 
@@ -87,17 +87,17 @@ class TestTranslateRoute:
              patch("api.routes.translate._throttled_post_json", new_callable=AsyncMock, return_value=mock_resp):
 
             from api.routes.translate import translate_word
-            result = await translate_word(word="run", lang="vi", context="She wants to run a company")
+            result = await translate_word(word="run", lang="km", context="She wants to run a company")
 
         assert result["word"] == "run"
-        assert result["translation"] == "điều hành"
+        assert result["translation"] == "ដឹកនាំ"
         assert result["phonetic"] == "/rʌn/"
         assert result["part_of_speech"] == "verb"
 
     @pytest.mark.asyncio
     async def test_ollama_fallback_when_groq_unavailable(self):
         """Groq pool exhausted → Ollama fallback is used."""
-        ollama_raw = '{"translation":"chạy","phonetic":"/rʌn/","part_of_speech":"verb"}'
+        ollama_raw = '{"translation":"រត់","phonetic":"/rʌn/","part_of_speech":"verb"}'
 
         mock_ollama = AsyncMock()
         mock_ollama.health_check = AsyncMock(return_value=True)
@@ -107,9 +107,9 @@ class TestTranslateRoute:
              patch("api.routes.translate.get_ollama_service", return_value=mock_ollama):
 
             from api.routes.translate import translate_word
-            result = await translate_word(word="run", lang="vi", context="")
+            result = await translate_word(word="run", lang="km", context="")
 
-        assert result["translation"] == "chạy"
+        assert result["translation"] == "រត់"
         assert result["word"] == "run"
 
     @pytest.mark.asyncio
@@ -119,7 +119,7 @@ class TestTranslateRoute:
              patch("api.routes.translate.get_ollama_service", side_effect=Exception("Ollama down")):
 
             from api.routes.translate import translate_word
-            result = await translate_word(word="run", lang="vi", context="")
+            result = await translate_word(word="run", lang="km", context="")
 
         assert result["word"] == "run"
         assert result["translation"] == ""
@@ -132,7 +132,7 @@ class TestTranslateRoute:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
-            "choices": [{"message": {"content": '{"translation":"chạy","phonetic":"","part_of_speech":"verb"}'}}],
+            "choices": [{"message": {"content": '{"translation":"រត់","phonetic":"","part_of_speech":"verb"}'}}],
             "usage": {"total_tokens": 80},
         }
 
@@ -141,7 +141,7 @@ class TestTranslateRoute:
              patch("api.routes.translate._throttled_post_json", new_callable=AsyncMock, return_value=mock_resp):
 
             from api.routes.translate import translate_word
-            result = await translate_word(word="RUN", lang="vi", context="")
+            result = await translate_word(word="RUN", lang="km", context="")
 
         assert result["word"] == "run"
 
@@ -155,7 +155,7 @@ class TestTranslateRoute:
              patch("api.routes.translate.get_ollama_service", return_value=mock_ollama):
 
             from api.routes.translate import translate_word
-            result = await translate_word(word="bank", lang="vi", context="")
+            result = await translate_word(word="bank", lang="km", context="")
 
         assert result["translation"] == ""
         mock_ollama.chat.assert_not_called()

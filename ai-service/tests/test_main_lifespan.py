@@ -28,10 +28,11 @@ def _install_sentry_stub(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_lifespan_continues_when_redis_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_sentry_stub(monkeypatch)
 
-    stt_runtime = types.ModuleType("api.services.stt.runtime")
-    stt_runtime.start_stt_runtime = AsyncMock()
-    stt_runtime.stop_stt_runtime = AsyncMock()
-    monkeypatch.setitem(sys.modules, "api.services.stt.runtime", stt_runtime)
+    # Stub only the runtime's start/stop: the STT route imports other names
+    # from this module, so replacing the whole module breaks the app import.
+    stt_runtime = importlib.import_module("api.services.stt.runtime")
+    monkeypatch.setattr(stt_runtime, "start_stt_runtime", AsyncMock())
+    monkeypatch.setattr(stt_runtime, "stop_stt_runtime", AsyncMock())
 
     ai_main = importlib.import_module("api.main")
 

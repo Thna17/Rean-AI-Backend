@@ -1,65 +1,45 @@
-#  Troubleshooting Guide
+# Troubleshooting Guide
 
-##  Lỗi thường gặp và cách khắc phục
+## Common Issues and Solutions
 
 ### 1. MongoDB Connection Refused
 
-**Lỗi:**
+**Error:**
+```text
+Failed to connect to MongoDB: localhost:27017: [Errno 61] Connection refused
 ```
- Failed to connect to MongoDB: localhost:27017: [Errno 61] Connection refused
-```
 
-**Nguyên nhân:** MongoDB chưa được khởi động
+**Cause:** MongoDB is not running locally.
 
-**Giải pháp:**
+**Solutions:**
 
-#### Cách 1: Sử dụng Docker (Khuyến nghị)
+#### Option 1: Docker (Recommended)
 ```bash
-# Khởi động MongoDB và Redis qua Docker
-docker-compose up -d
-
-# Kiểm tra trạng thái
+docker-compose up -d mongodb
 docker-compose ps
 ```
 
-#### Cách 2: Cài đặt MongoDB local (macOS)
+#### Option 2: Local MongoDB via Homebrew (macOS)
 ```bash
-# Cài đặt MongoDB
-brew install mongodb-community
-
-# Khởi động MongoDB
 brew services start mongodb-community
-
-# Kiểm tra MongoDB đang chạy
 brew services list | grep mongodb
 ```
 
-#### Cách 3: Sử dụng MongoDB Atlas (Cloud)
-1. Tạo cluster miễn phí tại https://www.mongodb.com/atlas
-2. Lấy connection string
-3. Cập nhật file `.env`:
-```bash
-MONGODB_URI=***REMOVED***
-```
-
-**Lưu ý:** API vẫn hoạt động ngay cả khi MongoDB down nhờ graceful degradation, nhưng các endpoints liên quan đến database sẽ trả về lỗi.
+#### Option 3: MongoDB Atlas (Cloud)
+Set `MONGODB_URI` in your `ai-service/.env` file.
 
 ---
 
-### 2. Port 8000 Already in Use
+### 2. Port 8001 Already in Use
 
-**Lỗi:**
-```
+**Error:**
+```text
 ERROR: [Errno 48] Address already in use
 ```
 
-**Giải pháp:**
+**Solution:**
 ```bash
-# Kill process đang chiếm port 8000
-lsof -ti:8000 | xargs kill -9
-
-# Hoặc dùng port khác
-uvicorn api.main:app --port 8001
+lsof -ti:8001 | xargs kill -9
 ```
 
 ---
@@ -67,187 +47,55 @@ uvicorn api.main:app --port 8001
 ### 3. Redis Connection Warning
 
 **Warning:**
-```
- Redis connection failed. Continuing without cache...
+```text
+Redis connection failed. Continuing without cache...
 ```
 
-**Giải pháp:**
-
-#### Sử dụng Docker:
+**Solution:**
+Start Redis via Docker:
 ```bash
 docker-compose up -d redis
 ```
-
-#### Cài đặt Redis local (macOS):
-```bash
-# Cài đặt Redis
-brew install redis
-
-# Khởi động Redis
-brew services start redis
-
-# Kiểm tra Redis
-redis-cli ping
-# Phản hồi: PONG
-```
-
-**Lưu ý:** Redis là optional. API sẽ hoạt động bình thường không có Redis, chỉ không có caching.
+*Note: Redis is optional for local development; the AI service continues without caching if unavailable.*
 
 ---
 
 ### 4. Module Not Found Error
 
-**Lỗi:**
-```
+**Error:**
+```text
 ModuleNotFoundError: No module named 'fastapi'
 ```
 
-**Giải pháp:**
+**Solution:**
+Ensure you are using the virtual environment:
 ```bash
-# Kích hoạt virtual environment
-source .venv/bin/activate  # macOS/Linux
-# hoặc
-.venv\Scripts\activate  # Windows
-
-# Cài đặt dependencies
-pip install -r requirements.txt
+cd ai-service && source venv/bin/activate
+venv/bin/python3 -m pip install -r requirements.txt
 ```
 
 ---
 
-### 5. Pydantic Settings Error
+### 5. Health & Readiness Check
 
-**Lỗi:**
-```
-SettingsError: error parsing value for field "ALLOWED_ORIGINS"
-```
-
-**Giải pháp:**
-Kiểm tra file `.env` không có field không hợp lệ. File `.env` mẫu:
+Verify the AI service is healthy on port 8001:
 ```bash
-# Environment
-ENVIRONMENT=development
-DEBUG=true
-
-# MongoDB
-MONGODB_URI=mongodb://localhost:27017
-MONGODB_DATABASE=lexilingo
-
-# Gemini AI
-GEMINI_API_KEY=your_api_key_here
-
-# Rate Limiting
-RATE_LIMIT_PER_MINUTE=60
+curl -H "X-Visual-Tutor-Internal-Token: visual-tutor-dev-token" \
+     -H "X-Visual-Tutor-User-Id: test-user" \
+     http://localhost:8001/api/v1/visual_tutor/readiness
 ```
 
 ---
 
-### 6. Google Generative AI Warning
-
-**Warning:**
-```
-FutureWarning: All support for the `google.generativeai` package has ended
-```
-
-**Giải pháp:** 
-Đây chỉ là warning, không ảnh hưởng hoạt động hiện tại. Sẽ được cập nhật sang `google.genai` trong phiên bản tương lai.
-
----
-
-##  Kiểm tra hệ thống hoạt động đúng
-
-### 1. Kiểm tra API đang chạy
-```bash
-curl http://localhost:8000/
-```
-Kết quả mong đợi:
-```json
-{
-  "name": "LexiLingo API",
-  "version": "1.0.0",
-  "status": "running",
-  ...
-}
-```
-
-### 2. Kiểm tra Health
-```bash
-curl http://localhost:8000/health
-```
-Kết quả mong đợi (khi tất cả services đều OK):
-```json
-{
-  "status": "healthy",
-  "version": "1.0.0",
-  "environment": "development",
-  "services": {
-    "mongodb": true,
-    "redis": true,
-    "ai_model": false
-  }
-}
-```
-
-### 3. Test Swagger UI
-Mở browser: http://localhost:8000/docs
-
----
-
-##  Docker Commands Hữu Ích
+### 6. Docker Commands
 
 ```bash
-# Khởi động tất cả services
-docker-compose up -d
+# Start required databases
+docker-compose up -d mongodb redis
 
-# Xem logs
+# View logs
 docker-compose logs -f
 
-# Dừng services
+# Stop containers
 docker-compose down
-
-# Xóa volumes và restart từ đầu
-docker-compose down -v
-docker-compose up -d
-
-# Kiểm tra containers đang chạy
-docker ps
 ```
-
----
-
-##  Debug Tips
-
-### Bật Debug Mode
-Trong file `.env`:
-```bash
-DEBUG=true
-LOG_LEVEL=DEBUG
-```
-
-### Xem Logs Chi Tiết
-Server logs được in ra terminal tự động khi chạy với `--reload`
-
-### Test Endpoints với curl
-```bash
-# Health check
-curl http://localhost:8000/health
-
-# Ping
-curl http://localhost:8000/ping
-
-# Root
-curl http://localhost:8000/
-```
-
----
-
-##  Cần Thêm Trợ Giúp?
-
-1. Kiểm tra file logs trong terminal
-2. Xem API Contract: `docs/API_CONTRACT.md`
-3. Xem MongoDB Schema: `docs/MONGODB_SCHEMA.md`
-4. Đọc Swagger Guide: `SWAGGER_GUIDE.md`
-
----
-
-**Cập nhật:** 16/01/2026

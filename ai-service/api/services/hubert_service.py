@@ -7,7 +7,7 @@ Uses Facebook's HuBERT-large model fine-tuned for phoneme recognition.
 Features:
 - Lazy loading (only loads when first audio is analyzed)
 - Phoneme-level accuracy scoring
-- Error pattern detection for Vietnamese learners
+- Error pattern detection for language learners
 - IPA alignment with reference text
 """
 
@@ -79,8 +79,8 @@ class PronunciationResult:
         }
 
 
-# Common pronunciation errors for Vietnamese learners
-VIETNAMESE_ERROR_PATTERNS = {
+# Common pronunciation errors for language learners
+COMMON_ERROR_PATTERNS = {
     "θ": {"common_mistake": "t", "suggestion": "Place tongue between teeth for 'th' sound"},
     "ð": {"common_mistake": "d", "suggestion": "Voiced 'th' - tongue between teeth with vibration"},
     "r": {"common_mistake": "l", "suggestion": "Curl tongue back, don't touch the roof"},
@@ -90,6 +90,7 @@ VIETNAMESE_ERROR_PATTERNS = {
     "v": {"common_mistake": "b", "suggestion": "Bite lower lip gently, then push air"},
     "z": {"common_mistake": "s", "suggestion": "Add voice to the 's' sound"},
 }
+VIETNAMESE_ERROR_PATTERNS = COMMON_ERROR_PATTERNS
 
 
 class HuBERTService:
@@ -276,8 +277,8 @@ class HuBERTService:
         """Detect pronunciation errors based on transcription."""
         errors = []
         
-        # Check for common Vietnamese learner errors
-        for phoneme, pattern in VIETNAMESE_ERROR_PATTERNS.items():
+        # Check for common learner pronunciation errors
+        for phoneme, pattern in COMMON_ERROR_PATTERNS.items():
             if pattern["common_mistake"] in transcription.lower():
                 errors.append(PronunciationError(
                     phoneme=phoneme,

@@ -13,7 +13,7 @@ import re
 from api.models.v3_schemas import DiagnosisV3, SuspectedError, V3PipelineContext
 
 
-_VI_CHARS_RE = re.compile(r"[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]", re.IGNORECASE)
+_KM_CHARS_RE = re.compile(r"[\u1780-\u17FF]", re.UNICODE)
 
 
 class DiagnoserV3:
@@ -21,18 +21,18 @@ class DiagnoserV3:
         normalized = (text or "").strip()
         lower = normalized.lower()
 
-        need_vietnamese = bool(_VI_CHARS_RE.search(lower)) or ("tiếng việt" in lower) or ("vietnamese" in lower)
+        need_khmer = bool(_KM_CHARS_RE.search(lower)) or ("khmer" in lower) or ("ខ្មែរ" in lower)
 
         intent: DiagnosisV3.model_fields["intent"].annotation  # type: ignore[attr-defined]
         skill: DiagnosisV3.model_fields["skill"].annotation  # type: ignore[attr-defined]
 
-        if any(k in lower for k in ["explain", "why", "what is", "rule", "tại sao", "giải thích"]):
+        if any(k in lower for k in ["explain", "why", "what is", "rule", "step", "ពន្យល់", "ហេតុអ្វី"]):
             intent = "explain_rule"
             skill = "grammar"
-        elif any(k in lower for k in ["translate", "dịch", "meaning", "nghĩa"]):
+        elif any(k in lower for k in ["translate", "meaning", "បកប្រែ", "ន័យ"]):
             intent = "translate"
             skill = "vocabulary"
-        elif any(k in lower for k in ["practice", "bài tập", "luyện", "exercise"]):
+        elif any(k in lower for k in ["practice", "exercise", "similar", "លំហាត់", "អនុវត្ត"]):
             intent = "practice"
             skill = "mixed"
         else:

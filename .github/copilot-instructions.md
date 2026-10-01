@@ -54,12 +54,12 @@ LexiLingo is an English learning app with 4 services:
 - React + Vite + TypeScript
 - Component files in `src/components/`, pages in `src/pages/`
 - **Animations (GSAP Best Practices)**:
-  - **React Integration**: Import và sử dụng package `@gsap/react` với hook `useGSAP()`. Hook này tự động xử lý cleanup, tối quan trọng trong React Strict Mode. Luôn define `scope` (`{ scope: containerRef }`) để tránh conflict selector.
-  - **Performance**: Ưu tiên animate các thuộc tính transform (`x`, `y`, `scale`, `rotation`) và `autoAlpha` thay vì can thiệp vào các layout props (như `top`, `left`, `width`, `height`).
-  - **Sequencing**: Sử dụng `gsap.timeline()` để điều phối các chuỗi animation thay vì dùng thông số `delay` rời rạc.
-  - **ScrollTrigger**: Nếu React state làm thay đổi layout/DOM rendering, gọi `ScrollTrigger.refresh()`.
-  - **Accessibility**: Luôn kết hợp sử dụng `gsap.matchMedia()` bên trong context/hook để dọn dẹp (cleanup) và hỗ trợ thuộc tính `prefers-reduced-motion` của OS.
-  - *Lưu ý*: Toàn bộ Plugins của GSAP (kể cả SplitText, MorphSVG...) hiện đã miễn phí 100% trên package npm public `gsap`, không cần yêu cầu membership hay token.
+  - **React Integration**: Import and use package `@gsap/react` with the `useGSAP()` hook. This hook handles cleanup automatically, which is essential in React Strict Mode. Always define `scope` (`{ scope: containerRef }`) to prevent selector conflicts.
+  - **Performance**: Prioritize animating transform properties (`x`, `y`, `scale`, `rotation`) and `autoAlpha` instead of modifying layout properties (such as `top`, `left`, `width`, `height`).
+  - **Sequencing**: Use `gsap.timeline()` to sequence animations rather than relying on disparate `delay` values.
+  - **ScrollTrigger**: If React state changes layout/DOM rendering, invoke `ScrollTrigger.refresh()`.
+  - **Accessibility**: Combine with `gsap.matchMedia()` within contexts/hooks for cleanup and OS `prefers-reduced-motion` support.
+  - *Note*: All GSAP plugins are available on the public `gsap` npm package.
 
 ## Graph-CAG Pipeline Rules
 When modifying the AI pipeline:

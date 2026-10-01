@@ -238,13 +238,27 @@ def test_etl_settings_reject_invalid_security_limits(field, value):
         Settings(_env_file=None, **{field: value})
 
 
+# Everything production Settings require besides the ETL fields under test, so
+# each test fails (or passes) on the ETL rule it is about.
+_PRODUCTION = {
+    "_env_file": None,
+    "ENVIRONMENT": "production",
+    "APP_ENV": "production",
+    "DEBUG": False,
+    "SECRET_KEY": "x" * 32,
+    "VISUAL_TUTOR_INTERNAL_TOKEN": "t" * 40,
+    "MONGODB_URI": "mongodb://db.example.com:27017",
+    "ALLOWED_ORIGINS": "https://app.example.com",
+    "VISUAL_TUTOR_LLM_PROVIDER": "deepseek",
+    "DEEPSEEK_API_KEY": "k" * 40,
+    "VISUAL_TUTOR_OCR_ENABLED": False,
+}
+
+
 @pytest.mark.parametrize("moving_ref", ["main", "master", "latest", "HEAD"])
 def test_production_etl_rejects_empty_or_moving_pins(moving_ref):
     base = {
-        "_env_file": None,
-        "ENVIRONMENT": "production",
-        "DEBUG": False,
-        "SECRET_KEY": "x" * 32,
+        **_PRODUCTION,
         "CONTENT_ETL_ENABLED": True,
         "CONTENT_ETL_CMU_REF": "1" * 40,
         "CONTENT_ETL_CEFR_J_REF": "2" * 40,
@@ -264,10 +278,7 @@ def test_production_etl_rejects_empty_or_moving_pins(moving_ref):
 
 def test_production_etl_accepts_immutable_core_pins():
     settings = Settings(
-        _env_file=None,
-        ENVIRONMENT="production",
-        DEBUG=False,
-        SECRET_KEY="x" * 32,
+        **_PRODUCTION,
         CONTENT_ETL_ENABLED=True,
         CONTENT_ETL_OEWN_VERSION="2025",
         CONTENT_ETL_CMU_REF="1" * 40,
@@ -284,10 +295,7 @@ def test_production_etl_accepts_immutable_core_pins():
 def test_production_etl_rejects_missing_dataset_checksum():
     with pytest.raises(ValidationError, match="SHA-256"):
         Settings(
-            _env_file=None,
-            ENVIRONMENT="production",
-            DEBUG=False,
-            SECRET_KEY="x" * 32,
+            **_PRODUCTION,
             CONTENT_ETL_ENABLED=True,
             CONTENT_ETL_OEWN_VERSION="2025",
             CONTENT_ETL_CMU_REF="1" * 40,

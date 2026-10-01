@@ -56,7 +56,7 @@ def route_after_diagnosis(state: TraceCAGState) -> Literal["retrieve_node", "ask
 
 def route_after_vietnamese(state: TraceCAGState) -> Literal["retrieve_node"]:
     """
-    After Vietnamese explanation, always continue to retrieval.
+    After localized explanation, always continue to retrieval.
     """
     return "retrieve_node"
 
@@ -65,7 +65,7 @@ def should_generate_tts(state: TraceCAGState) -> Literal["tts_node", "end"]:
     """
     Decide whether to generate TTS audio within the TraceCAG pipeline.
     
-    NOTE: TTS is handled by the caller (lexi_chat.py) using gTTS,
+    NOTE: TTS is handled by the caller using gTTS,
     which is more reliable and doesn't require loading Piper model.
     TraceCAG pipeline skips TTS to avoid duplicate audio generation
     and unnecessary model loading (~100MB RAM for Piper).

@@ -12,13 +12,15 @@ from api.core.auth import _decode_backend_jwt, _jwt_secret, get_current_user
 async def test_get_current_user_accepts_valid_access_token(monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "test-secret")
     monkeypatch.setenv("ALGORITHM", "HS256")
+    monkeypatch.setenv("AI_JWT_ISSUER", "rean-backend")
+    monkeypatch.setenv("AI_JWT_AUDIENCE", "rean-services")
 
     token = jwt.encode(
         {
             "sub": "user-123",
             "type": "access",
-            "iss": "lexilingo-backend",
-            "aud": "lexilingo-services",
+            "iss": "rean-backend",
+            "aud": "rean-services",
         },
         os.environ["SECRET_KEY"],
         algorithm=os.environ["ALGORITHM"],
@@ -57,8 +59,8 @@ def test_decode_backend_jwt_requires_access_token_type(monkeypatch):
         {
             "sub": "user-123",
             "type": "refresh",
-            "iss": "lexilingo-backend",
-            "aud": "lexilingo-services",
+            "iss": "rean-backend",
+            "aud": "rean-services",
         },
         os.environ["SECRET_KEY"],
         algorithm=os.environ["ALGORITHM"],

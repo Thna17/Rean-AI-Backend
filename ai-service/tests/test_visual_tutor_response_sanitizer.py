@@ -34,6 +34,12 @@ from api.services.visual_tutor.response_sanitizer import (
     sanitize_visual_tutor_response,
 )
 
+import pytest
+
+# These tests cover the guided "Try it myself" flow (answer locked, one
+# step at a time); the default full-solution flow is covered elsewhere.
+pytestmark = pytest.mark.usefixtures("guided_tutor_mode")
+
 
 class FakeVisualTutorLLMClient:
     def __init__(self, payload: dict) -> None:

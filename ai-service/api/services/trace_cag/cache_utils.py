@@ -529,11 +529,11 @@ _NATIVE_REQUEST_PHRASES = (
     "say it in",
     "tell me in",
     "in my language",
-    # Vietnamese
-    "giải thích bằng",
-    "bằng tiếng việt",
-    "dùng tiếng việt",
-    "nói bằng tiếng",
+    # Khmer
+    "ពន្យល់ជាភាសាខ្មែរ",
+    "ជាភាសាខ្មែរ",
+    "និយាយជាភាសាខ្មែរ",
+    "ពន្យល់ជាខ្មែរ",
     # Japanese
     "日本語で",
     "説明して",

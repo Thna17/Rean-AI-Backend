@@ -1,0 +1,21 @@
+file '/Users/macbookpro/Desktop/Development/AI Project/ReanAI/demo-video/full_flow_slides/01_intro.png'
+duration 4.5
+file '/Users/macbookpro/Desktop/Development/AI Project/ReanAI/demo-video/full_flow_slides/02_lesson_reader.png'
+duration 4.5
+file '/Users/macbookpro/Desktop/Development/AI Project/ReanAI/demo-video/full_flow_slides/03_whiteboard_en.png'
+duration 4.5
+file '/Users/macbookpro/Desktop/Development/AI Project/ReanAI/demo-video/full_flow_slides/04_whiteboard_km.png'
+duration 4.5
+file '/Users/macbookpro/Desktop/Development/AI Project/ReanAI/demo-video/full_flow_slides/05_physics.png'
+duration 4.5
+file '/Users/macbookpro/Desktop/Development/AI Project/ReanAI/demo-video/full_flow_slides/06_chemistry.png'
+duration 4.5
+file '/Users/macbookpro/Desktop/Development/AI Project/ReanAI/demo-video/full_flow_slides/07_followup_qa.png'
+duration 4.5
+file '/Users/macbookpro/Desktop/Development/AI Project/ReanAI/demo-video/full_flow_slides/08_practice_quiz.png'
+duration 4.5
+file '/Users/macbookpro/Desktop/Development/AI Project/ReanAI/demo-video/full_flow_slides/09_admin_dashboard.png'
+duration 4.5
+file '/Users/macbookpro/Desktop/Development/AI Project/ReanAI/demo-video/full_flow_slides/10_outro.png'
+duration 4.5
+file '/Users/macbookpro/Desktop/Development/AI Project/ReanAI/demo-video/full_flow_slides/10_outro.png'

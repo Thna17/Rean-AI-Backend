@@ -244,21 +244,21 @@ Guidelines:
             max_tokens=400,
         )
     
-    async def explain_vietnamese(
+    async def explain_concept(
         self,
-        english_text: str,
+        text: str,
         errors: Optional[List[Dict]] = None,
-        learner_level: str = "B1",
+        language: str = "Khmer",
     ) -> str:
-        """Provide Vietnamese explanation for English text."""
-        system_prompt = """Bạn là một gia sư tiếng Anh thân thiện.
-Giải thích bằng tiếng Việt đơn giản và dễ hiểu.
-Nếu có lỗi, hãy giải thích tại sao sai và cách sửa.
-Giữ giải thích ngắn gọn (2-3 câu)."""
+        """Provide localized explanation."""
+        system_prompt = f"""You are a helpful and encouraging AI STEM tutor.
+Explain clearly and simply in {language}.
+If there are errors, explain why and how to solve it correctly.
+Keep the explanation concise and easy to understand."""
 
-        content = f"Explain in Vietnamese:\n\n{english_text}"
+        content = f"Explain in {language}:\n\n{text}"
         if errors:
-            content += "\n\nErrors to explain:\n" + "\n".join(
+            content += "\n\nIssues to explain:\n" + "\n".join(
                 f"- '{e.get('span')}' → '{e.get('correction')}'"
                 for e in errors
             )
@@ -271,6 +271,15 @@ Giữ giải thích ngắn gọn (2-3 câu)."""
             temperature=0.7,
             max_tokens=300,
         )
+
+    async def explain_localized(
+        self,
+        english_text: str,
+        errors: Optional[List[Dict]] = None,
+        learner_level: str = "B1",
+        language: str = "Khmer",
+    ) -> str:
+        return await self.explain_concept(english_text, errors, language=language)
     
     async def invoke(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -278,7 +287,7 @@ Giữ giải thích ngắn gọn (2-3 câu)."""
         
         Args:
             params: {
-                "task": "chat" | "grammar" | "response" | "vietnamese",
+                "task": "chat" | "grammar" | "response" | "localized",
                 "text": "...",
                 "messages": [...],
                 ...other params
@@ -304,12 +313,13 @@ Giữ giải thích ngắn gọn (2-3 câu)."""
                 )
             }
             
-        elif task == "vietnamese":
+        elif task in ("localized", "khmer"):
             return {
-                "explanation": await self.explain_vietnamese(
+                "explanation": await self.explain_concept(
                     english_text=params.get("text", ""),
                     errors=params.get("errors"),
                     learner_level=params.get("level", "B1"),
+                    language=params.get("language", "Khmer"),
                 )
             }
             

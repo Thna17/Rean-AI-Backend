@@ -42,6 +42,33 @@ def project_public_session(session: VisualTutorSession) -> PublicVisualTutorSess
     )
 
 
+# The only verification statuses the public contract carries. The TypeScript
+# gateway rejects a whole turn that reports anything else, so a status invented
+# here never reaches the student — it becomes a 502. Note that "verified" is
+# deliberately absent: a verified answer is reported as "correct".
+_PUBLIC_VERIFICATION_STATUSES = frozenset(
+    {
+        "correct",
+        "mathematically_valid_but_inefficient",
+        "invalid",
+        "incomplete",
+        "cannot_verify",
+    }
+)
+
+
+def _public_verification_status(stored: Any, is_verified: bool) -> str:
+    """Return a status the public contract allows.
+
+    Anything unrecognised — including a missing one — collapses to the honest
+    equivalent rather than being forwarded. Defaulting to an unlisted value is
+    what broke every physics kinematics turn at the gateway.
+    """
+    if isinstance(stored, str) and stored in _PUBLIC_VERIFICATION_STATUSES:
+        return stored
+    return "correct" if is_verified else "cannot_verify"
+
+
 def project_public_tutor_turn(response: VisualTutorTurnResponse) -> dict[str, Any]:
     metadata = response.metadata if isinstance(response.metadata, dict) else {}
     raw_plan = metadata.get("teaching_plan")
@@ -119,9 +146,15 @@ def project_public_tutor_turn(response: VisualTutorTurnResponse) -> dict[str, An
         concise_evidence = stored_verification.get("concise_evidence")
         if not isinstance(concise_evidence, str) or not concise_evidence.strip():
             concise_evidence = feedback
+    is_turn_verified = (
+        metadata.get("verified") is True
+        or stored_verification.get("verified", False) is True
+    )
     verification = {
-        "status": stored_verification.get("status", "cannot_verify"),
-        "verified": stored_verification.get("verified", False) is True,
+        "status": _public_verification_status(
+            stored_verification.get("status"), is_turn_verified
+        ),
+        "verified": is_turn_verified,
         "concise_evidence": concise_evidence,
         "student_facing_feedback": feedback,
     }

@@ -154,13 +154,21 @@ def retrieve_curriculum_context(
 
 
 def _safe_source_reference(chunk: CurriculumChunk) -> dict:
-    metadata = chunk.source.metadata if chunk.source.type == "admin_published" else {}
+    if chunk.source.type == "admin_published":
+        metadata = chunk.source.metadata
+        return {
+            "curriculum_version_id": metadata.get("curriculum_version_id"),
+            "curriculum_chunk_id": metadata.get("curriculum_chunk_id", chunk.id),
+            "grade_level_id": metadata.get("grade_level_id"),
+            "subject_id": metadata.get("subject_id"),
+            "topic_id": metadata.get("topic_id"),
+        }
     return {
-        "curriculum_version_id": metadata.get("curriculum_version_id"),
-        "curriculum_chunk_id": metadata.get("curriculum_chunk_id", chunk.id),
-        "grade_level_id": metadata.get("grade_level_id"),
-        "subject_id": metadata.get("subject_id"),
-        "topic_id": metadata.get("topic_id"),
+        "source_type": chunk.source.type,
+        "title": chunk.source.title,
+        "publisher": chunk.source.publisher,
+        "section": chunk.source.section,
+        "curriculum_chunk_id": chunk.id,
     }
 
 
@@ -215,9 +223,12 @@ def curriculum_metadata(result: CurriculumRetrievalResult) -> dict:
         "formulas": result.formulas,
         "common_misconceptions": result.common_misconceptions,
         "teaching_sequence": result.teaching_sequence,
-        "khmer_terms": result.metadata.get("reviewed_khmer_glossary", {}).get(
-            "approved_glossary_terms", {}
-        ),
+        "khmer_terms": {
+            **result.khmer_terms,
+            **result.metadata.get("reviewed_khmer_glossary", {}).get(
+                "approved_glossary_terms", {}
+            ),
+        },
         "reviewed_khmer_glossary": result.metadata.get(
             "reviewed_khmer_glossary", {}
         ),

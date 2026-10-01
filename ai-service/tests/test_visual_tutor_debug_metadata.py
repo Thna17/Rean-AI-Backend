@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 from api.models.visual_tutor import VisualTutorAction, VisualTutorTurnRequest
+
 from api.services.visual_tutor.orchestrator import handle_visual_tutor_turn
+
+import pytest
+
+# These tests cover the guided "Try it myself" flow (answer locked, one
+# step at a time); the default full-solution flow is covered elsewhere.
+pytestmark = pytest.mark.usefixtures("guided_tutor_mode")
 
 
 DEBUG_METADATA_KEYS = {

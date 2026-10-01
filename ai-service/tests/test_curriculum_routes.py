@@ -69,7 +69,10 @@ async def test_curriculum_retrieve_post_valid_retrieval() -> None:
         "math.g10.coordinate_geometry.line_equation"
     ]
     assert "y = mx + b" in data["formulas"]
-    assert data["curriculum_sources"][0]["source"]["type"] == "manual_seed"
+    # Only a safe reference is public; raw authoring sources stay internal.
+    source = data["curriculum_sources"][0]
+    assert source["curriculum_chunk_id"] == "math.g10.coordinate_geometry.line_equation"
+    assert "source" not in source and "internal_admin_note" not in source
 
 
 @pytest.mark.asyncio

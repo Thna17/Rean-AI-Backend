@@ -7,7 +7,13 @@ from fastapi.testclient import TestClient
 from jose import jwt
 
 # api.routes eagerly imports analytics routes that require optional KuzuDB.
-sys.modules.setdefault("kuzu", MagicMock())
+# Stub it only when it is not installed: a stub left in sys.modules replaces
+# the real database for every later test (the KG tests then loop forever on
+# a MagicMock result).
+try:
+    import kuzu  # noqa: F401
+except ImportError:
+    sys.modules["kuzu"] = MagicMock()
 from api.routes import stt as stt_route
 from api.services.stt.audio_ingest import HEADER
 from api.services.stt.config import STTConfig
@@ -18,13 +24,17 @@ from api.services.stt.voice_session import VoiceSession
 from tests.stt.fakes import FakePrimary, FakeVerifier
 
 
+from api.core.config import get_settings
+
+
 def _access_token(secret="test-secret"):
+    settings = get_settings()
     return jwt.encode(
         {
             "sub": "u1",
             "type": "access",
-            "iss": "lexilingo-backend",
-            "aud": "lexilingo-services",
+            "iss": settings.AI_JWT_ISSUER,
+            "aud": settings.AI_JWT_AUDIENCE,
         },
         secret,
         algorithm="HS256",
@@ -95,8 +105,8 @@ def test_websocket_rejects_token_without_access_type(monkeypatch):
     token = jwt.encode(
         {
             "sub": "u1",
-            "iss": "lexilingo-backend",
-            "aud": "lexilingo-services",
+            "iss": get_settings().AI_JWT_ISSUER,
+            "aud": get_settings().AI_JWT_AUDIENCE,
         },
         "test-secret",
         algorithm="HS256",

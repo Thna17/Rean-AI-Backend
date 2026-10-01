@@ -1,7 +1,7 @@
 """
 MongoDB Database Initialization Script
 
-Creates collections, indexes, and initial data for LexiLingo
+Creates collections, indexes, and initial data for ReanAI
 Run this after MongoDB connection is established
 """
 

@@ -17,6 +17,9 @@ from api.models.problem_models import Problem
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_PROBLEMS_PATH = Path(__file__).resolve().parents[2] / "data" / "problems.json"
+
+
 class ProblemRepository:
     """
     Repository for loading and querying problems from JSON.
@@ -25,14 +28,15 @@ class ProblemRepository:
     Provides query methods for filtering by subject, difficulty, topic, etc.
     """
 
-    def __init__(self, data_path: str = "ai-service/data/problems.json") -> None:
+    def __init__(self, data_path: str | None = None) -> None:
         """
         Initialize repository and load problems from JSON.
         
         Args:
-            data_path: Path to problems.json file
+            data_path: Path to problems.json file. Defaults to this service's
+                data/problems.json, independent of the working directory.
         """
-        self.data_path = data_path
+        self.data_path = data_path or str(DEFAULT_PROBLEMS_PATH)
         self.problems: List[Problem] = []
         self._load_problems()
 

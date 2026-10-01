@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, List, Optional
@@ -14,20 +15,46 @@ def default_curriculum_data_dir() -> Path:
 
 
 class CurriculumStore:
-    def __init__(self, data_dir: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        data_dir: Optional[Path] = None,
+        published_store: Optional[PublishedCurriculumStore] = None,
+    ) -> None:
         self.data_dir = data_dir or default_curriculum_data_dir()
+        self._published_override = published_store
         self._chunks: Optional[list[CurriculumChunk]] = None
         self._indexes: dict[str, dict[str, list[CurriculumChunk]]] = {}
         self._published_generation: int | None = None
 
     def load_chunks(self) -> list[CurriculumChunk]:
-        published = PublishedCurriculumStore()
+        published = self._published_store()
         generation = published.generation()
         if self._chunks is None or self._published_generation != generation:
-            self._chunks = list(_load_jsonl_chunks(self.data_dir)) + published.load()
+            static_chunks = list(_load_jsonl_chunks(self.data_dir))
+            published_chunks = published.load()
+            static_ids = {chunk.id for chunk in static_chunks}
+            collisions = static_ids & {chunk.id for chunk in published_chunks}
+            if collisions:
+                raise ValueError(
+                    "Published curriculum chunk id collides with static catalog: "
+                    + ", ".join(sorted(collisions))
+                )
+            self._chunks = static_chunks + published_chunks
             self._indexes = _build_indexes(self._chunks)
             self._published_generation = generation
         return list(self._chunks)
+
+    def static_chunk_ids(self) -> set[str]:
+        """Return immutable seed IDs used to validate publication overlays."""
+        return {chunk.id for chunk in _load_jsonl_chunks(self.data_dir)}
+
+    def _published_store(self) -> PublishedCurriculumStore:
+        # Admin-published curriculum lives on the service-wide shared volume,
+        # independent of the seed data folder. Resolved on every load so a new
+        # generation or a changed ADMIN_PUBLISHED_CURRICULUM_PATH is picked up.
+        if self._published_override is not None:
+            return self._published_override
+        return PublishedCurriculumStore()
 
     def reload(self) -> None:
         self._chunks = None
@@ -64,7 +91,7 @@ class CurriculumStore:
         for chunk in chunks:
             if subject and _norm(chunk.subject) != _norm(subject):
                 continue
-            if grade is not None and chunk.grade not in {None, grade}:
+            if grade is not None and chunk.grade != grade:
                 continue
             if language and chunk.language not in {language, "en"}:
                 continue
@@ -87,6 +114,159 @@ class CurriculumStore:
                 break
         return filtered
 
+    def list_subjects(self) -> list[str]:
+        chunks = self.load_chunks()
+        seen = set()
+        subjects = []
+        for chunk in chunks:
+            s = chunk.subject.strip()
+            if s and s.lower() not in seen:
+                seen.add(s.lower())
+                subjects.append(s)
+        return subjects
+
+    def list_topics(self, subject: Optional[str] = None) -> list[str]:
+        chunks = self.load_chunks()
+        seen = set()
+        topics = []
+        norm_subj = _norm(subject) if subject else None
+        for chunk in chunks:
+            if norm_subj and _norm(chunk.subject) != norm_subj:
+                continue
+            t = chunk.topic.strip()
+            if t and t.lower() not in seen:
+                seen.add(t.lower())
+                topics.append(t)
+        return topics
+
+    def search_chunks_by_query(
+        self,
+        query: str,
+        *,
+        grade: Optional[int] = None,
+        subject: Optional[str] = None,
+        limit: int = 5,
+    ) -> list[tuple[float, CurriculumChunk]]:
+        """Rank and return curriculum chunks matching tokens/terms in query."""
+        if not query or not query.strip():
+            return []
+        chunks = self.load_chunks()
+        query_norm = _norm(query)
+        canonical_topic = _canonical_topic_alias(query_norm)
+        _STOPWORDS = {
+            "the", "a", "an", "and", "or", "of", "in", "on", "to", "for", "with", "at",
+            "by", "from", "is", "are", "was", "were", "be", "been", "being",
+            "what", "how", "why", "which", "who", "whom", "this", "that", "these", "those",
+            "find", "calculate", "solve", "evaluate", "determine", "given", "if", "we", "have",
+            "can", "you", "its", "it", "let", "following", "show",
+            "នៃ", "និង", "ឬ", "ក្នុង", "លើ", "ទៅ", "សម្រាប់", "ជាមួយ", "នៅ", "ពី", "គឺ", "ជា",
+            "តើ", "អ្វី", "យ៉ាងណា", "ហេតុអ្វី", "ដែល", "នេះ", "នោះ",
+            "រក", "គណនា", "ដោះស្រាយ", "កំណត់", "ឱ្យ", "ប្រសិនបើ", "យើង", "មាន", "ចូរ",
+        }
+        query_tokens = [
+            t for t in re.findall(r"[\w\u1780-\u17ff]+", query_norm)
+            if len(t) > 1 and t not in _STOPWORDS
+        ]
+        if not query_tokens:
+            query_tokens = [t for t in re.findall(r"[\w\u1780-\u17ff]+", query_norm) if len(t) > 1]
+        if not query_tokens:
+            query_tokens = [query_norm]
+
+        scored: list[tuple[float, CurriculumChunk]] = []
+        norm_subj = _norm(subject) if subject else None
+
+        for chunk in chunks:
+            if grade is not None and chunk.grade != grade:
+                continue
+            if norm_subj and _norm(chunk.subject) != norm_subj:
+                continue
+
+            score = 0.0
+            # Target fields to check
+            topic_str = _norm(f"{chunk.topic} {chunk.subtopic or ''} {chunk.chapter or ''}")
+            tags_str = " ".join(_norm(t) for t in chunk.tags)
+            text_str = _norm(chunk.text)
+            formulas_str = ""
+            for f in chunk.formulas:
+                if isinstance(f, str):
+                    formulas_str += " " + _norm(f)
+                elif hasattr(f, "expression"):
+                    formulas_str += " " + _norm(f.expression)
+
+            khmer_terms_str = ""
+            for en_term, km_term in chunk.khmer_terms.items():
+                khmer_terms_str += f" {_norm(en_term)} {_norm(km_term)}"
+
+            examples_str = ""
+            for ex in chunk.examples:
+                if hasattr(ex, "problem"):
+                    examples_str += f" {_norm(ex.problem)} {_norm(ex.answer or '')}"
+                elif isinstance(ex, dict):
+                    examples_str += f" {_norm(str(ex.get('problem', '')))} {_norm(str(ex.get('answer', '')))}"
+
+            exercises_str = ""
+            for prac in chunk.exercises:
+                if hasattr(prac, "prompt"):
+                    exercises_str += f" {_norm(prac.prompt)} {_norm(prac.answer or '')}"
+                elif isinstance(prac, dict):
+                    exercises_str += f" {_norm(str(prac.get('prompt', '')))} {_norm(str(prac.get('answer', '')))}"
+
+            solution_steps_str = " ".join(_norm(s) for s in chunk.solution_steps)
+
+            # Direct whole topic match
+            if _norm(chunk.topic) in query_norm:
+                score += 10.0
+            if chunk.subtopic and _norm(chunk.subtopic) in query_norm:
+                score += 8.0
+
+            # Aliases improve search recall/ranking only. The chunk itself is
+            # returned unchanged so its authored canonical chapter/topic
+            # metadata is never replaced by a query spelling.
+            if canonical_topic:
+                chunk_topic = _norm(chunk.topic)
+                if chunk_topic == canonical_topic:
+                    score += 12.0
+                elif canonical_topic in topic_str:
+                    score += 3.0
+
+            # Direct formula match if formula is non-trivial
+            for f in chunk.formulas:
+                expr = f if isinstance(f, str) else getattr(f, "expression", "") if hasattr(f, "expression") else f.get("expression", "") if isinstance(f, dict) else ""
+                norm_expr = _norm(expr)
+                if norm_expr and len(norm_expr) >= 3 and (norm_expr in query_norm or query_norm in norm_expr):
+                    score += 6.0
+
+            # Direct Khmer term matching in query (handles continuous unsegmented Khmer script)
+            for en_term, km_term in chunk.khmer_terms.items():
+                km_norm = _norm(km_term)
+                if km_norm and len(km_norm) >= 2 and km_norm in query_norm:
+                    score += 5.0
+
+            # Token matching
+            for token in query_tokens:
+                if token in topic_str:
+                    score += 5.0
+                elif token in tags_str:
+                    score += 4.0
+                elif token in formulas_str:
+                    score += 4.0
+                elif token in examples_str:
+                    score += 4.5
+                elif token in exercises_str:
+                    score += 4.0
+                elif token in solution_steps_str:
+                    score += 3.5
+                elif token in khmer_terms_str:
+                    score += 4.0
+                elif token in text_str:
+                    score += 1.5
+
+            if score > 0:
+                scored.append((score, chunk))
+
+        scored.sort(key=lambda item: (-item[0], item[1].id))
+        return scored[:limit]
+
 
 @lru_cache(maxsize=1)
 def get_default_curriculum_store() -> CurriculumStore:
@@ -98,6 +278,8 @@ def _load_jsonl_chunks(data_dir: Path) -> Iterable[CurriculumChunk]:
         return []
     chunks: List[CurriculumChunk] = []
     for path in sorted(data_dir.glob("*.jsonl")):
+        if path.name == "admin-published.jsonl":
+            continue
         with path.open("r", encoding="utf-8") as handle:
             for line_number, line in enumerate(handle, start=1):
                 stripped = line.strip()
@@ -172,3 +354,20 @@ def _is_topic_match(topic_norm: str, candidate_norm: str) -> bool:
 
 def _norm(value: str) -> str:
     return value.strip().lower().replace("_", " ")
+
+
+def _canonical_topic_alias(query_norm: str) -> str | None:
+    """Return a canonical topic intent without mutating stored metadata."""
+    aliases = {
+        "ideal gas law": (
+            "ideal gas",
+            "ideal gas law",
+            "ideal gas equation",
+            "pv = nrt",
+            "pv=nrt",
+        ),
+    }
+    for canonical, variants in aliases.items():
+        if any(variant in query_norm for variant in variants):
+            return canonical
+    return None

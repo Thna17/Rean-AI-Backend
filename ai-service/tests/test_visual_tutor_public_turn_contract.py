@@ -267,3 +267,72 @@ def test_public_board_snapshot_is_bound_to_the_single_active_lesson_step() -> No
         assert action["active_step_id"] == projected["lesson_state"]["active_step_id"]
         assert action["board_version"] == 9
         assert action["base_board_version"] == 8
+
+
+# The gateway rejects the whole turn if it sees a status outside this set
+# (backend-ai-tutor/backend/src/services/teaching-plan.contract.ts), and it is the
+# same set the AI service declares in api/routes/math_verifier.py. "verified" is
+# deliberately not a member: a verified answer is reported as "correct".
+PUBLIC_VERIFICATION_STATUSES = {
+    "correct",
+    "mathematically_valid_but_inefficient",
+    "invalid",
+    "incomplete",
+    "cannot_verify",
+}
+
+
+def test_public_verification_status_defaults_into_the_allowed_set() -> None:
+    """A verified turn with no explicit status must not invent one.
+
+    This path produced `status: "verified"`, which the gateway refuses, so every
+    physics kinematics turn failed with a 502 while this suite stayed green.
+    """
+    response = _response()
+    response.metadata["verified"] = True
+    response.metadata.pop("verification", None)
+
+    verification = project_public_tutor_turn(response)["verification"]
+
+    assert verification["verified"] is True
+    assert verification["status"] in PUBLIC_VERIFICATION_STATUSES, verification
+    assert verification["status"] == "correct"
+
+
+def test_public_verification_status_defaults_to_cannot_verify_when_unverified() -> None:
+    response = _response()
+    response.metadata["verified"] = False
+    response.metadata.pop("verification", None)
+
+    verification = project_public_tutor_turn(response)["verification"]
+
+    assert verification["verified"] is False
+    assert verification["status"] == "cannot_verify"
+
+
+def test_a_stored_status_outside_the_contract_is_normalised_not_forwarded() -> None:
+    """Defence in depth: no solver can leak an unknown status to the gateway."""
+    for stored, verified, expected in (
+        ("verified", True, "correct"),
+        ("looks_fine", True, "correct"),
+        ("weird", False, "cannot_verify"),
+        ("", True, "correct"),
+    ):
+        response = _response()
+        response.metadata["verified"] = verified
+        response.metadata["verification"] = {"status": stored, "verified": verified}
+
+        verification = project_public_tutor_turn(response)["verification"]
+        assert verification["status"] in PUBLIC_VERIFICATION_STATUSES
+        assert verification["status"] == expected, (stored, verification)
+
+
+def test_statuses_inside_the_contract_pass_through_untouched() -> None:
+    for status in sorted(PUBLIC_VERIFICATION_STATUSES):
+        response = _response()
+        response.metadata["verified"] = status == "correct"
+        response.metadata["verification"] = {
+            "status": status,
+            "verified": status == "correct",
+        }
+        assert project_public_tutor_turn(response)["verification"]["status"] == status

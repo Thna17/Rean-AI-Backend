@@ -15,15 +15,25 @@ class PublishVersionRequest(BaseModel):
     chunks: list[dict[str, Any]] = Field(min_length=1, max_length=5000)
 
 def _safe_chunks(version_id: str, chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    allowed = {"id", "grade", "subject", "topic", "content_type", "text", "language", "tags", "khmer_terms", "prerequisites"}
+    allowed = {
+        "id", "grade", "subject", "chapter", "topic", "subtopic",
+        "content_type", "text", "language", "tags", "khmer_terms",
+        "prerequisites", "formulas", "examples", "exercises",
+        "solution_steps", "common_misconceptions", "problem_types", "difficulty"
+    }
+    static_chunk_ids = get_default_curriculum_store().static_chunk_ids()
     output: list[dict[str, Any]] = []
     for raw in chunks:
-        item = {key: raw[key] for key in allowed if key in raw}
+        item = {key: raw[key] for key in allowed if key in raw and raw[key] is not None}
         source = raw.get("source") if isinstance(raw.get("source"), dict) else {}
         metadata = source.get("metadata") if isinstance(source.get("metadata"), dict) else {}
-        safe_metadata = {key: metadata.get(key) for key in ("curriculum_version_id", "curriculum_chunk_id", "source_content_id", "grade_level_id", "subject_id", "topic_id", "published_at")}
+        safe_metadata = {key: metadata.get(key) for key in ("curriculum_version_id", "curriculum_chunk_id", "source_content_id", "grade_level_id", "subject_id", "topic_id", "published_at", "review_status")}
         if safe_metadata.get("curriculum_version_id") != version_id:
             raise ValueError("Version id mismatch")
+        if safe_metadata.get("review_status") not in {"approved", "published"}:
+            raise ValueError("Only reviewed curriculum may be published")
+        if item.get("id") in static_chunk_ids:
+            raise ValueError("Published curriculum id collides with static catalog")
         item["source"] = {"type": "admin_published", "metadata": safe_metadata}
         output.append(item)
     return output

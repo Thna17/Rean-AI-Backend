@@ -107,6 +107,36 @@ from api.services.visual_tutor.worked_solution import (
     match_worked_solution,
     match_worked_solution_followup,
 )
+from api.services.visual_tutor.physics_kinematics import (
+    answer_about_physics_solution,
+    build_physics_worked_solution_turn,
+    match_physics_kinematics_problem,
+    match_physics_kinematics_followup,
+)
+from api.services.visual_tutor.chemistry_stoichiometry import (
+    answer_about_chemistry_solution,
+    build_chemistry_worked_solution_turn,
+    match_chemistry_stoichiometry_problem,
+    match_chemistry_stoichiometry_followup,
+)
+from api.services.visual_tutor.rag_curriculum_gate import (
+    classify_student_query,
+    ClassificationResult,
+)
+from api.services.visual_tutor.dynamic_worked_solution import (
+    build_dynamic_worked_solution_turn,
+    answer_dynamic_followup,
+)
+from api.services.visual_tutor.scope import (
+    build_out_of_scope_message,
+    build_solver_not_ready_message,
+    check_scope,
+)
+from api.services.visual_tutor.topic_guard import (
+    TopicGuardDecision,
+    build_off_topic_message,
+    evaluate_topic_guard,
+)
 from api.services.visual_tutor.solvers import (
     LineThroughPoints,
     LinearEquation,
@@ -148,10 +178,7 @@ _SCOPE_LOCK_TOPIC_ID = "math-g12-limits-of-functions"
 
 
 def _scope_lock_active() -> bool:
-    return (
-        settings.VISUAL_TUTOR_SCOPE_LOCK.strip().lower()
-        == _SCOPE_LOCK_GRADE12_MATH_LIMITS
-    )
+    return bool(settings.VISUAL_TUTOR_SCOPE_LOCK.strip())
 
 
 def _is_grade12_math_limits_request(
@@ -172,7 +199,7 @@ def _is_grade12_math_limits_request(
         # matches_local_limits_demo() already relies on for this exact topic.
         return (topic or "").strip().lower() == "limits of functions"
     # Free-form entries (dashboard "ask anything", Tutor "type a question",
-    # voice, scan) all carry LearningContext.askQuestion -- grade 0, subject
+    # and voice) all carry LearningContext.askQuestion -- grade 0, subject
     # "General", no topic_id -- so metadata alone refuses every question a
     # student types, whatever it says. Classify the text instead:
     # parse_limit_of_function only matches a single-variable limit that sympy
@@ -189,20 +216,27 @@ def _out_of_scope_turn(
     *,
     session_id: str,
 ) -> VisualTutorTurnResponse:
-    """Scoped-out response while VISUAL_TUTOR_SCOPE_LOCK restricts traffic to
-    Grade 12 limits of functions (see api.core.config.Settings). Physics,
-    chemistry, other grades, and other math topics stay implemented -- this
-    is a temporary gate during stabilization, not a deletion.
-    """
-    message = (
-        "This tutor is currently focused on Grade 12 limits of functions "
-        "only. Other subjects, topics, and grades aren't available yet."
+    """Scoped-out response when a request falls outside Grade 12 STEM scope."""
+    lang_mode = (
+        request.language_mode.value
+        if hasattr(request.language_mode, "value")
+        else (
+            request.language_mode
+            or request.metadata.get("language_mode")
+            or "english"
+        )
     )
+    refusal = build_out_of_scope_message(str(lang_mode))
+    message = refusal["display_text"]
     metadata = {
         "screen_state": "unsupported_problem",
         "generation_path": "scope_locked",
         "fallback_reason": "out_of_scope_lock",
         "scope_lock": settings.VISUAL_TUTOR_SCOPE_LOCK,
+        "supported_scope": {
+            "grade": 12,
+            "subjects": ["mathematics", "physics", "chemistry"],
+        },
     }
     return VisualTutorTurnResponse(
         session_id=session_id,
@@ -211,26 +245,489 @@ def _out_of_scope_turn(
         display_text=message,
         teaching_mode=VisualTutorTeachingMode.GUIDED_QUESTION,
         final_answer_locked=True,
-        student_task="Try a Grade 12 limits of functions problem.",
+        student_task=refusal["student_task"],
         board=VisualTutorBoard(
             type=VisualTutorBoardType.FORMULA_CARD,
-            title="Not in current scope",
+            title=refusal["board_title"],
             items=[
                 VisualTutorBoardItem(
                     label="Status",
-                    content=(
-                        "This build only teaches Grade 12 limits of "
-                        "functions right now."
-                    ),
+                    content=refusal["board_content"],
                     status="active",
                 ),
             ],
             metadata=metadata,
         ),
-        speech=VisualTutorSpeech(text=message, language="en"),
+        speech=VisualTutorSpeech(
+            text=message,
+            language="km" if str(lang_mode).lower() in {"khmer", "km"} else "en",
+        ),
         interaction=VisualTutorInteraction(
             type=VisualTutorInteractionType.TEXT_RESPONSE,
-            prompt="Try a Grade 12 limits of functions problem.",
+            prompt=refusal["student_task"],
+            input_enabled=True,
+            expected_answer_locked=False,
+        ),
+        allowed_actions=[],
+        mastery_signal=VisualTutorMasterySignal.EXPLORING,
+        metadata=metadata,
+    )
+
+
+def _off_topic_for_lesson_turn(
+    request: VisualTutorTurnRequest,
+    *,
+    session_id: str,
+    decision: TopicGuardDecision,
+) -> VisualTutorTurnResponse:
+    """Redirect a problem that does not belong to the lesson the student opened."""
+    lang_mode = str(
+        getattr(request.language_mode, "value", request.language_mode)
+        or request.metadata.get("language_mode")
+        or "english"
+    )
+    redirect = build_off_topic_message(decision, lang_mode)
+    message = redirect["display_text"]
+    metadata = {
+        "screen_state": "unsupported_problem",
+        "generation_path": "topic_guard",
+        "fallback_reason": "off_topic_for_lesson",
+        "topic_guard": {
+            "lesson_topic": decision.lesson_topic,
+            "lesson_family": decision.lesson_family,
+            "detected_family": decision.detected_family,
+        },
+    }
+    return VisualTutorTurnResponse(
+        session_id=session_id,
+        turn_id=str(uuid.uuid4()),
+        spoken_text=message,
+        display_text=message,
+        teaching_mode=VisualTutorTeachingMode.GUIDED_QUESTION,
+        final_answer_locked=True,
+        student_task=redirect["student_task"],
+        board=VisualTutorBoard(
+            type=VisualTutorBoardType.FORMULA_CARD,
+            title=redirect["board_title"],
+            items=[
+                VisualTutorBoardItem(
+                    label="Status",
+                    content=redirect["board_content"],
+                    status="active",
+                ),
+            ],
+            metadata=metadata,
+        ),
+        speech=VisualTutorSpeech(
+            text=message,
+            language="km" if lang_mode.lower() in {"khmer", "km"} else "en",
+        ),
+        interaction=VisualTutorInteraction(
+            type=VisualTutorInteractionType.TEXT_RESPONSE,
+            prompt=redirect["student_task"],
+            input_enabled=True,
+            expected_answer_locked=False,
+        ),
+        allowed_actions=[],
+        mastery_signal=VisualTutorMasterySignal.EXPLORING,
+        metadata=metadata,
+    )
+
+
+_INJECTION_PATTERNS = [
+    re.compile(r"(?i)\bignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions\b"),
+    re.compile(r"(?i)\b(?:print|show|reveal|display|output|tell\s+me|repeat)\s+(?:your\s+)?(?:full\s+)?(?:system\s+prompt|system\s+instructions?|developer\s+prompt|initial\s+instructions?)\b"),
+    re.compile(r"(?i)\b(?:what\s+is\s+your\s+)?system\s+prompt\b"),
+    re.compile(r"(?i)\b(?:what\s+are\s+your\s+)?instructions\s+before\s+this\b"),
+    re.compile(r"(?i)\b(?:disregard|forget|override)\s+(?:all\s+)?(?:previous|prior|above)\s+instructions\b"),
+    re.compile(r"(?i)\bjailbreak\b|\bdan\s+mode\b"),
+    re.compile(r"(?i)\byou\s+are\s+now\s+(?:in\s+)?developer\s+mode\b"),
+    re.compile(r"(?:មិនអើពើ|បំភ្លេច)(?:រាល់)?(?:ការណែនាំ|បញ្ជា)"),
+    re.compile(r"(?:បង្ហាញ|ប្រាប់)(?:ពី)?(?:system\s*prompt|ការណែនាំប្រព័ន្ធ)"),
+    re.compile(r"system\s*prompt"),
+]
+
+_GREETING_WORDS = {
+    "hello", "hi", "hey", "greetings", "good", "morning", "afternoon", "evening",
+    "howdy", "welcome", "bye", "goodbye", "thanks", "thank", "you", "please",
+}
+
+_KM_GREETINGS = (
+    "សួស្តី", "ជំរាបសួរ", "ជម្រាបសួរ", "សុខសប្បាយជាទេ", "សុខសប្បាយ",
+    "អរគុណ", "លាហើយ", "បាទ", "ចាស", "សូមស្វាគមន៍",
+)
+
+_SMALLTALK_PHRASES = {
+    "how are you", "how are you doing", "who are you", "what is your name",
+    "what can you do", "nice to meet you", "good morning", "good afternoon",
+    "good evening", "good night", "hello there", "hi there",
+}
+
+_STEM_KEYWORDS = {
+    # Math
+    "limit", "limits", "lim", "solve", "find", "calculate", "evaluate",
+    "equation", "equations", "derivative", "integral", "integrate", "differentiate",
+    "function", "functions", "slope", "intercept", "graph", "domain", "range",
+    "matrix", "matrices", "vector", "vectors", "line", "points", "point",
+    "quadratic", "linear", "polynomial", "factor", "simplify", "expand",
+    "triangle", "circle", "angle", "sin", "cos", "tan", "log", "ln", "exp",
+    "probability", "percentage", "arithmetic", "fraction", "root", "power",
+    "sum", "difference", "product", "quotient", "theorem", "proof", "value",
+    "maximum", "minimum", "vertex", "asymptote", "continuous", "discontinuous",
+    "converge", "diverge", "sequence", "series", "parallel", "perpendicular",
+    # Physics
+    "velocity", "speed", "acceleration", "force", "mass", "weight", "gravity",
+    "momentum", "impulse", "energy", "work", "power", "kinetic", "potential",
+    "friction", "tension", "motion", "kinematics", "dynamics", "projectile",
+    "wavelength", "frequency", "wave", "waves", "circuit", "current", "voltage",
+    "resistance", "resistor", "capacitor", "ohm", "ampere", "volt", "joule", "watt",
+    "newton", "kelvin", "temperature", "pressure", "heat", "gas", "optics", "focal",
+    "reflection", "refraction", "lens", "mirror", "orbit", "satellite",
+    # Chemistry
+    "mole", "moles", "molar", "mass", "reaction", "reactions", "stoichiometry",
+    "acid", "acids", "base", "bases", "ph", "titration", "neutralization",
+    "element", "compound", "molecule", "atom", "atomic", "electron", "proton",
+    "neutron", "bond", "bonds", "solution", "concentration", "equilibrium",
+    "organic", "hydrocarbon", "alkane", "alkene", "alkyne", "alcohol", "ester",
+    "precipitation", "oxidation", "reduction", "redox", "enthalpy", "entropy",
+    # General problem inquiry / followups
+    "why", "how", "what", "which", "explain", "step", "steps", "cancel",
+    "substitute", "where", "show", "check", "verify", "help", "hint", "stuck",
+    "differently", "correct", "wrong", "mistake", "answer", "reason", "understand",
+}
+
+_COMMON_ENGLISH_WORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "in", "on", "at", "to", "for", "with", "by", "from", "about", "against",
+    "between", "into", "through", "during", "before", "after", "above", "below",
+    "up", "down", "off", "over", "under", "again", "further",
+    "then", "once", "here", "there", "when", "where", "why", "how", "all",
+    "any", "both", "each", "few", "more", "most", "other", "some", "such",
+    "no", "nor", "not", "only", "own", "same", "so", "than", "too", "very",
+    "can", "will", "just", "should", "now", "i", "me", "my", "myself",
+    "we", "our", "ours", "ourselves", "you", "your", "yours", "yourself",
+    "he", "him", "his", "himself", "she", "her", "hers", "herself", "it",
+    "its", "itself", "they", "them", "their", "theirs", "themselves",
+    "do", "does", "did", "doing", "have", "has", "had", "having",
+    "car", "ball", "train", "box", "block", "water", "tank", "object", "body",
+    "starts", "moves", "travels", "thrown", "drops", "falls", "collides",
+    "time", "second", "seconds", "meter", "meters", "hour", "hours", "distance",
+}
+
+
+def _detect_empty_or_punctuation(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return True
+    return not bool(re.search(r"[a-zA-Z0-9\u1780-\u17d3\u17e0-\u17e9]", stripped))
+
+
+def _detect_system_instruction(text: str) -> bool:
+    stripped = text.strip()
+    return any(p.search(stripped) for p in _INJECTION_PATTERNS)
+
+
+def _detect_greeting_or_smalltalk(text: str) -> bool:
+    stripped = text.strip()
+    if re.search(r"[=+*/^<>≤≥∫∑√π\\]|[0-9\u17e0-\u17e9]", stripped):
+        return False
+    if any(km in stripped for km in _KM_GREETINGS):
+        return True
+    words = re.findall(r"[a-zA-Z]+", stripped.lower())
+    if words and all(w in _GREETING_WORDS for w in words):
+        return True
+    cleaned_lower = re.sub(r"[^a-z\s]", "", stripped.lower()).strip()
+    return cleaned_lower in _SMALLTALK_PHRASES
+
+
+_CONSONANT_CLUSTER_RE = re.compile(r"[bcdfghjklmnpqrstvwxyz]{5,}")
+_KEYBOARD_WALK_RE = re.compile(
+    r"asdf|sdfg|dfgh|fghj|ghjk|hjkl|qwer|wery|erty|rtyu|tyui|yuio|uiop|zxcv|xcvb|cvbn|vbnm|poiuy|lkjhg|mnbvc"
+)
+_NO_VOWELS_RE = re.compile(r"\b[bcdfghjklmnpqrstvwxz]{4,}\b")
+_COMMON_STEM_ACRONYMS = {"lcm", "gcd", "dna", "atp", "nmr", "rms", "emf", "ph", "stp", "ntp"}
+
+
+def _is_gibberish_word(w: str) -> bool:
+    w = w.lower()
+    if len(w) < 3:
+        return False
+    if w in _COMMON_STEM_ACRONYMS:
+        return False
+    if _CONSONANT_CLUSTER_RE.search(w):
+        return True
+    if _KEYBOARD_WALK_RE.search(w):
+        return True
+    if _NO_VOWELS_RE.search(w):
+        return True
+    if re.search(r"q[^u\s]", w):
+        return True
+    return False
+
+
+def _detect_unparseable_gibberish(text: str) -> bool:
+    stripped = text.strip()
+    if re.search(r"[=+*/^<>≤≥∫∑√π\\]|[0-9\u17e0-\u17e9]", stripped):
+        return False
+    words = re.findall(r"[a-zA-Z]+", stripped.lower())
+    if not words:
+        return False
+    gibberish_count = sum(1 for w in words if _is_gibberish_word(w))
+    return gibberish_count > 0 and (gibberish_count / len(words) >= 0.5)
+
+
+def _check_not_a_problem_input(request: VisualTutorTurnRequest) -> Optional[str]:
+    message = (request.message or "").strip()
+
+    # 1. Prompt injection is blocked unconditionally
+    if _detect_system_instruction(message):
+        return "prompt_injection"
+
+    # If the student is submitting a step on an active problem, let step validation handle it
+    if (
+        request.action == VisualTutorAction.SUBMIT_STEP
+        or request.student_submitted_step
+    ) and (request.current_state.problem_text or "").strip():
+        return None
+
+    # Built-in help button clicks have their own handlers
+    if request.action in {
+        VisualTutorAction.REQUEST_HINT,
+        VisualTutorAction.REQUEST_STUCK_HELP,
+        VisualTutorAction.EXPLAIN_DIFFERENTLY,
+    }:
+        return None
+
+    # Empty message when action is START or when there is no problem text is handled by _greeting
+    if not message:
+        return None
+
+    # 2. Punctuation / symbol only (no letters or digits)
+    if _detect_empty_or_punctuation(message):
+        return "punctuation_only"
+
+    # 3. Greeting or small talk without math
+    if _detect_greeting_or_smalltalk(message):
+        return "greeting_smalltalk"
+
+    # 4. Unparseable gibberish without math
+    if _detect_unparseable_gibberish(message):
+        return "unparseable_gibberish"
+
+    return None
+
+
+def build_not_a_problem_message(reason: str, language_mode: str = "english") -> dict[str, str]:
+    """Clarification asking for a solvable STEM problem, in the student's language."""
+    mode = (language_mode or "").strip().lower()
+    is_khmer = mode in {"khmer", "km"}
+    is_bilingual = mode == "bilingual"
+
+    if reason == "greeting_smalltalk":
+        text_en = (
+            "Hello! I am your AI visual tutor for mathematics, physics, and chemistry. "
+            "Please provide a STEM problem you would like to explore or solve together."
+        )
+        text_km = (
+            "សួស្តី! ខ្ញុំជាគ្រូបង្រៀន AI សម្រាប់មុខវិជ្ជាគណិតវិទ្យា រូបវិទ្យា និងគីមីវិទ្យា។ "
+            "សូមផ្ញើលំហាត់ STEM ដែលអ្នកចង់ដោះស្រាយជាមួយគ្នា។"
+        )
+        task_en = "Type or ask a math, physics, or chemistry problem."
+        task_km = "សូមបញ្ចូលលំហាត់គណិតវិទ្យា រូបវិទ្យា ឬគីមីវិទ្យាមួយ។"
+        title_en = "Welcome to STEM Tutor"
+        title_km = "សូមស្វាគមន៍"
+    elif reason == "punctuation_only":
+        text_en = (
+            "I couldn't detect a problem statement. "
+            "Please provide a complete mathematics, physics, or chemistry problem."
+        )
+        text_km = (
+            "ខ្ញុំមិនបានឃើញប្រធានលំហាត់ជាក់លាក់ណាមួយទេ។ "
+            "សូមផ្ញើលំហាត់គណិតវិទ្យា រូបវិទ្យា ឬគីមីវិទ្យាពេញលេញមួយ។"
+        )
+        task_en = "Please enter a STEM problem."
+        task_km = "សូមបញ្ចូលលំហាត់ STEM មួយ។"
+        title_en = "Problem Required"
+        title_km = "សូមបញ្ចូលលំហាត់"
+    elif reason == "prompt_injection":
+        text_en = (
+            "I am designed to guide you step-by-step through STEM problems in "
+            "mathematics, physics, and chemistry. "
+            "Please provide a STEM problem to get started."
+        )
+        text_km = (
+            "ខ្ញុំត្រូវបានបង្កើតឡើងដើម្បីជួយអ្នកដោះស្រាយលំហាត់ STEM ក្នុងមុខវិជ្ជា"
+            "គណិតវិទ្យា រូបវិទ្យា និងគីមីវិទ្យាតាមជំហាននីមួយៗ។ "
+            "សូមបញ្ចូលលំហាត់ STEM ដើម្បីចាប់ផ្តើម។"
+        )
+        task_en = "Please enter a STEM problem."
+        task_km = "សូមបញ្ចូលលំហាត់ STEM មួយ។"
+        title_en = "STEM Tutor Ready"
+        title_km = "ត្រៀមខ្លួនសម្រាប់លំហាត់ STEM"
+    else:  # unparseable_gibberish or other
+        text_en = (
+            "I couldn't recognize that as a mathematics, physics, or chemistry problem. "
+            "Please provide a clear STEM problem for us to solve together."
+        )
+        text_km = (
+            "ខ្ញុំមិនបានសម្គាល់ឃើញថាជាលំហាត់គណិតវិទ្យា រូបវិទ្យា ឬគីមីវិទ្យានោះទេ។ "
+            "សូមផ្ញើលំហាត់ STEM ឲ្យបានច្បាស់លាស់ដើម្បីយើងដោះស្រាយជាមួយគ្នា។"
+        )
+        task_en = "Please provide a clear STEM problem."
+        task_km = "សូមផ្ញើលំហាត់ STEM ឲ្យបានច្បាស់លាស់មួយ។"
+        title_en = "Clarification Needed"
+        title_km = "ត្រូវការបញ្ជាក់បន្ថែម"
+
+    # Only bilingual mode shows both languages. Pairing them in a single-language
+    # turn hands the student prose they cannot read.
+    if is_khmer:
+        return {
+            "display_text": f"{text_km}\n\n{text_en}" if is_bilingual else text_km,
+            "spoken_text": text_km,
+            "student_task": task_km,
+            "board_title": title_km,
+            "board_content": text_km,
+        }
+    return {
+        "display_text": f"{text_en}\n\n{text_km}" if is_bilingual else text_en,
+        "spoken_text": text_en,
+        "student_task": task_en,
+        "board_title": title_en,
+        "board_content": text_en,
+    }
+
+
+def _not_a_problem_turn(
+    request: VisualTutorTurnRequest,
+    *,
+    session_id: str,
+    reason: str,
+) -> VisualTutorTurnResponse:
+    """Clarification turn for non-solvable or non-STEM student input."""
+    lang_mode = str(
+        getattr(request.language_mode, "value", request.language_mode)
+        or request.metadata.get("language_mode")
+        or "english"
+    )
+    is_km = lang_mode.strip().lower() in {"khmer", "km"}
+    clarification = build_not_a_problem_message(reason, lang_mode)
+    message = clarification["display_text"]
+    spoken_text = clarification["spoken_text"]
+    metadata = {
+        "screen_state": "unsupported_problem",
+        "generation_path": "not_a_problem",
+        "fallback_reason": "not_a_problem",
+        "not_a_problem_reason": reason,
+        "verified": False,
+        "verification": {
+            "status": "cannot_verify",
+            "verified": False,
+            "concise_evidence": clarification["student_task"],
+            "student_message": clarification["student_task"],
+        },
+    }
+    return VisualTutorTurnResponse(
+        session_id=session_id,
+        turn_id=str(uuid.uuid4()),
+        spoken_text=spoken_text,
+        display_text=message,
+        teaching_mode=VisualTutorTeachingMode.GUIDED_QUESTION,
+        final_answer_locked=True,
+        student_task=clarification["student_task"],
+        board=VisualTutorBoard(
+            type=VisualTutorBoardType.FORMULA_CARD,
+            title=clarification["board_title"],
+            items=[
+                VisualTutorBoardItem(
+                    label="Status",
+                    content=clarification["board_content"],
+                    status="active",
+                ),
+            ],
+            metadata=metadata,
+        ),
+        speech=VisualTutorSpeech(
+            text=spoken_text,
+            language="km" if is_km else "en",
+        ),
+        interaction=VisualTutorInteraction(
+            type=VisualTutorInteractionType.TEXT_RESPONSE,
+            prompt=clarification["student_task"],
+            input_enabled=True,
+            expected_answer_locked=False,
+        ),
+        allowed_actions=[],
+        mastery_signal=VisualTutorMasterySignal.EXPLORING,
+        metadata=metadata,
+    )
+
+
+def _solver_not_ready_turn(
+    request: VisualTutorTurnRequest,
+    *,
+    session_id: str,
+    subject: str,
+    topic: Optional[str] = None,
+) -> VisualTutorTurnResponse:
+    """Honest response for in-scope Grade 12 STEM topics without a verified solver."""
+    lang_mode = (
+        request.language_mode.value
+        if hasattr(request.language_mode, "value")
+        else (
+            request.language_mode
+            or request.metadata.get("language_mode")
+            or "english"
+        )
+    )
+    msg_data = build_solver_not_ready_message(
+        subject=subject,
+        topic=topic or request.topic,
+        language_mode=str(lang_mode),
+    )
+    message = msg_data["display_text"]
+    metadata = {
+        "screen_state": "unsupported_problem",
+        "generation_path": "solver_not_ready",
+        "fallback_reason": "solver_not_implemented",
+        "solver_ready": False,
+        "verified": False,
+        "curriculum_status": "ai_unverified",
+        "verification": {
+            "status": "cannot_verify",
+            "verified": False,
+            "student_message": "A deterministic solver is not available for this problem yet.",
+            "concise_evidence": "No deterministic verification was performed.",
+        },
+        "subject": subject,
+        "topic": topic or request.topic,
+    }
+    return VisualTutorTurnResponse(
+        session_id=session_id,
+        turn_id=str(uuid.uuid4()),
+        spoken_text=message,
+        display_text=message,
+        teaching_mode=VisualTutorTeachingMode.GUIDED_QUESTION,
+        final_answer_locked=True,
+        student_task=msg_data["student_task"],
+        board=VisualTutorBoard(
+            type=VisualTutorBoardType.FORMULA_CARD,
+            title=msg_data["board_title"],
+            items=[
+                VisualTutorBoardItem(
+                    label="Status",
+                    content=msg_data["board_content"],
+                    status="active",
+                ),
+            ],
+            metadata=metadata,
+        ),
+        speech=VisualTutorSpeech(
+            text=message,
+            language="km" if str(lang_mode).lower() in {"khmer", "km"} else "en",
+        ),
+        interaction=VisualTutorInteraction(
+            type=VisualTutorInteractionType.TEXT_RESPONSE,
+            prompt=msg_data["student_task"],
             input_enabled=True,
             expected_answer_locked=False,
         ),
@@ -246,10 +743,8 @@ def _out_of_scope_step_turn(
     grade: int,
 ) -> VisualTutorStepTurnResponse:
     """Step-sequencing counterpart of _out_of_scope_turn -- see there for why."""
-    message = (
-        "This tutor is currently focused on Grade 12 limits of functions "
-        "only. Other subjects, topics, and grades aren't available yet."
-    )
+    refusal = build_out_of_scope_message("english")
+    message = refusal["display_text"]
     step = {"step_id": "scope-locked", "content": {"message": message}}
     return VisualTutorStepTurnResponse(
         session_id=request.session_id,
@@ -273,31 +768,90 @@ def handle_visual_tutor_turn(
     solver_registry: VisualTutorSolverRegistry = DEFAULT_VISUAL_TUTOR_SOLVER_REGISTRY,
 ) -> VisualTutorTurnResponse:
     session_id = request.session_id or str(uuid.uuid4())
-    if _scope_lock_active() and not _is_grade12_math_limits_request(
-        grade=_grade_from_request(request),
-        subject=request.subject,
-        topic=request.topic or "",
-        topic_id=str(request.metadata.get("topic_id") or ""),
-        # A follow-up question ("why can we cancel?") is not itself a limits
-        # problem, so the problem under discussion decides scope too. Without
-        # this, every question about an in-scope solution was refused.
-        message=request.message or "",
-        problem_text=request.current_state.problem_text or "",
-    ):
-        # A silent refusal is indistinguishable from a broken tutor: the
-        # student just sees "not available yet" with nothing anywhere saying
-        # which input was judged out of scope.
+    grade = _grade_from_request(request)
+    lang_mode = (
+        request.language_mode.value
+        if hasattr(request.language_mode, "value")
+        else (
+            request.language_mode
+            or request.metadata.get("language_mode")
+            or "english"
+        )
+    )
+    scope_decision = None
+    if _scope_lock_active():
+        if settings.VISUAL_TUTOR_SCOPE_LOCK.strip().lower() == _SCOPE_LOCK_GRADE12_MATH_LIMITS:
+            if not _is_grade12_math_limits_request(
+                grade=grade,
+                subject=request.subject,
+                topic=request.topic or "",
+                topic_id=str(request.metadata.get("topic_id") or ""),
+                message=request.message or "",
+                problem_text=request.current_state.problem_text or "",
+            ):
+                logger.info(
+                    "visual_tutor_scope_refused grade=%r subject=%r topic=%r topic_id=%r action=%r message=%r",
+                    grade,
+                    request.subject,
+                    request.topic,
+                    request.metadata.get("topic_id"),
+                    getattr(request.action, "value", request.action),
+                    (request.message or "")[:200],
+                )
+                return _finalize_response(
+                    request, _out_of_scope_turn(request, session_id=session_id)
+                )
+        else:
+            scope_decision = check_scope(
+                grade=grade,
+                subject=request.subject,
+                topic=request.topic,
+                topic_id=str(request.metadata.get("topic_id") or "") if request.metadata.get("topic_id") else None,
+                message=request.message or "",
+                problem_text=request.current_state.problem_text or "",
+                language_mode=str(lang_mode) if lang_mode else None,
+            )
+            if not scope_decision.is_in_scope:
+                logger.info(
+                    "visual_tutor_scope_refused grade=%r subject=%r topic=%r topic_id=%r action=%r message=%r",
+                    grade,
+                    request.subject,
+                    request.topic,
+                    request.metadata.get("topic_id"),
+                    getattr(request.action, "value", request.action),
+                    (request.message or "")[:200],
+                )
+                return _finalize_response(
+                    request, _out_of_scope_turn(request, session_id=session_id)
+                )
+    # A lesson opened from the curriculum only teaches its own topic.
+    topic_decision = evaluate_topic_guard(request)
+    if topic_decision is not None and not topic_decision.allowed:
         logger.info(
-            "visual_tutor_scope_refused grade=%r subject=%r topic=%r topic_id=%r action=%r message=%r",
-            _grade_from_request(request),
-            request.subject,
-            request.topic,
-            request.metadata.get("topic_id"),
+            "visual_tutor_topic_redirect lesson_topic=%r lesson_family=%r detected=%r action=%r message=%r",
+            topic_decision.lesson_topic,
+            topic_decision.lesson_family,
+            topic_decision.detected_family,
             getattr(request.action, "value", request.action),
             (request.message or "")[:200],
         )
         return _finalize_response(
-            request, _out_of_scope_turn(request, session_id=session_id)
+            request,
+            _off_topic_for_lesson_turn(request, session_id=session_id, decision=topic_decision),
+        )
+    # Check for non-problem student inputs (gibberish, punctuation-only, greeting, prompt injection)
+    # BEFORE any worked-solution planner (limits, physics, chemistry, dynamic worked solution).
+    not_a_problem_reason = _check_not_a_problem_input(request)
+    if not_a_problem_reason is not None:
+        logger.info(
+            "visual_tutor_not_a_problem reason=%r action=%r message=%r",
+            not_a_problem_reason,
+            getattr(request.action, "value", request.action),
+            (request.message or "")[:200],
+        )
+        return _finalize_response(
+            request,
+            _not_a_problem_turn(request, session_id=session_id, reason=not_a_problem_reason),
         )
     # A new limit problem is answered with the complete, sympy-verified worked
     # solution by default. Students who choose "Try it myself" (tutor_mode)
@@ -330,6 +884,60 @@ def handle_visual_tutor_turn(
                 logger.exception(
                     "visual_tutor solution follow-up failed; using guided flow"
                 )
+
+    # A physics kinematics problem is answered with a complete, sympy-verified worked solution.
+    physics_problem = match_physics_kinematics_problem(request)
+    if physics_problem is not None:
+        try:
+            return _finalize_response(
+                request,
+                build_physics_worked_solution_turn(request, physics_problem, session_id=session_id),
+            )
+        except Exception:
+            logger.exception("visual_tutor physics kinematics worked solution failed")
+    else:
+        physics_followup = match_physics_kinematics_followup(request)
+        if physics_followup is not None:
+            try:
+                return _finalize_response(
+                    request,
+                    answer_about_physics_solution(
+                        request,
+                        physics_followup,
+                        session_id=session_id,
+                        llm_client=llm_client,
+                    ),
+                )
+            except Exception:
+                logger.exception("visual_tutor physics kinematics follow-up failed")
+
+    # A chemistry stoichiometry problem is answered with a complete, sympy-verified worked solution.
+    chemistry_problem = match_chemistry_stoichiometry_problem(request)
+    if chemistry_problem is not None:
+        try:
+            return _finalize_response(
+                request,
+                build_chemistry_worked_solution_turn(
+                    request, chemistry_problem, session_id=session_id
+                ),
+            )
+        except Exception:
+            logger.exception("visual_tutor chemistry stoichiometry worked solution failed")
+    else:
+        chemistry_followup = match_chemistry_stoichiometry_followup(request)
+        if chemistry_followup is not None:
+            try:
+                return _finalize_response(
+                    request,
+                    answer_about_chemistry_solution(
+                        request,
+                        chemistry_followup,
+                        session_id=session_id,
+                        llm_client=llm_client,
+                    ),
+                )
+            except Exception:
+                logger.exception("visual_tutor chemistry stoichiometry follow-up failed")
     # This is the only provider-independent student-facing curriculum demo.
     # It is keyed by the explicit local curriculum version, not loose topic
     # text, so it cannot shadow a production Lesson 1.1 publication.
@@ -367,6 +975,113 @@ def handle_visual_tutor_turn(
     problem_message = _problem_message(request)
     if not problem_message:
         return _finalize_response(request, _greeting(request, session_id=session_id))
+
+    # Check if student explicitly chose "try_myself" mode
+    metadata = request.metadata if isinstance(request.metadata, dict) else {}
+    is_try_myself = str(metadata.get("tutor_mode") or "").strip().lower() == "try_myself"
+
+    if not is_try_myself:
+        # Dynamic RAG Curriculum Pipeline:
+        # 1. Check if student message is a follow-up question on an existing whiteboard problem
+        current_problem = (request.current_state.problem_text or "").strip()
+        user_msg = (request.message or "").strip()
+        is_same_as_problem = (
+            user_msg.lower() == current_problem.lower()
+            or (len(user_msg) > 10 and user_msg.lower() in current_problem.lower())
+        )
+        is_followup_question = (
+            request.action in {
+                VisualTutorAction.SUBMIT_STEP,
+                VisualTutorAction.REQUEST_HINT,
+                VisualTutorAction.REQUEST_STUCK_HELP,
+                VisualTutorAction.EXPLAIN_DIFFERENTLY,
+            }
+            or any(
+                w in user_msg.lower()
+                for w in (
+                    "why", "how", "what", "where", "can you", "could you",
+                    "explain", "meaning", "mean", "តើ", "ហេតុអ្វី", "ដូចម្តេច",
+                    "យ៉ាងម៉េច", "ពន្យល់",
+                )
+            )
+            or "?" in user_msg
+            or "step" in user_msg.lower()
+            or "ជំហាន" in user_msg
+        )
+        if current_problem and user_msg and not is_same_as_problem and is_followup_question:
+            is_fresh_limit = parse_limit_of_function(user_msg) is not None
+            is_fresh_physics = match_physics_kinematics_problem(request) is not None
+            is_fresh_chemistry = match_chemistry_stoichiometry_problem(request) is not None
+            if not (is_fresh_limit or is_fresh_physics or is_fresh_chemistry):
+                classification = classify_student_query(
+                    current_problem,
+                    grade=grade,
+                    subject=request.subject,
+                    topic=request.topic,
+                )
+                if classification.tier == "out_of_scope":
+                    return _finalize_response(
+                        request,
+                        _out_of_scope_turn(request, session_id=session_id),
+                    )
+                try:
+                    return _finalize_response(
+                        request,
+                        answer_dynamic_followup(
+                            request,
+                            classification,
+                            session_id=session_id,
+                            llm_client=llm_client,
+                        ),
+                    )
+                except Exception:
+                    logger.exception("answer_dynamic_followup failed; continuing to solver")
+
+        # 2. Otherwise, it is a problem to solve (START / SUBMIT_PROBLEM / SUBMIT_STEP)
+        target_text = problem_message or user_msg
+        classification = classify_student_query(
+            target_text,
+            grade=grade,
+            subject=request.subject,
+            topic=request.topic,
+        )
+        if classification.tier == "out_of_scope":
+            return _finalize_response(
+                request,
+                _out_of_scope_turn(request, session_id=session_id),
+            )
+
+        # Curriculum grounding and answer verification are separate. A matching
+        # chunk may guide an LLM answer, but only the worked-solution builder's
+        # deterministic solver/checker may mark that answer verified.
+        require_verified = bool(
+            metadata.get("require_verified_solver")
+            or not settings.VISUAL_TUTOR_ALLOW_UNVERIFIED_AI
+        )
+
+        try:
+            dynamic_response = build_dynamic_worked_solution_turn(
+                request,
+                classification,
+                session_id=session_id,
+                llm_client=llm_client,
+            )
+            if require_verified and dynamic_response.metadata.get("verified") is not True:
+                return _finalize_response(
+                    request,
+                    _solver_not_ready_turn(
+                        request,
+                        session_id=session_id,
+                        subject=classification.subject,
+                        topic=classification.topic or request.topic,
+                    ),
+                )
+            return _finalize_response(
+                request,
+                dynamic_response,
+            )
+        except Exception:
+            logger.exception("build_dynamic_worked_solution_turn failed; falling through to guided flow")
 
     # Step-gating: if a student_task is pending (pending_interaction in
     # session metadata) and the student sent a blank or non-substantive
@@ -1655,6 +2370,16 @@ def _finalize_response(
         )
     if curriculum_meta:
         metadata.update(curriculum_meta)
+    if policy is not None and response.metadata.get("planner"):
+        # Planner metadata must name only the curriculum chunks that were
+        # actually included in its bounded prompt, not every retrieved chunk.
+        metadata["curriculum_chunk_ids"] = [
+            str(chunk.get("id"))
+            for chunk in (policy.metadata.get("curriculum_context") or [])[:3]
+            if isinstance(chunk, dict)
+            and isinstance(chunk.get("id"), str)
+            and str(chunk.get("id")).strip()
+        ]
     if policy is not None and policy.metadata.get("orchestrator_flow"):
         metadata["orchestrator_flow"] = policy.metadata["orchestrator_flow"]
     solver_facts = _solver_facts_from_policy(policy)
@@ -1798,7 +2523,10 @@ def _finalize_response(
         response_metadata["verification_result"] = verification_contract["status"]
         response_metadata["verification_evidence"] = verification_contract["evidence"]
         response_metadata["verification_verified"] = is_correct_operation
-    elif request.action == VisualTutorAction.SUBMIT_STEP:
+    elif (
+        request.action == VisualTutorAction.SUBMIT_STEP
+        and not response.metadata.get("is_followup")
+    ):
         problem = request.current_state.problem_text or request.metadata.get(
             "problem_text"
         )
@@ -1868,6 +2596,27 @@ def _finalize_response(
         ),
         "verification": response_metadata.get("verification_result"),
     }
+    # Keep a follow-up's board_version monotonic. The mode it reports has to stay
+    # inside the public contract: "append" is refused by both the gateway and the
+    # Flutter client, which made every follow-up a 502.
+    is_followup_turn = bool(response.metadata.get("is_followup"))
+    if is_followup_turn:
+        current_ver = (
+            request.client_board_version
+            or request.metadata.get("client_board_version")
+            or request.metadata.get("board_version")
+            or getattr(request.current_state, "board_version", None)
+            or response.metadata.get("base_board_version")
+            or 1
+        )
+        bumped_ver = current_ver + 1
+        response_metadata["board_version"] = bumped_ver
+        response_metadata["base_board_version"] = current_ver
+        # The payload carries the whole board, so "replace" is both accurate and
+        # contract-legal; `is_followup` carries the follow-up signal instead.
+        response_metadata["board_update_mode"] = "replace"
+        response_metadata["is_followup"] = True
+
     response_metadata = _public_response_metadata(response_metadata)
     final_response = enriched_response.model_copy(
         update={
@@ -1877,6 +2626,8 @@ def _finalize_response(
             "speech": speech,
             "interaction": interaction,
             "quick_actions": quick_actions,
+            "board_version": response_metadata.get("board_version", enriched_response.board_version),
+            "base_board_version": response_metadata.get("base_board_version", enriched_response.base_board_version),
             "metadata": response_metadata,
         }
     )
@@ -2107,6 +2858,8 @@ def _fallback_reason(metadata: dict[str, Any], response_source: str) -> Optional
         "structured_template_response",
         "reviewed_curriculum_required",
         "out_of_scope_lock",
+        "off_topic_for_lesson",
+        "not_a_problem",
     }:
         return str(reason)
     if response_source == "template_fallback":
@@ -2466,9 +3219,10 @@ def _resolve_tutor_status(
 
 def _grade_from_request(request: VisualTutorTurnRequest) -> Optional[int]:
     raw = (
-        request.metadata.get("grade")
-        or request.metadata.get("grade_level")
-        or request.metadata.get("grade_level_hint")
+        getattr(request, "grade", None)
+        or (request.metadata.get("grade") if isinstance(request.metadata, dict) else None)
+        or (request.metadata.get("grade_level") if isinstance(request.metadata, dict) else None)
+        or (request.metadata.get("grade_level_hint") if isinstance(request.metadata, dict) else None)
     )
     if raw is None:
         return None
@@ -2830,7 +3584,15 @@ def _language_mode_for_request(request: VisualTutorTurnRequest) -> str | None:
     if request.language_mode is not None:
         return request.language_mode.value
     value = request.metadata.get("language_mode")
-    return str(value).lower() if value in {"khmer", "english", "bilingual"} else None
+    if value:
+        val_str = str(value).strip().lower()
+        if val_str in {"khmer", "km"}:
+            return "khmer"
+        if val_str in {"english", "en"}:
+            return "english"
+        if val_str == "bilingual":
+            return "bilingual"
+    return None
 
 
 def _should_understand_student_input(request: VisualTutorTurnRequest) -> bool:
@@ -2933,14 +3695,27 @@ async def handle_visual_tutor_step_turn(
     returns JSON-serialisable visual steps so the Flutter client can dispatch
     their renderer payloads without relying on an LLM response format.
     """
-    if _scope_lock_active() and not _is_grade12_math_limits_request(
-        grade=grade,
-        subject=request.subject,
-        topic="",
-        topic_id=str(request.metadata.get("topic_id") or ""),
-        message=problem_text,
-    ):
-        return _out_of_scope_step_turn(request, grade=grade)
+    if _scope_lock_active():
+        if settings.VISUAL_TUTOR_SCOPE_LOCK.strip().lower() == _SCOPE_LOCK_GRADE12_MATH_LIMITS:
+            if not _is_grade12_math_limits_request(
+                grade=grade,
+                subject=request.subject,
+                topic="",
+                topic_id=str(request.metadata.get("topic_id") or ""),
+                message=problem_text,
+            ):
+                return _out_of_scope_step_turn(request, grade=grade)
+        else:
+            decision = check_scope(
+                grade=grade,
+                subject=request.subject,
+                topic=str(request.metadata.get("topic") or ""),
+                topic_id=str(request.metadata.get("topic_id") or "") if request.metadata.get("topic_id") else None,
+                message=problem_text,
+                problem_text=problem_text,
+            )
+            if not decision.is_in_scope:
+                return _out_of_scope_step_turn(request, grade=grade)
     if not problem_text.strip():
         raise ValueError("A step-based tutor turn requires a problem")
 

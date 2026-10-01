@@ -109,3 +109,33 @@ def test_one_sided_limit_is_requested_and_reported_correctly() -> None:
 
 def test_parser_rejects_a_message_with_no_limit_clause() -> None:
     assert parse_limit_of_function("Solve 2x + 5 = 15") is None
+
+
+def test_a_bare_lim_prefix_does_not_leak_into_the_expression() -> None:
+    """"lim (x^2-4)/(x-2) as x approaches 2" is standard exam notation.
+
+    The clause regex matches the expression-first phrasing, but re.search lets
+    "expr" start at the beginning of the string, so a leading bare "lim" was
+    swallowed into the expression. sympy then read it as a call to an undefined
+    function -- lim(x^2 - 4)/(x - 2) -- whose limit it cannot evaluate, and the
+    student was told "the limit does not exist" for a limit that equals 4.
+    Only "limit of" (with the word "of") was being stripped.
+    """
+    parsed = parse_limit_of_function("lim (x^2-4)/(x-2) as x approaches 2")
+
+    assert parsed is not None
+    assert parsed.function_expression == "(x^2 - 4)/(x - 2)"
+    assert "lim" not in parsed.function_expression
+
+
+def test_the_bare_lim_phrasing_reaches_the_same_answer_as_the_prose_one() -> None:
+    """Two spellings of one problem must not disagree."""
+    prose = _submit("find the limit of (x^2-4)/(x-2) as x approaches 2")
+    bare = _submit("lim (x^2-4)/(x-2) as x approaches 2")
+
+    assert prose["solver_facts"]["known_solution"] == "4"
+    assert bare["solver_facts"]["known_solution"] == "4"
+    assert (
+        bare["solver_facts"]["board_context"]["classification"]
+        == prose["solver_facts"]["board_context"]["classification"]
+    )

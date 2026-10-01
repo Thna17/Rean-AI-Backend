@@ -323,7 +323,6 @@ from api.routes import (
     translate,
     tts,
     visual_tutor,
-    visual_tutor_scan,
     visual_tutor_voice,
 )
 
@@ -337,7 +336,6 @@ app.include_router(ai.router, prefix="/api/v1/ai", tags=["AI Analytics"])
 app.include_router(translate.router, prefix="/api/v1/ai", tags=["Translate"])
 app.include_router(ai_tutor_chat.router, tags=["AI Tutor Chat"])
 app.include_router(visual_tutor.router)
-app.include_router(visual_tutor_scan.router)
 app.include_router(visual_tutor_voice.router)
 app.include_router(curriculum.router)
 app.include_router(internal_curriculum.router)

@@ -4,7 +4,7 @@
       "story_id": "story_airport_checkin",
       "title": {
         "en": "Airport Check-In Adventure",
-        "vi": "Phiêu lưu tại quầy check-in sân bay"
+        "km": "Airport Check-In Adventure"
       },
       "difficulty_level": "A2",
       "category": "travel",
@@ -136,7 +136,7 @@
       "story_id": "story_job_interview",
       "title": {
         "en": "Job Interview Success",
-        "vi": "Phỏng vấn xin việc thành công"
+        "km": "Job Interview Success"
       },
       "difficulty_level": "B1",
       "category": "business",
@@ -264,7 +264,7 @@
       "story_id": "story_restaurant_order",
       "title": {
         "en": "Dining at a Restaurant",
-        "vi": "Dùng bữa tại nhà hàng"
+        "km": "Dining at a Restaurant"
       },
       "difficulty_level": "A1",
       "category": "food",
@@ -382,7 +382,7 @@
       "story_id": "story_shopping_clothes",
       "title": {
         "en": "Shopping for Clothes",
-        "vi": "Mua sắm quần áo"
+        "km": "Shopping for Clothes"
       },
       "difficulty_level": "A2",
       "category": "shopping",
@@ -500,7 +500,7 @@
       "story_id": "story_doctor_visit",
       "title": {
         "en": "At the Doctor's Office",
-        "vi": "Tại phòng khám bác sĩ"
+        "km": "At the Doctor's Office"
       },
       "difficulty_level": "B2",
       "category": "daily_life",
@@ -635,7 +635,7 @@
       "story_id": "story_apartment_renting",
       "title": {
         "en": "Apartment Renting - Finding a New Home",
-        "vi": "Thuê căn hộ - Tìm kiếm ngôi nhà mới"
+        "km": "Apartment Renting - Finding a New Home"
       },
       "difficulty_level": "B1",
       "category": "daily_life",
@@ -702,7 +702,7 @@
       "story_id": "story_software_interview",
       "title": {
         "en": "Software Engineer Job Interview",
-        "vi": "Phỏng vấn xin việc Kỹ sư Phần mềm"
+        "km": "Software Engineer Job Interview"
       },
       "difficulty_level": "C1",
       "category": "work",
@@ -770,7 +770,7 @@
       "story_id": "story_weather_plans",
       "title": {
         "en": "Weather & Daily Plans",
-        "vi": "Thời tiết và Kế hoạch trong ngày"
+        "km": "Weather & Daily Plans"
       },
       "difficulty_level": "A2",
       "category": "daily_life",
@@ -837,7 +837,7 @@
       "story_id": "story_hotel_check_in",
       "title": {
         "en": "Hotel Check-In Conversation",
-        "vi": "Chu de: Hotel Check-In Conversation"
+        "km": "Hotel Check-In Conversation"
       },
       "difficulty_level": "A2",
       "category": "travel",
@@ -986,7 +986,7 @@
       "story_id": "story_asking_for_directions",
       "title": {
         "en": "Asking for Directions Downtown",
-        "vi": "Chu de: Asking for Directions Downtown"
+        "km": "Asking for Directions Downtown"
       },
       "difficulty_level": "A1",
       "category": "travel",
@@ -1135,7 +1135,7 @@
       "story_id": "story_train_ticket_purchase",
       "title": {
         "en": "Buying a Train Ticket",
-        "vi": "Chu de: Buying a Train Ticket"
+        "km": "Buying a Train Ticket"
       },
       "difficulty_level": "A2",
       "category": "travel",
@@ -1284,7 +1284,7 @@
       "story_id": "story_lost_luggage_claim",
       "title": {
         "en": "Lost Luggage Claim",
-        "vi": "Chu de: Lost Luggage Claim"
+        "km": "Lost Luggage Claim"
       },
       "difficulty_level": "B1",
       "category": "travel",
@@ -1433,7 +1433,7 @@
       "story_id": "story_customs_immigration",
       "title": {
         "en": "Customs and Immigration Questions",
-        "vi": "Chu de: Customs and Immigration Questions"
+        "km": "Customs and Immigration Questions"
       },
       "difficulty_level": "B1",
       "category": "travel",
@@ -1582,7 +1582,7 @@
       "story_id": "story_city_tour_booking",
       "title": {
         "en": "Booking a City Tour",
-        "vi": "Chu de: Booking a City Tour"
+        "km": "Booking a City Tour"
       },
       "difficulty_level": "A2",
       "category": "travel",
@@ -1731,7 +1731,7 @@
       "story_id": "story_car_rental_pickup",
       "title": {
         "en": "Car Rental Pickup",
-        "vi": "Chu de: Car Rental Pickup"
+        "km": "Car Rental Pickup"
       },
       "difficulty_level": "B1",
       "category": "travel",
@@ -1880,7 +1880,7 @@
       "story_id": "story_travel_emergency_help",
       "title": {
         "en": "Travel Emergency Help Desk",
-        "vi": "Chu de: Travel Emergency Help Desk"
+        "km": "Travel Emergency Help Desk"
       },
       "difficulty_level": "B2",
       "category": "emergency",
@@ -2029,7 +2029,7 @@
       "story_id": "story_team_standup",
       "title": {
         "en": "Daily Team Standup",
-        "vi": "Chu de: Daily Team Standup"
+        "km": "Daily Team Standup"
       },
       "difficulty_level": "B1",
       "category": "work",
@@ -2178,7 +2178,7 @@
       "story_id": "story_project_update_meeting",
       "title": {
         "en": "Project Update Meeting",
-        "vi": "Chu de: Project Update Meeting"
+        "km": "Project Update Meeting"
       },
       "difficulty_level": "B2",
       "category": "work",
@@ -2327,7 +2327,7 @@
       "story_id": "story_client_presentation",
       "title": {
         "en": "Client Presentation Practice",
-        "vi": "Chu de: Client Presentation Practice"
+        "km": "Client Presentation Practice"
       },
       "difficulty_level": "B2",
       "category": "work",
@@ -2476,7 +2476,7 @@
       "story_id": "story_salary_negotiation",
       "title": {
         "en": "Salary Negotiation Conversation",
-        "vi": "Chu de: Salary Negotiation Conversation"
+        "km": "Salary Negotiation Conversation"
       },
       "difficulty_level": "C1",
       "category": "work",
@@ -2625,7 +2625,7 @@
       "story_id": "story_performance_review",
       "title": {
         "en": "Performance Review Discussion",
-        "vi": "Chu de: Performance Review Discussion"
+        "km": "Performance Review Discussion"
       },
       "difficulty_level": "B2",
       "category": "work",
@@ -2774,7 +2774,7 @@
       "story_id": "story_networking_event",
       "title": {
         "en": "Professional Networking Event",
-        "vi": "Chu de: Professional Networking Event"
+        "km": "Professional Networking Event"
       },
       "difficulty_level": "B1",
       "category": "work",
@@ -2923,7 +2923,7 @@
       "story_id": "story_remote_work_sync",
       "title": {
         "en": "Remote Work Sync",
-        "vi": "Chu de: Remote Work Sync"
+        "km": "Remote Work Sync"
       },
       "difficulty_level": "B1",
       "category": "work",
@@ -3072,7 +3072,7 @@
       "story_id": "story_customer_support_call",
       "title": {
         "en": "Customer Support Call",
-        "vi": "Chu de: Customer Support Call"
+        "km": "Customer Support Call"
       },
       "difficulty_level": "B1",
       "category": "services",
@@ -3221,7 +3221,7 @@
       "story_id": "story_pharmacy_visit",
       "title": {
         "en": "At the Pharmacy",
-        "vi": "Chu de: At the Pharmacy"
+        "km": "At the Pharmacy"
       },
       "difficulty_level": "A2",
       "category": "health",
@@ -3370,7 +3370,7 @@
       "story_id": "story_dental_appointment",
       "title": {
         "en": "Dental Appointment Checkup",
-        "vi": "Chu de: Dental Appointment Checkup"
+        "km": "Dental Appointment Checkup"
       },
       "difficulty_level": "B1",
       "category": "health",
@@ -3519,7 +3519,7 @@
       "story_id": "story_mental_health_checkin",
       "title": {
         "en": "Mental Health Check-In",
-        "vi": "Chu de: Mental Health Check-In"
+        "km": "Mental Health Check-In"
       },
       "difficulty_level": "B2",
       "category": "health",
@@ -3668,7 +3668,7 @@
       "story_id": "story_fitness_class_signup",
       "title": {
         "en": "Fitness Class Sign-Up",
-        "vi": "Chu de: Fitness Class Sign-Up"
+        "km": "Fitness Class Sign-Up"
       },
       "difficulty_level": "A2",
       "category": "health",
@@ -3817,7 +3817,7 @@
       "story_id": "story_health_insurance_call",
       "title": {
         "en": "Health Insurance Phone Call",
-        "vi": "Chu de: Health Insurance Phone Call"
+        "km": "Health Insurance Phone Call"
       },
       "difficulty_level": "B2",
       "category": "finance",
@@ -3966,7 +3966,7 @@
       "story_id": "story_emergency_room_triage",
       "title": {
         "en": "Emergency Room Triage",
-        "vi": "Chu de: Emergency Room Triage"
+        "km": "Emergency Room Triage"
       },
       "difficulty_level": "B2",
       "category": "emergency",
@@ -4115,7 +4115,7 @@
       "story_id": "story_grocery_market",
       "title": {
         "en": "Grocery Market Shopping",
-        "vi": "Chu de: Grocery Market Shopping"
+        "km": "Grocery Market Shopping"
       },
       "difficulty_level": "A1",
       "category": "food",
@@ -4264,7 +4264,7 @@
       "story_id": "story_cooking_class",
       "title": {
         "en": "Cooking Class Instructions",
-        "vi": "Chu de: Cooking Class Instructions"
+        "km": "Cooking Class Instructions"
       },
       "difficulty_level": "A2",
       "category": "food",
@@ -4413,7 +4413,7 @@
       "story_id": "story_food_delivery_problem",
       "title": {
         "en": "Food Delivery Problem",
-        "vi": "Chu de: Food Delivery Problem"
+        "km": "Food Delivery Problem"
       },
       "difficulty_level": "B1",
       "category": "services",
@@ -4562,7 +4562,7 @@
       "story_id": "story_bakery_order",
       "title": {
         "en": "Ordering at a Bakery",
-        "vi": "Chu de: Ordering at a Bakery"
+        "km": "Ordering at a Bakery"
       },
       "difficulty_level": "A1",
       "category": "food",
@@ -4711,7 +4711,7 @@
       "story_id": "story_dietary_restrictions",
       "title": {
         "en": "Explaining Dietary Restrictions",
-        "vi": "Chu de: Explaining Dietary Restrictions"
+        "km": "Explaining Dietary Restrictions"
       },
       "difficulty_level": "B1",
       "category": "food",
@@ -4860,7 +4860,7 @@
       "story_id": "story_dinner_party_planning",
       "title": {
         "en": "Planning a Dinner Party",
-        "vi": "Chu de: Planning a Dinner Party"
+        "km": "Planning a Dinner Party"
       },
       "difficulty_level": "B1",
       "category": "social",
@@ -5009,7 +5009,7 @@
       "story_id": "story_bank_account_opening",
       "title": {
         "en": "Opening a Bank Account",
-        "vi": "Chu de: Opening a Bank Account"
+        "km": "Opening a Bank Account"
       },
       "difficulty_level": "B1",
       "category": "finance",
@@ -5158,7 +5158,7 @@
       "story_id": "story_phone_plan_subscription",
       "title": {
         "en": "Choosing a Phone Plan",
-        "vi": "Chu de: Choosing a Phone Plan"
+        "km": "Choosing a Phone Plan"
       },
       "difficulty_level": "B1",
       "category": "shopping",
@@ -5307,7 +5307,7 @@
       "story_id": "story_returning_electronics",
       "title": {
         "en": "Returning Electronics",
-        "vi": "Chu de: Returning Electronics"
+        "km": "Returning Electronics"
       },
       "difficulty_level": "B1",
       "category": "shopping",
@@ -5456,7 +5456,7 @@
       "story_id": "story_online_order_support",
       "title": {
         "en": "Online Order Support Chat",
-        "vi": "Chu de: Online Order Support Chat"
+        "km": "Online Order Support Chat"
       },
       "difficulty_level": "A2",
       "category": "services",
@@ -5605,7 +5605,7 @@
       "story_id": "story_comparing_prices",
       "title": {
         "en": "Comparing Prices at a Store",
-        "vi": "Chu de: Comparing Prices at a Store"
+        "km": "Comparing Prices at a Store"
       },
       "difficulty_level": "A2",
       "category": "shopping",
@@ -5754,7 +5754,7 @@
       "story_id": "story_budgeting_conversation",
       "title": {
         "en": "Monthly Budget Planning",
-        "vi": "Chu de: Monthly Budget Planning"
+        "km": "Monthly Budget Planning"
       },
       "difficulty_level": "B2",
       "category": "finance",
@@ -5903,7 +5903,7 @@
       "story_id": "story_loan_application",
       "title": {
         "en": "Applying for a Small Loan",
-        "vi": "Chu de: Applying for a Small Loan"
+        "km": "Applying for a Small Loan"
       },
       "difficulty_level": "C1",
       "category": "finance",
@@ -6052,7 +6052,7 @@
       "story_id": "story_tax_appointment",
       "title": {
         "en": "Tax Appointment Questions",
-        "vi": "Chu de: Tax Appointment Questions"
+        "km": "Tax Appointment Questions"
       },
       "difficulty_level": "B2",
       "category": "finance",
@@ -6201,7 +6201,7 @@
       "story_id": "story_university_orientation",
       "title": {
         "en": "University Orientation",
-        "vi": "Chu de: University Orientation"
+        "km": "University Orientation"
       },
       "difficulty_level": "B1",
       "category": "education",
@@ -6350,7 +6350,7 @@
       "story_id": "story_library_assistance",
       "title": {
         "en": "Asking for Library Help",
-        "vi": "Chu de: Asking for Library Help"
+        "km": "Asking for Library Help"
       },
       "difficulty_level": "A2",
       "category": "education",
@@ -6499,7 +6499,7 @@
       "story_id": "story_parent_teacher_meeting",
       "title": {
         "en": "Parent-Teacher Meeting",
-        "vi": "Chu de: Parent-Teacher Meeting"
+        "km": "Parent-Teacher Meeting"
       },
       "difficulty_level": "B1",
       "category": "education",
@@ -6648,7 +6648,7 @@
       "story_id": "story_study_group_planning",
       "title": {
         "en": "Study Group Planning",
-        "vi": "Chu de: Study Group Planning"
+        "km": "Study Group Planning"
       },
       "difficulty_level": "A2",
       "category": "education",
@@ -6797,7 +6797,7 @@
       "story_id": "story_exam_preparation",
       "title": {
         "en": "Exam Preparation Strategy",
-        "vi": "Chu de: Exam Preparation Strategy"
+        "km": "Exam Preparation Strategy"
       },
       "difficulty_level": "B2",
       "category": "education",
@@ -6946,7 +6946,7 @@
       "story_id": "story_scholarship_interview",
       "title": {
         "en": "Scholarship Interview",
-        "vi": "Chu de: Scholarship Interview"
+        "km": "Scholarship Interview"
       },
       "difficulty_level": "C1",
       "category": "education",
@@ -7095,7 +7095,7 @@
       "story_id": "story_classroom_debate",
       "title": {
         "en": "Classroom Debate Practice",
-        "vi": "Chu de: Classroom Debate Practice"
+        "km": "Classroom Debate Practice"
       },
       "difficulty_level": "B2",
       "category": "education",
@@ -7244,7 +7244,7 @@
       "story_id": "story_password_reset_support",
       "title": {
         "en": "Password Reset Support",
-        "vi": "Chu de: Password Reset Support"
+        "km": "Password Reset Support"
       },
       "difficulty_level": "A2",
       "category": "technology",
@@ -7393,7 +7393,7 @@
       "story_id": "story_app_bug_report",
       "title": {
         "en": "Reporting an App Bug",
-        "vi": "Chu de: Reporting an App Bug"
+        "km": "Reporting an App Bug"
       },
       "difficulty_level": "B1",
       "category": "technology",
@@ -7542,7 +7542,7 @@
       "story_id": "story_data_privacy_settings",
       "title": {
         "en": "Changing Data Privacy Settings",
-        "vi": "Chu de: Changing Data Privacy Settings"
+        "km": "Changing Data Privacy Settings"
       },
       "difficulty_level": "B2",
       "category": "technology",
@@ -7691,7 +7691,7 @@
       "story_id": "story_buying_laptop",
       "title": {
         "en": "Buying a Laptop",
-        "vi": "Chu de: Buying a Laptop"
+        "km": "Buying a Laptop"
       },
       "difficulty_level": "B1",
       "category": "shopping",
@@ -7840,7 +7840,7 @@
       "story_id": "story_cybersecurity_awareness",
       "title": {
         "en": "Cybersecurity Awareness Chat",
-        "vi": "Chu de: Cybersecurity Awareness Chat"
+        "km": "Cybersecurity Awareness Chat"
       },
       "difficulty_level": "B2",
       "category": "technology",
@@ -7989,7 +7989,7 @@
       "story_id": "story_ai_product_demo",
       "title": {
         "en": "AI Product Demo",
-        "vi": "Chu de: AI Product Demo"
+        "km": "AI Product Demo"
       },
       "difficulty_level": "C1",
       "category": "technology",
@@ -8138,7 +8138,7 @@
       "story_id": "story_software_sprint_planning",
       "title": {
         "en": "Software Sprint Planning",
-        "vi": "Chu de: Software Sprint Planning"
+        "km": "Software Sprint Planning"
       },
       "difficulty_level": "C1",
       "category": "work",
@@ -8287,7 +8287,7 @@
       "story_id": "story_moving_day_coordination",
       "title": {
         "en": "Moving Day Coordination",
-        "vi": "Chu de: Moving Day Coordination"
+        "km": "Moving Day Coordination"
       },
       "difficulty_level": "A2",
       "category": "housing",
@@ -8436,7 +8436,7 @@
       "story_id": "story_plumber_appointment",
       "title": {
         "en": "Booking a Plumber",
-        "vi": "Chu de: Booking a Plumber"
+        "km": "Booking a Plumber"
       },
       "difficulty_level": "B1",
       "category": "services",
@@ -8585,7 +8585,7 @@
       "story_id": "story_utility_bill_dispute",
       "title": {
         "en": "Utility Bill Dispute",
-        "vi": "Chu de: Utility Bill Dispute"
+        "km": "Utility Bill Dispute"
       },
       "difficulty_level": "B2",
       "category": "housing",
@@ -8734,7 +8734,7 @@
       "story_id": "story_cleaning_service_booking",
       "title": {
         "en": "Cleaning Service Booking",
-        "vi": "Chu de: Cleaning Service Booking"
+        "km": "Cleaning Service Booking"
       },
       "difficulty_level": "A2",
       "category": "services",
@@ -8883,7 +8883,7 @@
       "story_id": "story_neighborhood_complaint",
       "title": {
         "en": "Neighborhood Complaint",
-        "vi": "Chu de: Neighborhood Complaint"
+        "km": "Neighborhood Complaint"
       },
       "difficulty_level": "B2",
       "category": "housing",
@@ -9032,7 +9032,7 @@
       "story_id": "story_home_internet_installation",
       "title": {
         "en": "Home Internet Installation",
-        "vi": "Chu de: Home Internet Installation"
+        "km": "Home Internet Installation"
       },
       "difficulty_level": "B1",
       "category": "technology",
@@ -9181,7 +9181,7 @@
       "story_id": "story_museum_visit",
       "title": {
         "en": "Museum Visit Conversation",
-        "vi": "Chu de: Museum Visit Conversation"
+        "km": "Museum Visit Conversation"
       },
       "difficulty_level": "A2",
       "category": "culture",
@@ -9330,7 +9330,7 @@
       "story_id": "story_sports_club_signup",
       "title": {
         "en": "Joining a Sports Club",
-        "vi": "Chu de: Joining a Sports Club"
+        "km": "Joining a Sports Club"
       },
       "difficulty_level": "A2",
       "category": "leisure",
@@ -9479,7 +9479,7 @@
       "story_id": "story_volunteering_event",
       "title": {
         "en": "Volunteering Event Sign-Up",
-        "vi": "Chu de: Volunteering Event Sign-Up"
+        "km": "Volunteering Event Sign-Up"
       },
       "difficulty_level": "B1",
       "category": "social",
@@ -9628,7 +9628,7 @@
       "story_id": "story_news_interview",
       "title": {
         "en": "Giving a Short News Interview",
-        "vi": "Chu de: Giving a Short News Interview"
+        "km": "Giving a Short News Interview"
       },
       "difficulty_level": "C1",
       "category": "media",

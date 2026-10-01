@@ -672,26 +672,29 @@ class PhysicsExpertService:
         """Detect the type of physics problem from text."""
         problem_lower = problem.lower()
 
-        if any(kw in problem_lower for kw in ["velocity", "acceleration", "time", "motion"]):
-            return PhysicsProblemType.KINEMATICS
-
-        if any(kw in problem_lower for kw in ["force", "newton", "f=ma", "weight"]):
-            return PhysicsProblemType.DYNAMICS
-
+        # Most specific first: a force, energy or circuit problem often also
+        # mentions velocity, acceleration or time, so kinematics is checked
+        # last (and is the default).
         if any(kw in problem_lower for kw in ["circular", "orbit", "centripetal"]):
             return PhysicsProblemType.CIRCULAR_MOTION
-
-        if any(kw in problem_lower for kw in ["energy", "kinetic", "potential", "conserve"]):
-            return PhysicsProblemType.ENERGY
-
-        if any(kw in problem_lower for kw in ["wave", "frequency", "wavelength", "sound"]):
-            return PhysicsProblemType.WAVES
 
         if any(kw in problem_lower for kw in ["electric", "charge", "current", "voltage", "circuit"]):
             return PhysicsProblemType.ELECTRICITY
 
         if any(kw in problem_lower for kw in ["magnetic", "magnet", "field"]):
             return PhysicsProblemType.MAGNETISM
+
+        if any(kw in problem_lower for kw in ["wave", "frequency", "wavelength", "sound"]):
+            return PhysicsProblemType.WAVES
+
+        if any(kw in problem_lower for kw in ["energy", "kinetic", "potential", "conserve"]):
+            return PhysicsProblemType.ENERGY
+
+        if any(kw in problem_lower for kw in ["force", "newton", "f=ma", "weight"]):
+            return PhysicsProblemType.DYNAMICS
+
+        if any(kw in problem_lower for kw in ["velocity", "acceleration", "time", "motion"]):
+            return PhysicsProblemType.KINEMATICS
 
         return PhysicsProblemType.KINEMATICS  # Default
 

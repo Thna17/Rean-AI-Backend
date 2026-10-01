@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from typing import Any, Callable, Optional
 
@@ -32,6 +33,12 @@ from api.services.visual_tutor.session_store import (
 )
 from api.services.visual_tutor.orchestrator import (
     handle_visual_tutor_turn as real_handle_visual_tutor_turn,
+)
+
+# These tests cover the guided "Try it myself" flow (answer locked, one
+# step at a time); the default full-solution flow is covered elsewhere.
+pytestmark = pytest.mark.usefixtures(
+    "guided_tutor_mode", "development_compatibility_contract"
 )
 
 
@@ -424,13 +431,34 @@ async def _post_turn(
     return response.json()
 
 
+def _guided(request: VisualTutorTurnRequest) -> VisualTutorTurnRequest:
+    """Keep fake-LLM handlers in this module's guided "Try it myself" flow."""
+    metadata = dict(request.metadata or {})
+    metadata.setdefault("tutor_mode", "try_myself")
+    return request.model_copy(update={"metadata": metadata})
+
+
 async def _get_session(client: AsyncClient, session_id: str) -> dict:
+    """Resume through the public endpoint, then return the persisted session.
+
+    The public session DTO deliberately hides server-only tutor state (turn
+    history, attempt counters, solver and planner data). These flow tests
+    check that state, so they read it from the test store after confirming
+    the public endpoint serves the session without leaking it.
+    """
     response = await client.get(
         f"/api/v1/visual_tutor/sessions/{session_id}",
         params={"user_id": "student-1"},
     )
     assert response.status_code == 200
-    return response.json()
+    public = response.json()
+    assert public["session_id"] == session_id
+    for private_field in ("turns", "attempts", "board_states", "solver_facts", "planner"):
+        assert private_field not in public
+
+    store = client._transport.app.dependency_overrides[get_visual_tutor_store]()
+    # A snapshot, like the JSON the endpoint used to return.
+    return copy.deepcopy(store.sessions[session_id])
 
 
 async def _assert_hint_progression(
@@ -753,7 +781,7 @@ async def test_e2e_unsupported_math_fallback_persists_and_restores(monkeypatch) 
     fake_llm = FakeVisualTutorLLMClient(_generic_llm_payload)
 
     def _handle_with_fake_llm(request: VisualTutorTurnRequest):
-        return real_handle_visual_tutor_turn(request, llm_client=fake_llm)
+        return real_handle_visual_tutor_turn(_guided(request), llm_client=fake_llm)
 
     monkeypatch.setattr(
         visual_tutor_route_module,
@@ -859,7 +887,7 @@ async def test_e2e_llm_final_answer_leak_is_sanitized_and_persisted(
     fake_llm = FakeVisualTutorLLMClient(_leaky_llm_payload)
 
     def _handle_with_fake_llm(request: VisualTutorTurnRequest):
-        return real_handle_visual_tutor_turn(request, llm_client=fake_llm)
+        return real_handle_visual_tutor_turn(_guided(request), llm_client=fake_llm)
 
     monkeypatch.setattr(
         visual_tutor_route_module,
@@ -1172,7 +1200,7 @@ async def test_e2e_unsupported_problem_stuck_asks_guiding_question_and_persists(
     fake_llm = FakeVisualTutorLLMClient(_generic_llm_payload)
 
     def _handle_with_fake_llm(request: VisualTutorTurnRequest):
-        return real_handle_visual_tutor_turn(request, llm_client=fake_llm)
+        return real_handle_visual_tutor_turn(_guided(request), llm_client=fake_llm)
 
     monkeypatch.setattr(
         visual_tutor_route_module,

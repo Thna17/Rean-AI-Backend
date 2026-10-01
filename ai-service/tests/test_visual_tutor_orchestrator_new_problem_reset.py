@@ -4,7 +4,14 @@ from api.models.visual_tutor import (
     VisualTutorTurnRequest,
     VisualTutorTurnState,
 )
+
 from api.services.visual_tutor import orchestrator
+
+import pytest
+
+# These tests cover the guided "Try it myself" flow (answer locked, one
+# step at a time); the default full-solution flow is covered elsewhere.
+pytestmark = pytest.mark.usefixtures("guided_tutor_mode")
 
 
 def test_new_problem_reset_does_not_repeat_curriculum_retrieval(monkeypatch) -> None:

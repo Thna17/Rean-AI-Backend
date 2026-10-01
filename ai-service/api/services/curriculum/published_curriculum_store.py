@@ -17,7 +17,12 @@ from api.models.curriculum import CurriculumChunk
 
 
 def published_store_path() -> Path:
-    return Path(os.getenv("ADMIN_PUBLISHED_CURRICULUM_PATH", "data/curriculum/admin-published.jsonl"))
+    # Anchored to this service's data folder, so the publisher and every reader
+    # use the same file whatever directory the process was started from.
+    configured = os.getenv("ADMIN_PUBLISHED_CURRICULUM_PATH")
+    if configured:
+        return Path(configured)
+    return Path(__file__).resolve().parents[3] / "data" / "curriculum" / "admin-published.jsonl"
 
 
 class PublishedCurriculumStore:

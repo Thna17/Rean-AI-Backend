@@ -67,7 +67,13 @@ def test_curriculum_store_returns_empty_list_for_unknown_topic() -> None:
 
 
 def test_curriculum_store_fails_gracefully_when_data_folder_missing(tmp_path) -> None:
-    store = CurriculumStore(data_dir=tmp_path / "missing")
+    from api.services.curriculum.published_curriculum_store import PublishedCurriculumStore
+
+    # Isolate from whatever an admin has published on this machine.
+    store = CurriculumStore(
+        data_dir=tmp_path / "missing",
+        published_store=PublishedCurriculumStore(tmp_path / "admin-published.jsonl"),
+    )
 
     assert store.load_chunks() == []
     assert store.query(subject="Mathematics", topic="Linear Equations") == []
@@ -107,3 +113,13 @@ def test_curriculum_store_handles_model_invalid_jsonl_row(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="Invalid curriculum row"):
         store.load_chunks()
+
+
+def test_published_curriculum_path_does_not_depend_on_working_directory(monkeypatch, tmp_path) -> None:
+    from api.services.curriculum.curriculum_store import default_curriculum_data_dir
+    from api.services.curriculum.published_curriculum_store import published_store_path
+
+    monkeypatch.delenv("ADMIN_PUBLISHED_CURRICULUM_PATH", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    assert published_store_path() == default_curriculum_data_dir() / "admin-published.jsonl"
