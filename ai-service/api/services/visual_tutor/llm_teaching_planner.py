@@ -2070,9 +2070,14 @@ def _curriculum_prompt_context(policy: VisualTutorPolicyDecision) -> dict[str, A
             }
         )
 
+    used_chunk_ids = [
+        str(chunk["id"])
+        for chunk in safe_context
+        if isinstance(chunk.get("id"), str) and str(chunk["id"]).strip()
+    ]
     return {
         "chunks": safe_context,
-        "chunk_ids": policy.metadata.get("curriculum_chunk_ids") or [],
+        "chunk_ids": used_chunk_ids,
         "confidence": policy.metadata.get("curriculum_confidence", 0.0),
         "formulas": policy.metadata.get("formulas") or [],
         "prerequisites": policy.metadata.get("prerequisites") or [],

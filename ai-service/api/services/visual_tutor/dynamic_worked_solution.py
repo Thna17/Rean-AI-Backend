@@ -1172,11 +1172,23 @@ def _build_turn_response(
             )
 
     # Add student task
-    task_text = (
-        "សួរខ្ញុំអំពីជំហានណាមួយ ឬសាកល្បងលំហាត់ថ្មីមួយទៀត។"
-        if is_khmer
-        else "Ask me about any step you'd like explained, or try another problem."
+    req_meta = request.metadata if isinstance(request.metadata, dict) else {}
+    is_demonstration = (
+        req_meta.get("entry_point") == "lesson_demonstration"
+        or req_meta.get("auto_start") is True
     )
+    if is_demonstration:
+        task_text = (
+            "តើអ្នកមានសំណួរអ្វីខ្លះអំពីជំហាននេះ ឬចង់សាកល្បងដោយខ្លួនឯង?"
+            if is_khmer
+            else "Do you have any questions about this step, or would you like to try one yourself?"
+        )
+    else:
+        task_text = (
+            "សួរខ្ញុំអំពីជំហានណាមួយ ឬសាកល្បងលំហាត់ថ្មីមួយទៀត។"
+            if is_khmer
+            else "Ask me about any step you'd like explained, or try another problem."
+        )
     add(
         VisualTutorCanvasActionType.STUDENT_TASK,
         "next",
@@ -1188,9 +1200,13 @@ def _build_turn_response(
     )
 
     tutor_message = message_override or (
-        f"នេះជាដំណោះស្រាយលម្អិតមួយជំហានម្តងៗ។ {solution.answer_text}"
-        if is_khmer
-        else f"Here is the full worked solution, step by step. {solution.answer_text}"
+        task_text
+        if is_demonstration
+        else (
+            f"នេះជាដំណោះស្រាយលម្អិតមួយជំហានម្តងៗ។ {solution.answer_text}"
+            if is_khmer
+            else f"Here is the full worked solution, step by step. {solution.answer_text}"
+        )
     )
 
     incoming_ver = (

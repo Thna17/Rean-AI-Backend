@@ -116,8 +116,10 @@ def _select_plan(*, response, request, policy, understanding, adaptive_decision)
         )
         and not response.final_answer_locked
     ):
-        # A server-built, sympy-verified worked solution is meant to show every
-        # step at once. _with_task_contract would run it through
+        # A server-built worked solution is meant to show every step at once.
+        # Verification remains explicit response metadata; the presence of
+        # steps never implies that a deterministic checker accepted the answer.
+        # _with_task_contract would run it through
         # _to_teaching_timeline, which keeps a single visual per turn and would
         # reduce the whole solution to one line. Keyed on server metadata, not
         # the plan's representation, so model output can never opt out of that
@@ -587,7 +589,8 @@ def _learning_objective(response, understanding) -> str:
         return objective
     problem_type = getattr(understanding, "problem_type", None)
     if problem_type:
-        return f"Make one verified step in this {str(problem_type).replace('_', ' ')} problem."
+        qualifier = "verified" if response.metadata.get("verified") is True else "checkable"
+        return f"Make one {qualifier} step in this {str(problem_type).replace('_', ' ')} problem."
     return "Make one meaningful, checkable step before continuing."
 
 

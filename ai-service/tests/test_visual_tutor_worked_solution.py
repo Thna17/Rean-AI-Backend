@@ -204,3 +204,32 @@ def test_followup_degraded_mode_on_llm_timeout() -> None:
     assert resp.metadata.get("degraded_reason") == "timeout"
     assert "Note: AI visual tutor is experiencing high demand" in _texts(resp)
 
+
+def test_lesson_demonstration_invitation_english() -> None:
+    clear_worked_solution_cache()
+    req = _request(
+        "lim x->3 (x^2-9)/(x-3)",
+        entry_point="lesson_demonstration",
+        auto_start=True,
+    )
+    resp = handle_visual_tutor_turn(req)
+    assert resp.student_task == "Do you have any questions about this step, or would you like to try one yourself?"
+    last_action = resp.board_actions[-1]
+    assert last_action.type.value == "student_task"
+    assert last_action.text == "Do you have any questions about this step, or would you like to try one yourself?"
+
+
+def test_lesson_demonstration_invitation_khmer() -> None:
+    clear_worked_solution_cache()
+    req = _request(
+        "lim x->3 (x^2-9)/(x-3)",
+        language_mode="khmer",
+        entry_point="lesson_demonstration",
+        auto_start=True,
+    )
+    resp = handle_visual_tutor_turn(req)
+    assert resp.student_task == "តើអ្នកមានសំណួរអ្វីខ្លះអំពីជំហាននេះ ឬចង់សាកល្បងដោយខ្លួនឯង?"
+    last_action = resp.board_actions[-1]
+    assert last_action.type.value == "student_task"
+    assert last_action.text == "តើអ្នកមានសំណួរអ្វីខ្លះអំពីជំហាននេះ ឬចង់សាកល្បងដោយខ្លួនឯង?"
+

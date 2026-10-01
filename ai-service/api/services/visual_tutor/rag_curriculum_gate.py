@@ -1,7 +1,7 @@
 """Dynamic RAG curriculum classification and verification gate.
 
 Replaces hardcoded solver regexes with dynamic curriculum knowledge-base queries:
-- Tier 1 (Verified): In-scope STEM problem with matching admin-published curriculum content/formulas.
+- Tier 1 (Verified Curriculum): In-scope STEM problem with matching curriculum content/formulas.
 - Tier 2 (Unverified AI): In-scope STEM problem (Math/Physics/Chemistry) without specific curriculum chunks.
 - Tier 3 (Out of Scope): Non-STEM queries (chit-chat, history, coding unrelated apps) -> polite refusal.
 """
@@ -20,6 +20,14 @@ from api.services.curriculum.curriculum_store import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Without an explicit topic, a weak lexical hit can attach an unrelated chapter
+# to a problem (for example, a quadratic matching "Complex Numbers"). Keep the
+# existing explicit-topic threshold, but require stronger evidence for inferred
+# curriculum grounding. This tier describes grounding only; answer verification
+# remains the responsibility of deterministic solvers.
+_MIN_EXPLICIT_TOPIC_SCORE = 5.0
+_MIN_INFERRED_TOPIC_SCORE = 10.0
 
 # Standard high school STEM subjects supported
 SUPPORTED_SUBJECTS = {
@@ -170,10 +178,10 @@ def classify_student_query(
                 (s, c) for s, c in scored_chunks
                 if _topics_compatible(explicit_topic_norm, c.topic, c.subtopic)
             ]
-            if topic_matched_chunks and topic_matched_chunks[0][0] >= 5.0:
+            if topic_matched_chunks and topic_matched_chunks[0][0] >= _MIN_EXPLICIT_TOPIC_SCORE:
                 top_score, top_chunk = topic_matched_chunks[0]
                 matching = [c for _, c in topic_matched_chunks]
-        elif scored_chunks[0][0] >= 5.0:
+        elif scored_chunks[0][0] >= _MIN_INFERRED_TOPIC_SCORE:
             top_score, top_chunk = scored_chunks[0]
             matching = [c for _, c in scored_chunks]
 

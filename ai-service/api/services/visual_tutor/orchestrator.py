@@ -690,6 +690,14 @@ def _solver_not_ready_turn(
         "generation_path": "solver_not_ready",
         "fallback_reason": "solver_not_implemented",
         "solver_ready": False,
+        "verified": False,
+        "curriculum_status": "ai_unverified",
+        "verification": {
+            "status": "cannot_verify",
+            "verified": False,
+            "student_message": "A deterministic solver is not available for this problem yet.",
+            "concise_evidence": "No deterministic verification was performed.",
+        },
         "subject": subject,
         "topic": topic or request.topic,
     }
@@ -1043,43 +1051,34 @@ def handle_visual_tutor_turn(
                 _out_of_scope_turn(request, session_id=session_id),
             )
 
-        # Tier 1 (Verified) or Tier 2 (Unverified AI Guidance):
-        # If client or configuration strictly requires a verified solver, degrade honestly
+        # Curriculum grounding and answer verification are separate. A matching
+        # chunk may guide an LLM answer, but only the worked-solution builder's
+        # deterministic solver/checker may mark that answer verified.
         require_verified = bool(
             metadata.get("require_verified_solver")
             or not settings.VISUAL_TUTOR_ALLOW_UNVERIFIED_AI
         )
-        if require_verified and classification.tier != "verified":
-            if scope_decision is None:
-                scope_decision = check_scope(
-                    grade=grade,
-                    subject=request.subject,
-                    topic=request.topic,
-                    topic_id=str(request.metadata.get("topic_id") or "") if request.metadata.get("topic_id") else None,
-                    message=problem_message,
-                    problem_text=request.current_state.problem_text or "",
-                    language_mode=str(lang_mode) if lang_mode else None,
-                )
-            if not scope_decision.has_verified_solver:
+
+        try:
+            dynamic_response = build_dynamic_worked_solution_turn(
+                request,
+                classification,
+                session_id=session_id,
+                llm_client=llm_client,
+            )
+            if require_verified and dynamic_response.metadata.get("verified") is not True:
                 return _finalize_response(
                     request,
                     _solver_not_ready_turn(
                         request,
                         session_id=session_id,
-                        subject=scope_decision.subject,
-                        topic=scope_decision.topic,
+                        subject=classification.subject,
+                        topic=classification.topic or request.topic,
                     ),
                 )
-
-        try:
             return _finalize_response(
                 request,
-                build_dynamic_worked_solution_turn(
-                    request,
-                    classification,
-                    session_id=session_id,
-                    llm_client=llm_client,
-                ),
+                dynamic_response,
             )
         except Exception:
             logger.exception("build_dynamic_worked_solution_turn failed; falling through to guided flow")
@@ -2371,6 +2370,16 @@ def _finalize_response(
         )
     if curriculum_meta:
         metadata.update(curriculum_meta)
+    if policy is not None and response.metadata.get("planner"):
+        # Planner metadata must name only the curriculum chunks that were
+        # actually included in its bounded prompt, not every retrieved chunk.
+        metadata["curriculum_chunk_ids"] = [
+            str(chunk.get("id"))
+            for chunk in (policy.metadata.get("curriculum_context") or [])[:3]
+            if isinstance(chunk, dict)
+            and isinstance(chunk.get("id"), str)
+            and str(chunk.get("id")).strip()
+        ]
     if policy is not None and policy.metadata.get("orchestrator_flow"):
         metadata["orchestrator_flow"] = policy.metadata["orchestrator_flow"]
     solver_facts = _solver_facts_from_policy(policy)

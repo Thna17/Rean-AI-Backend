@@ -37,10 +37,13 @@ def clean_published_store(tmp_path, monkeypatch):
 def test_admin_curriculum_publish_sync_and_unpublish(clean_published_store):
     client = TestClient(app)
     token = "test-internal-token-123"
-    version_id = "cv-chem-electrochem-v1"
+    version_id = "cv-chem-electrokinetics-v1"
 
     # 1. Before publishing, query is Tier 2 (out of curriculum store / unverified)
-    query = "Calculate the standard electromotive force emf of a galvanic cell"
+    query = (
+        "Electrokinetic Zeta Potential: calculate the Stern-layer potential "
+        "of a colloidal suspension"
+    )
     pre_result = classify_student_query(
         message=query,
         grade=12,
@@ -55,40 +58,40 @@ def test_admin_curriculum_publish_sync_and_unpublish(clean_published_store):
         "curriculum_version_id": version_id,
         "chunks": [
             {
-                "id": f"admin.{version_id}.content-electrochem-1",
+                "id": f"admin.{version_id}.content-electrokinetics-1",
                 "grade": 12,
                 "subject": "Chemistry",
-                "topic": "Electrochemistry",
-                "subtopic": "Galvanic Cells and Electromotive Force",
+                "topic": "Electrokinetic Zeta Potential",
+                "subtopic": "Stern-layer potential in colloidal suspensions",
                 "content_type": "concept",
-                "text": "Electrochemistry studies the relationship between electricity and chemical reactions. The electromotive force emf of a galvanic cell drives electron flow.",
+                "text": "Electrokinetic zeta potential describes the electrical potential at the slipping plane around a colloidal particle in suspension.",
                 "language": "en",
-                "tags": ["chemistry", "electrochemistry", "galvanic", "emf", "cell"],
+                "tags": ["chemistry", "electrokinetics", "zeta potential", "colloid", "Stern layer"],
                 "khmer_terms": {
-                    "electromotive force": "កម្លាំងអេឡិចត្រូចលករ",
-                    "galvanic cell": "ពិលកាល់វ៉ានិច",
-                    "reduction potential": "សក្តានុពលរេដុកម្ម",
+                    "zeta potential": "សក្តានុពលហ្សេតា",
+                    "colloidal suspension": "សូលុយស្យុងកូឡូអ៊ីត",
+                    "slipping plane": "ប្លង់រអិល",
                 },
-                "prerequisites": ["Redox Reactions", "Oxidation Numbers"],
+                "prerequisites": ["Electric potential", "Colloidal mixtures"],
                 "formulas": [
-                    "E_cell = E0_cell - (0.0592 / n) * log(Q)",
-                    "E0_cell = E0_cathode - E0_anode",
+                    "zeta = (4 * eta * u) / epsilon",
                 ],
                 "solution_steps": [
-                    "Identify oxidation and reduction half-reactions",
-                    "Look up standard reduction potentials E0",
-                    "Compute standard electromotive force E0_cell = E0_cathode - E0_anode",
+                    "Identify the electrophoretic mobility u",
+                    "Identify viscosity eta and permittivity epsilon",
+                    "Substitute into the electrokinetic relation and compute zeta",
                 ],
                 "source": {
                     "type": "admin_published",
                     "metadata": {
                         "curriculum_version_id": version_id,
-                        "curriculum_chunk_id": f"admin.{version_id}.content-electrochem-1",
-                        "source_content_id": "content-electrochem-1",
+                        "curriculum_chunk_id": f"admin.{version_id}.content-electrokinetics-1",
+                        "source_content_id": "content-electrokinetics-1",
                         "grade_level_id": "grade-12",
                         "subject_id": "chemistry",
-                        "topic_id": "topic-electrochemistry",
+                        "topic_id": "topic-electrokinetics",
                         "published_at": "2026-09-19T10:00:00Z",
+                        "review_status": "approved",
                     },
                 },
             }
@@ -117,14 +120,15 @@ def test_admin_curriculum_publish_sync_and_unpublish(clean_published_store):
     assert post_result.tier == "verified"
     assert len(post_result.matching_chunks) >= 1
     matched = post_result.matching_chunks[0]
-    assert matched.topic == "Electrochemistry"
-    assert "E0_cell = E0_cathode - E0_anode" in matched.formulas
+    assert matched.topic == "Electrokinetic Zeta Potential"
+    assert "zeta = (4 * eta * u) / epsilon" in matched.formulas
     assert len(matched.solution_steps) == 3
-    assert matched.khmer_terms["electromotive force"] == "កម្លាំងអេឡិចត្រូចលករ"
+    assert matched.khmer_terms["zeta potential"] == "សក្តានុពលហ្សេតា"
+    assert matched.source.metadata["review_status"] == "approved"
 
     # Also check Khmer query matching
     khmer_result = classify_student_query(
-        message="ចូរគណនាកម្លាំងអេឡិចត្រូចលករ",
+        message="Electrokinetic Zeta Potential ចូរគណនាសក្តានុពលហ្សេតា",
         grade=12,
         subject="Chemistry",
         topic=None,
@@ -149,3 +153,90 @@ def test_admin_curriculum_publish_sync_and_unpublish(clean_published_store):
     )
     assert unpub_result.tier == "unverified"
     assert len(unpub_result.matching_chunks) == 0
+
+
+def test_unreviewed_published_content_is_rejected_and_never_verified(
+    clean_published_store,
+) -> None:
+    client = TestClient(app)
+    token = "test-internal-token-123"
+    version_id = "cv-chem-unreviewed-actinometry-v1"
+    query = "Ferrioxalate Actinometry: determine the incident photon flux"
+    payload = {
+        "curriculum_version_id": version_id,
+        "chunks": [
+            {
+                "id": f"admin.{version_id}.content-actinometry-1",
+                "grade": 12,
+                "subject": "Chemistry",
+                "topic": "Ferrioxalate Actinometry",
+                "content_type": "concept",
+                "text": "Ferrioxalate actinometry estimates incident photon flux from a photochemical reaction.",
+                "language": "en",
+                "tags": ["photochemistry", "actinometry", "photon flux"],
+                "khmer_terms": {"photon flux": "លំហូរផូតុង"},
+                "source": {
+                    "type": "admin_published",
+                    "metadata": {
+                        "curriculum_version_id": version_id,
+                        "curriculum_chunk_id": f"admin.{version_id}.content-actinometry-1",
+                        "source_content_id": "content-actinometry-1",
+                        "grade_level_id": "grade-12",
+                        "subject_id": "chemistry",
+                        "topic_id": "topic-actinometry",
+                        "published_at": "2026-09-19T10:00:00Z",
+                        "review_status": "draft",
+                    },
+                },
+            }
+        ],
+    }
+
+    response = client.put(
+        f"/api/v1/internal/curriculum/versions/{version_id}",
+        headers={"x-visual-tutor-internal-token": token},
+        json=payload,
+    )
+
+    assert response.status_code == 400
+    result = classify_student_query(
+        message=query,
+        grade=12,
+        subject="Chemistry",
+        topic=None,
+    )
+    assert result.tier == "unverified"
+    assert result.matching_chunks == []
+
+
+def test_published_content_cannot_replace_a_static_curriculum_chunk(
+    clean_published_store,
+) -> None:
+    client = TestClient(app)
+    version_id = "cv-colliding-static-id-v1"
+    response = client.put(
+        f"/api/v1/internal/curriculum/versions/{version_id}",
+        headers={"x-visual-tutor-internal-token": "test-internal-token-123"},
+        json={
+            "curriculum_version_id": version_id,
+            "chunks": [
+                {
+                    "id": "math.g11.functions.domain_range",
+                    "grade": 11,
+                    "subject": "Mathematics",
+                    "topic": "Collision Attempt",
+                    "text": "This must never shadow the static lesson.",
+                    "source": {
+                        "type": "admin_published",
+                        "metadata": {
+                            "curriculum_version_id": version_id,
+                            "review_status": "approved",
+                        },
+                    },
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 400
+    assert not clean_published_store.exists()

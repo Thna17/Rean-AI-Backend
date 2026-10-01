@@ -19,10 +19,12 @@ from api.services.visual_tutor.llm_teaching_planner import (
     OllamaVisualTutorLLMClient,
     UnavailableVisualTutorLLMClient,
     _bounded_planner_timeout,
+    _curriculum_prompt_context,
     _default_llm_client,
     _provider_identity,
 )
 from api.services.visual_tutor.orchestrator import handle_visual_tutor_turn
+from api.services.visual_tutor.policy import VisualTutorPolicyDecision
 
 
 class FakeVisualTutorLLMClient:
@@ -1499,6 +1501,29 @@ def test_llm_khmer_stuck_input_returns_khmer_friendly_support() -> None:
     assert user_prompt["policy"]["use_khmer_explanation"] is True
 
 
+def test_planner_chunk_ids_are_derived_from_the_bounded_context() -> None:
+    chunks = [
+        {"id": f"chunk-{index}", "topic": f"Topic {index}"}
+        for index in range(5)
+    ]
+    policy = VisualTutorPolicyDecision(
+        teaching_mode=VisualTutorTeachingMode.GUIDED_QUESTION,
+        metadata={
+            "curriculum_context": chunks,
+            "curriculum_chunk_ids": [chunk["id"] for chunk in chunks],
+        },
+    )
+
+    prompt_context = _curriculum_prompt_context(policy)
+
+    assert [chunk["id"] for chunk in prompt_context["chunks"]] == [
+        "chunk-0",
+        "chunk-1",
+        "chunk-2",
+    ]
+    assert prompt_context["chunk_ids"] == ["chunk-0", "chunk-1", "chunk-2"]
+
+
 def test_llm_receives_curriculum_context_for_unsupported_topic() -> None:
     fake_llm = FakeVisualTutorLLMClient(
         _planner_payload(
@@ -1527,6 +1552,9 @@ def test_llm_receives_curriculum_context_for_unsupported_topic() -> None:
     assert (
         "math.g11.functions.domain_range"
         in user_prompt["curriculum_context"]["chunk_ids"]
+    )
+    assert response.metadata["curriculum_chunk_ids"] == (
+        user_prompt["curriculum_context"]["chunk_ids"]
     )
     assert user_prompt["curriculum_context"]["formulas"]
     assert (

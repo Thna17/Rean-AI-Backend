@@ -42,6 +42,7 @@ from api.services.visual_tutor.rag_curriculum_gate import (
     ClassificationResult,
     classify_student_query,
 )
+from api.services.visual_tutor.public_response import project_public_tutor_turn
 from api.services.visual_tutor.teaching_plan_builder import attach_validated_teaching_plan
 
 
@@ -148,9 +149,15 @@ def test_physics_optics_snells_law_solution():
             assert not a.latex.startswith("$")
             assert not a.latex.endswith("$")
 
-    # 4. Tier 1 Verified Metadata
-    assert turn.metadata["verified"] is True
-    assert turn.metadata["curriculum_status"] == "verified_curriculum"
+    # 4. Tier 1 curriculum grounding does not mathematically verify an
+    # LLM-produced answer when no deterministic checker handled the problem.
+    assert turn.metadata["verified"] is False
+    assert turn.metadata["verification"]["verified"] is False
+    assert turn.metadata["generation_path"] == "dynamic_llm"
+    public_verification = project_public_tutor_turn(turn)["verification"]
+    assert public_verification["verified"] is False
+    assert public_verification["status"] == "cannot_verify"
+    assert turn.metadata["curriculum_status"] == "ai_unverified"
     assert turn.metadata["curriculum_topic"] == "Optics"
     assert "chunk.physics.optics.snell" in turn.metadata["curriculum_sources"]
 
@@ -313,8 +320,11 @@ def test_chemistry_acid_base_with_table():
     assert len(plan_table_actions) == 1
     assert plan_table_actions[0]["table"]["columns"] == ["Reagent", "Concentration (M)", "Volume (mL)"]
 
-    # 3. Verified Curriculum Metadata
-    assert turn.metadata["verified"] is True
+    # 3. Curriculum-grounded LLM output remains explicitly unverified.
+    assert turn.metadata["verified"] is False
+    assert turn.metadata["verification"]["verified"] is False
+    assert turn.metadata["generation_path"] == "dynamic_llm"
+    assert project_public_tutor_turn(turn)["verification"]["status"] == "cannot_verify"
     assert turn.metadata["curriculum_topic"] == "Acids and Bases"
 
 
@@ -386,8 +396,13 @@ def test_math_law_of_cosines():
     )
 
     assert turn.board is not None
-    assert turn.metadata["verified"] is True
-    assert turn.metadata["curriculum_status"] == "verified_curriculum"
+    assert turn.metadata["verified"] is False
+    assert turn.metadata["verification"]["verified"] is False
+    assert turn.metadata["generation_path"] == "dynamic_llm"
+    public_verification = project_public_tutor_turn(turn)["verification"]
+    assert public_verification["verified"] is False
+    assert public_verification["status"] == "cannot_verify"
+    assert turn.metadata["curriculum_status"] == "ai_unverified"
     assert turn.metadata["curriculum_topic"] == "Trigonometry"
 
     action_ids = [a.id for a in turn.board_actions]

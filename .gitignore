@@ -158,3 +158,13 @@ ai-service/.crawl4ai/
 
 # Curriculum the AI service writes at runtime when an admin publishes
 ai-service/data/curriculum/admin-published.*
+
+# Demo presentation media binaries
+demo-video/*.mp4
+demo-video/*.aiff
+demo-video/*.mp3
+demo-video/frames/
+demo-video/full_flow_slides/
+demo-video/voiceover_audio/
+demo-video/voiceover_slides/
+

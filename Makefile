@@ -40,7 +40,9 @@ flutter-test-tutor: ## Run visual tutor whiteboard tests in ai_tutor
 
 .PHONY: flutter-build-web
 flutter-build-web: ## Build web release bundle with --pwa-strategy=none
-	@cd ai_tutor && $(FLUTTER) build web --pwa-strategy=none
+	@cd ai_tutor && $(FLUTTER) build web --pwa-strategy=none \
+		--dart-define=APP_ENV=production \
+		--dart-define=BACKEND_BASE_URL=https://aitutor.mekhla.digital/api/v1
 
 .PHONY: flutter-serve-web
 flutter-serve-web: ## Serve Flutter web app on port 53124

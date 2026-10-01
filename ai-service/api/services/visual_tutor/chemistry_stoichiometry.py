@@ -919,20 +919,33 @@ def build_chemistry_worked_solution_turn(
 ) -> VisualTutorTurnResponse:
     """Build the complete worked solution turn with deterministic action IDs."""
     solution = solve_stoichiometry(problem)
-    msg = (
-        f"នេះជាដំណោះស្រាយស្តូគ្យូមេទ្រីមួយជំហានម្តងៗ។ {solution.answer_text} "
-        "អ្នកអាចសួរខ្ញុំបន្ថែមអំពីជំហានណាមួយបាន។"
-        if problem.is_khmer
-        else (
-            f"Here is the full worked solution, step by step. {solution.answer_text} "
-            "Ask me about any step you want me to explain."
+    meta = request.metadata if isinstance(request.metadata, dict) else {}
+    is_demonstration = (
+        meta.get("entry_point") == "lesson_demonstration"
+        or meta.get("auto_start") is True
+    )
+    if is_demonstration:
+        msg = (
+            "តើអ្នកមានសំណួរអ្វីខ្លះអំពីជំហាននេះ ឬចង់សាកល្បងដោយខ្លួនឯង?"
+            if problem.is_khmer
+            else "Do you have any questions about this step, or would you like to try one yourself?"
         )
-    )
-    task = (
-        "សួរខ្ញុំអំពីជំហានណាមួយ ឬសាកល្បងលំហាត់គីមីវិទ្យាថ្មីមួយទៀត។"
-        if problem.is_khmer
-        else "Ask me about any step you'd like explained, or try another chemistry problem."
-    )
+        task = msg
+    else:
+        msg = (
+            f"នេះជាដំណោះស្រាយស្តូគ្យូមេទ្រីមួយជំហានម្តងៗ។ {solution.answer_text} "
+            "អ្នកអាចសួរខ្ញុំបន្ថែមអំពីជំហានណាមួយបាន។"
+            if problem.is_khmer
+            else (
+                f"Here is the full worked solution, step by step. {solution.answer_text} "
+                "Ask me about any step you want me to explain."
+            )
+        )
+        task = (
+            "សួរខ្ញុំអំពីជំហានណាមួយ ឬសាកល្បងលំហាត់គីមីវិទ្យាថ្មីមួយទៀត។"
+            if problem.is_khmer
+            else "Ask me about any step you'd like explained, or try another chemistry problem."
+        )
     return _chemistry_solution_turn(
         request,
         problem,
@@ -1280,6 +1293,7 @@ def _chemistry_solution_turn(
             "teaching_plan": plan,
             "worked_solution": True,
             "verified": True,
+            "generation_path": "deterministic_solver",
             "curriculum_status": "verified_curriculum",
             "curriculum_topic": "Stoichiometry",
             "verification": {
@@ -1287,6 +1301,7 @@ def _chemistry_solution_turn(
                 "verified": True,
                 "student_message": "Programmatically verified using stoichiometric ratios and IUPAC standard atomic weights.",
                 "concise_evidence": "Verified",
+                "verification_method": "stoichiometry_solver",
             },
             "verification_result": "correct",
             "chemistry_stoichiometry": True,

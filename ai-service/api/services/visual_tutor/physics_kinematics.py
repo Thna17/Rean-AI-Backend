@@ -666,20 +666,33 @@ def build_physics_worked_solution_turn(
 ) -> VisualTutorTurnResponse:
     """Build the complete worked solution turn with deterministic action IDs."""
     solution = solve_kinematics(problem)
-    msg = (
-        f"នេះជាដំណោះស្រាយលម្អិតមួយជំហានម្តងៗ។ {solution.answer_text} "
-        "អ្នកអាចសួរខ្ញុំបន្ថែមអំពីជំហានណាមួយបាន។"
-        if problem.is_khmer
-        else (
-            f"Here is the full worked solution, step by step. {solution.answer_text} "
-            "Ask me about any step you want me to explain."
+    meta = request.metadata if isinstance(request.metadata, dict) else {}
+    is_demonstration = (
+        meta.get("entry_point") == "lesson_demonstration"
+        or meta.get("auto_start") is True
+    )
+    if is_demonstration:
+        msg = (
+            "តើអ្នកមានសំណួរអ្វីខ្លះអំពីជំហាននេះ ឬចង់សាកល្បងដោយខ្លួនឯង?"
+            if problem.is_khmer
+            else "Do you have any questions about this step, or would you like to try one yourself?"
         )
-    )
-    task = (
-        "សួរខ្ញុំអំពីជំហានណាមួយ ឬសាកល្បងលំហាត់រូបវិទ្យាថ្មីមួយទៀត។"
-        if problem.is_khmer
-        else "Ask me about any step you'd like explained, or try another physics problem."
-    )
+        task = msg
+    else:
+        msg = (
+            f"នេះជាដំណោះស្រាយលម្អិតមួយជំហានម្តងៗ។ {solution.answer_text} "
+            "អ្នកអាចសួរខ្ញុំបន្ថែមអំពីជំហានណាមួយបាន។"
+            if problem.is_khmer
+            else (
+                f"Here is the full worked solution, step by step. {solution.answer_text} "
+                "Ask me about any step you want me to explain."
+            )
+        )
+        task = (
+            "សួរខ្ញុំអំពីជំហានណាមួយ ឬសាកល្បងលំហាត់រូបវិទ្យាថ្មីមួយទៀត។"
+            if problem.is_khmer
+            else "Ask me about any step you'd like explained, or try another physics problem."
+        )
     return _physics_solution_turn(
         request,
         problem,

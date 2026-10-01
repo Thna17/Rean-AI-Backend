@@ -30,10 +30,23 @@ class CurriculumStore:
         published = self._published_store()
         generation = published.generation()
         if self._chunks is None or self._published_generation != generation:
-            self._chunks = list(_load_jsonl_chunks(self.data_dir)) + published.load()
+            static_chunks = list(_load_jsonl_chunks(self.data_dir))
+            published_chunks = published.load()
+            static_ids = {chunk.id for chunk in static_chunks}
+            collisions = static_ids & {chunk.id for chunk in published_chunks}
+            if collisions:
+                raise ValueError(
+                    "Published curriculum chunk id collides with static catalog: "
+                    + ", ".join(sorted(collisions))
+                )
+            self._chunks = static_chunks + published_chunks
             self._indexes = _build_indexes(self._chunks)
             self._published_generation = generation
         return list(self._chunks)
+
+    def static_chunk_ids(self) -> set[str]:
+        """Return immutable seed IDs used to validate publication overlays."""
+        return {chunk.id for chunk in _load_jsonl_chunks(self.data_dir)}
 
     def _published_store(self) -> PublishedCurriculumStore:
         # Admin-published curriculum lives on the service-wide shared volume,
@@ -78,7 +91,7 @@ class CurriculumStore:
         for chunk in chunks:
             if subject and _norm(chunk.subject) != _norm(subject):
                 continue
-            if grade is not None and chunk.grade not in {None, grade}:
+            if grade is not None and chunk.grade != grade:
                 continue
             if language and chunk.language not in {language, "en"}:
                 continue
@@ -139,6 +152,7 @@ class CurriculumStore:
             return []
         chunks = self.load_chunks()
         query_norm = _norm(query)
+        canonical_topic = _canonical_topic_alias(query_norm)
         _STOPWORDS = {
             "the", "a", "an", "and", "or", "of", "in", "on", "to", "for", "with", "at",
             "by", "from", "is", "are", "was", "were", "be", "been", "being",
@@ -162,7 +176,7 @@ class CurriculumStore:
         norm_subj = _norm(subject) if subject else None
 
         for chunk in chunks:
-            if grade is not None and chunk.grade not in {None, grade}:
+            if grade is not None and chunk.grade != grade:
                 continue
             if norm_subj and _norm(chunk.subject) != norm_subj:
                 continue
@@ -204,6 +218,16 @@ class CurriculumStore:
                 score += 10.0
             if chunk.subtopic and _norm(chunk.subtopic) in query_norm:
                 score += 8.0
+
+            # Aliases improve search recall/ranking only. The chunk itself is
+            # returned unchanged so its authored canonical chapter/topic
+            # metadata is never replaced by a query spelling.
+            if canonical_topic:
+                chunk_topic = _norm(chunk.topic)
+                if chunk_topic == canonical_topic:
+                    score += 12.0
+                elif canonical_topic in topic_str:
+                    score += 3.0
 
             # Direct formula match if formula is non-trivial
             for f in chunk.formulas:
@@ -330,3 +354,20 @@ def _is_topic_match(topic_norm: str, candidate_norm: str) -> bool:
 
 def _norm(value: str) -> str:
     return value.strip().lower().replace("_", " ")
+
+
+def _canonical_topic_alias(query_norm: str) -> str | None:
+    """Return a canonical topic intent without mutating stored metadata."""
+    aliases = {
+        "ideal gas law": (
+            "ideal gas",
+            "ideal gas law",
+            "ideal gas equation",
+            "pv = nrt",
+            "pv=nrt",
+        ),
+    }
+    for canonical, variants in aliases.items():
+        if any(variant in query_norm for variant in variants):
+            return canonical
+    return None

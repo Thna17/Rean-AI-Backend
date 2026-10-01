@@ -459,7 +459,19 @@ def build_worked_solution_turn(
 ) -> VisualTutorTurnResponse:
     is_khmer = _uses_khmer(request, problem)
     solution = solve_limit(problem, is_khmer=is_khmer)
-    if is_khmer:
+    metadata = request.metadata if isinstance(request.metadata, dict) else {}
+    is_demonstration = (
+        metadata.get("entry_point") == "lesson_demonstration"
+        or metadata.get("auto_start") is True
+    )
+    if is_demonstration:
+        if is_khmer:
+            message = "តើអ្នកមានសំណួរអ្វីខ្លះអំពីជំហាននេះ ឬចង់សាកល្បងដោយខ្លួនឯង?"
+            task = "តើអ្នកមានសំណួរអ្វីខ្លះអំពីជំហាននេះ ឬចង់សាកល្បងដោយខ្លួនឯង?"
+        else:
+            message = "Do you have any questions about this step, or would you like to try one yourself?"
+            task = "Do you have any questions about this step, or would you like to try one yourself?"
+    elif is_khmer:
         message = (
             f"នេះជាដំណោះស្រាយលម្អិតមួយជំហានម្តងៗ។ {solution.answer_text} "
             "អ្នកអាចសួរអំពីជំហានណាមួយដែលចង់ឱ្យពន្យល់បន្ថែមបាន។"
@@ -730,6 +742,7 @@ def _solution_turn(
                 ],
             },
             "verified": True,
+            "generation_path": "deterministic_solver",
             "curriculum_status": "verified_curriculum",
             "curriculum_topic": "Limits of Functions",
             "verification": {
@@ -737,6 +750,7 @@ def _solution_turn(
                 "verified": True,
                 "student_message": evidence,
                 "concise_evidence": "Verified",
+                "verification_method": "sympy_limits",
             },
             "verification_result": "correct",
             "board_update_mode": "replace",

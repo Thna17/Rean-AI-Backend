@@ -29,6 +29,8 @@ def test_algebra_verification_linear_equation():
     # "verified" is not in the public contract; the gateway 502s on it.
     assert verification.get("status") == "correct"
     assert res.metadata.get("verified") is True
+    assert res.metadata.get("verification", {}).get("verified") is True
+    assert res.metadata.get("generation_path") == "deterministic_solver"
 
 
 def test_algebra_verification_quadratic_equation():
@@ -127,9 +129,14 @@ def test_algebra_solver_declines_problems_whose_equations_are_only_givens(messag
         "Solve 3x + 7 = 22",
         "Solve x^2 - 5x + 6 = 0",
         "Solve 2x + 3y = 12 and x - y = 1",
+        r"z = 1 + i\sqrt{3}, \quad \text{find } |z|, \arg(z), \text{ and } z^6",
+        r"f(x) = x^3 - 3x^2 + 2, \quad \text{find } f^\prime(2)",
+        r"\int_0^2 (3x^2 + 2x) \, dx",
+        r"y'' - 5y' + 6y = 0, \quad \text{find the general solution}",
     ],
 )
 def test_algebra_solver_still_handles_real_algebra(message: str):
     solution = _algebra_attempt(message)
     assert solution is not None, f"expected a deterministic solution for {message!r}"
     assert solution.is_verified is True
+

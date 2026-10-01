@@ -3,8 +3,9 @@
 Verifies the full pipeline:
 1. Admin publishes a curriculum chunk (Thermodynamics — Ideal Gas Law, PV = nRT).
 2. Student problem turn asking for volume of 2.0 moles at 300 K, 1.0 atm.
-3. RAG gate verifies against chunk (verified: True, Tier 1).
-4. Whiteboard writes full solution with PV = nRT, V = 49.26 L with deterministic IDs.
+3. RAG gate matches the published curriculum chunk (Tier 1 curriculum grounding).
+4. Whiteboard writes an explicitly unverified LLM solution with PV = nRT,
+   V = 49.26 L and deterministic IDs.
 5. Student asks follow-up: "What does R equal?".
 6. Whiteboard appends ws-followup-reply-0 explaining R without clearing earlier work.
 7. Asserts prompt caching prefix invariance (>80%), latency < 3s, and estimated turn cost < $0.001.
@@ -45,6 +46,7 @@ from api.services.visual_tutor.llm_teaching_planner import (
 )
 from api.services.visual_tutor.orchestrator import handle_visual_tutor_turn
 from api.services.visual_tutor.policy import VisualTutorPolicyDecision
+from api.services.visual_tutor.public_response import project_public_tutor_turn
 from api.services.visual_tutor.rag_curriculum_gate import classify_student_query
 
 
@@ -240,7 +242,14 @@ def test_end_to_end_quality_gate_ideal_gas_and_prompt_caching() -> None:
     # -------------------------------------------------------------
     assert turn1_res is not None
     assert turn1_res.final_answer_locked is False
-    assert turn1_res.metadata.get("verified") is True
+    # Curriculum provenance says this is an approved topic; it does not prove
+    # that the LLM's numerical result was checked by a deterministic solver.
+    assert turn1_res.metadata.get("verified") is False
+    assert turn1_res.metadata.get("verification", {}).get("verified") is False
+    assert turn1_res.metadata.get("generation_path") == "dynamic_llm"
+    public_verification = project_public_tutor_turn(turn1_res)["verification"]
+    assert public_verification["verified"] is False
+    assert public_verification["status"] == "cannot_verify"
     assert turn1_res.metadata.get("curriculum_topic") == "Ideal Gas Law"
     assert turn1_res.metadata.get("board_update_mode") == "replace"
 

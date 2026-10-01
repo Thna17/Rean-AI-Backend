@@ -78,15 +78,17 @@ def test_tier_1_verified_khmer_kinematics() -> None:
     assert len(result.matching_chunks) > 0
 
 
-def test_tier_2_unverified_physics_projectile() -> None:
+def test_projectile_motion_matches_published_curriculum_without_implying_answer_verification() -> None:
+    """The RAG tier describes grounding; solver verification is tested downstream."""
     result = classify_student_query(
         "A cannonball is launched at 45 degrees with velocity 50 m/s. Find horizontal range.",
         grade=12,
         subject="Physics",
         topic="Projectile Motion",
     )
-    assert result.tier == "unverified"
+    assert result.tier == "verified"
     assert result.subject == "physics"
+    assert len(result.matching_chunks) > 0
 
 
 def test_tier_2_unverified_math_quadratic() -> None:

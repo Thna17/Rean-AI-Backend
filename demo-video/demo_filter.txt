@@ -1,0 +1,6 @@
+[0:v]scale=1920:1080,fade=t=in:st=0:d=0.5,fade=t=out:st=3.5:d=0.5,setsar=1[intro];
+[1:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:0x07111f,setsar=1[board];
+[2:v]format=rgba[badge];
+[board][badge]overlay=1280:930:format=auto[core];
+[3:v]scale=1920:1080,fade=t=in:st=0:d=0.5,fade=t=out:st=3.5:d=0.5,setsar=1[outro];
+[intro][core][outro]concat=n=3:v=1:a=0,format=yuv420p[outv]

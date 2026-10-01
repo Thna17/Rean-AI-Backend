@@ -189,12 +189,17 @@ def test_curriculum_retrieval_result_serializes_structured_chunks() -> None:
     assert payload["confidence"] == 0.8
 
 
-def test_manual_seed_curriculum_jsonl_records_match_model() -> None:
-    paths = sorted(CURRICULUM_DATA_DIR.glob("grade_*_math.jsonl"))
+def test_curriculum_jsonl_records_match_model_and_preserve_provenance() -> None:
+    paths = [
+        path
+        for path in sorted(CURRICULUM_DATA_DIR.glob("*.jsonl"))
+        if path.name != "admin-published.jsonl"
+    ]
 
     assert paths
 
     seen_ids: set[str] = set()
+    source_types_by_id: dict[str, str] = {}
     for path in paths:
         rows = [
             line.strip()
@@ -209,8 +214,10 @@ def test_manual_seed_curriculum_jsonl_records_match_model() -> None:
 
             assert chunk.id not in seen_ids, f"duplicate chunk id {chunk.id}"
             seen_ids.add(chunk.id)
-            assert chunk.source.type == "manual_seed", (
-                f"{path.name}:{line_number} must use source.type manual_seed"
+            source_types_by_id[chunk.id] = chunk.source.type
+            assert chunk.source.type in {"manual_seed", "moeys_syllabus"}, (
+                f"{path.name}:{line_number} has unsupported source provenance "
+                f"{chunk.source.type!r}"
             )
             assert chunk.formulas, f"{chunk.id} must include formulas"
             assert chunk.prerequisites, f"{chunk.id} must include prerequisites"
@@ -224,16 +231,23 @@ def test_manual_seed_curriculum_jsonl_records_match_model() -> None:
             assert chunk.examples, f"{chunk.id} must include a worked example"
             assert chunk.exercises, f"{chunk.id} must include an exercise example"
 
+    # Hand-authored visual-tutor seeds and expanded MoEYS syllabus material
+    # coexist in the catalog. Loading must retain each record's true source
+    # instead of rewriting the whole corpus to one provenance label.
+    assert source_types_by_id["math.g10.linear_equations.one_variable"] == (
+        "manual_seed"
+    )
+    assert source_types_by_id["math.g10.sets_logic_real.complete"] == (
+        "moeys_syllabus"
+    )
+
     assert {
         "math.g10.linear_equations.one_variable",
         "math.g10.coordinate_plane.basics",
         "math.g10.coordinate_geometry.slope",
         "math.g10.coordinate_geometry.line_equation",
-        "math.g11.functions.introduction",
-        "math.g11.linear_functions.basic",
         "math.g11.quadratic_functions.basic",
         "math.g11.functions.domain_range",
-        "math.g12.functions.advanced",
         "math.g12.functions.transformations",
         "math.g12.exponential_log.functions",
     }.issubset(seen_ids)

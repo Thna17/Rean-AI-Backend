@@ -76,6 +76,8 @@ def test_dynamic_worked_solution_limits():
     texts = " ".join(a.text or a.latex or "" for a in res.board_actions)
     assert "6" in texts or "x + 3" in texts
     assert res.metadata.get("verified") is True
+    assert res.metadata.get("verification", {}).get("verified") is True
+    assert res.metadata.get("generation_path") == "deterministic_solver"
     assert res.metadata.get("curriculum_status") == "verified_curriculum"
 
 
@@ -137,6 +139,8 @@ def test_dynamic_worked_solution_physics_kinematics():
     assert res.board is not None
     assert res.metadata.get("worked_solution") is True
     assert res.metadata.get("verified") is True
+    assert res.metadata.get("verification", {}).get("verified") is True
+    assert res.metadata.get("generation_path") == "deterministic_solver"
     assert res.teaching_mode == VisualTutorTeachingMode.FULL_SOLUTION
     assert any("10" in (a.text or a.latex or "") for a in res.board_actions)
 
@@ -154,6 +158,8 @@ def test_dynamic_worked_solution_chemistry_stoichiometry():
     assert res.board is not None
     assert res.metadata.get("worked_solution") is True
     assert res.metadata.get("verified") is True
+    assert res.metadata.get("verification", {}).get("verified") is True
+    assert res.metadata.get("generation_path") == "deterministic_solver"
     assert res.teaching_mode == VisualTutorTeachingMode.FULL_SOLUTION
     assert any("4" in (a.text or a.latex or "") for a in res.board_actions)
 
@@ -238,6 +244,19 @@ def test_degraded_fallback_not_stored_in_dynamic_solution_cache():
         llm_client=FailingLLMClient(),
     )
     assert turn1 is not None
+    assert turn1.metadata["verified"] is False
+    assert turn1.metadata["verification"]["verified"] is False
+    assert turn1.metadata["generation_path"] == "dynamic_degraded_fallback"
+
+    # The compact public envelope drives the student's verification badge.  A
+    # structured fallback still contains board steps, but those steps are only
+    # an explanatory placeholder and must never make the UI claim that a
+    # deterministic solver verified the answer.
+    from api.services.visual_tutor.public_response import project_public_tutor_turn
+
+    public_turn = project_public_tutor_turn(turn1)
+    assert public_turn["verification"]["verified"] is False
+    assert public_turn["verification"]["status"] == "cannot_verify"
 
     # BUT the degraded fallback solution must NOT be stored in the cache
     cache_key = f"{problem_query}:False:{classification.is_verified}"
@@ -254,8 +273,18 @@ def test_degraded_fallback_not_stored_in_dynamic_solution_cache():
     assert turn2 is not None
     assert any("30" in (a.text or a.latex or "") for a in turn2.board_actions)
     assert not any("Solution completed" in (a.text or "") for a in turn2.board_actions)
+    assert turn2.metadata["verified"] is False
+    assert turn2.metadata["verification"]["verified"] is False
+    assert turn2.metadata["generation_path"] == "dynamic_llm"
+    assert project_public_tutor_turn(turn2)["verification"] == {
+        "status": "cannot_verify",
+        "verified": False,
+        "concise_evidence": "AI unverified",
+        "student_facing_feedback": "AI answer — not machine-checked.",
+    }
 
-    # A real, non-degraded solution should now be cached
+    # A real, non-degraded solution may be cached, but remains explicitly
+    # unverified because it came from the LLM rather than a deterministic solver.
     assert cache_key in _dynamic_solution_cache
 
 
@@ -396,6 +425,23 @@ def test_generic_worked_solution_is_degraded_flag():
     assert fallback.is_degraded is True
     assert fallback.answer_text == "Solution completed"
 
+    # Curriculum matching is not mathematical verification.  When DeepSeek is
+    # unavailable, even a curriculum-matched problem receives only the generic
+    # explanatory fallback and therefore cannot inherit the classification's
+    # verified flag.
+    curriculum_matched = ClassificationResult(
+        tier="verified",
+        subject="mathematics",
+    )
+    matched_fallback = _build_fallback_solution(
+        "Solve sin(x) = 1/2",
+        is_khmer=False,
+        classification=curriculum_matched,
+    )
+    assert matched_fallback.is_degraded is True
+    assert matched_fallback.is_verified is False
+    assert matched_fallback.generation_path == "dynamic_degraded_fallback"
+
 
 def test_dynamic_solution_cache_bounded_size_and_ttl():
     """Test that _dynamic_solution_cache bounds memory (maxsize) and evicts on TTL expiry."""
@@ -445,7 +491,3 @@ def test_dynamic_solution_cache_bounded_size_and_ttl():
         _dynamic_solution_cache.maxsize = orig_max
         _dynamic_solution_cache.ttl_seconds = orig_ttl
         _dynamic_solution_cache.clear()
-
-
-
-
